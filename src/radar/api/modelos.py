@@ -48,6 +48,12 @@ def iso_com_fuso(valor: datetime | None) -> str | None:
     return valor.astimezone(FUSO).isoformat() if valor else None
 
 
+def link_http(link: str | None) -> str | None:
+    """Só um endereço http(s) vira link; vazio ou outro esquema sai nulo (o front cai no PNCP)."""
+    aparado = (link or "").strip()
+    return aparado if aparado.lower().startswith(("https://", "http://")) else None
+
+
 def resumo_out(edital: EditalResumo) -> EditalResumoOut:
     return EditalResumoOut(
         numero_controle_pncp=edital.numero_controle_pncp,
@@ -58,7 +64,7 @@ def resumo_out(edital: EditalResumo) -> EditalResumoOut:
         modalidade_id=edital.modalidade_id,
         valor_estimado=None if edital.valor_estimado is None else str(edital.valor_estimado),
         data_encerramento_proposta=_iso(edital.data_encerramento_proposta),
-        link_origem=edital.link_origem,
+        link_origem=link_http(edital.link_origem),
         linhas=edital.linhas,
     )
 

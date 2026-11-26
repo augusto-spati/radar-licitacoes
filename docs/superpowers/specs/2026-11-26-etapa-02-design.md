@@ -154,6 +154,8 @@ Esboço no celular (390 px):
 
 Como são duas metades independentes (1 e 2 rodam localmente; 3 a 5 são nuvem), cabem **dois planos**: "2a: protótipo + API" e "2b: AWS".
 
+- **2b, Decisão:** CloudFront roteia `/api/*` para o API Gateway (mesma origem, sem CORS); o front usa `/api` relativo.
+
 ## Saídas da etapa
 
 - Código.

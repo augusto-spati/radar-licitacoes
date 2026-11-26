@@ -139,16 +139,33 @@ def test_lista_filtra_linha_e_uf(cliente: TestClient, sessao: Session) -> None:
     por_linha = cliente.get("/api/editais", params={"linha": "redes"}).json()
     por_uf = cliente.get("/api/editais", params=[("uf", "PR")]).json()
     por_duas_ufs = cliente.get("/api/editais", params=[("uf", "PR"), ("uf", "SP")]).json()
-    fora_dos_criterios = cliente.get("/api/editais", params=[("uf", "BA")]).json()
 
     assert [e["numero_controle_pncp"] for e in por_linha["editais"]] == ["redes-sp/2026"]
     assert [e["numero_controle_pncp"] for e in por_uf["editais"]] == ["perdas-pr/2026"]
     assert len(por_duas_ufs["editais"]) == 3
-    assert fora_dos_criterios["editais"] == []
 
 
-def test_linha_desconhecida_422(cliente: TestClient) -> None:
-    assert cliente.get("/api/editais", params={"linha": "inexistente"}).status_code == 422
+@pytest.mark.parametrize(
+    ("params", "campo"),
+    [({"linha": "inexistente"}, "linha"), ([("uf", "BA")], "uf")],
+)
+def test_linha_ou_uf_fora_dos_criterios_422_da_validacao(
+    cliente: TestClient, params: Any, campo: str
+) -> None:
+    # Enum vindo do filtro.toml: o FastAPI valida e responde no formato padrão.
+    resposta = cliente.get("/api/editais", params=params)
+
+    assert resposta.status_code == 422
+    [erro] = resposta.json()["detail"]
+    assert erro["loc"][:2] == ["query", campo]
+    assert erro["type"] == "enum"
+
+
+def test_openapi_traz_linhas_e_ufs_dos_criterios(cliente: TestClient) -> None:
+    esquemas = cliente.app.openapi()["components"]["schemas"]  # type: ignore[attr-defined]
+
+    assert esquemas["Linha"]["enum"] == ["perdas", "redes"]
+    assert esquemas["UF"]["enum"] == ["SP", "PR"]
 
 
 def test_detalhe_com_barra_no_id(cliente: TestClient, sessao: Session) -> None:

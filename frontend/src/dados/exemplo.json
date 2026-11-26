@@ -2,22 +2,6 @@
   "atualizado_em": "2026-11-26T14:06:29.085954-03:00",
   "editais": [
     {
-      "numero_controle_pncp": "18712158000150-1-000053/2026",
-      "objeto": "Registro de preços para futura e possível aquisição de produtos de hortifrutigranjeiros visando atender as demandas do Município de São Gonçalo do Sapucaí - MG  Poder Executivo",
-      "orgao_nome": "MUNICIPIO DE SAO GONCALO DO SAPUCAI",
-      "uf": "MG",
-      "municipio": "São Gonçalo do Sapucaí",
-      "modalidade_id": 6,
-      "valor_estimado": "3048077.0",
-      "data_encerramento_proposta": "2026-11-26T14:31:00",
-      "link_origem": "https://app2.licitardigital.com.br/pesquisa/119133",
-      "linhas": [],
-      "orgao_cnpj": "18712158000150",
-      "situacao_nome": "Divulgada no PNCP",
-      "data_publicacao": "2026-11-13T23:55:46",
-      "data_abertura_proposta": "2026-11-13T08:00:00"
-    },
-    {
       "numero_controle_pncp": "75738484000170-1-000202/2026",
       "objeto": "CONTRATACAO DE EMPRESA ESPECIALIZADA PARA A PRESTACAO DE SERVICOS DE BORRACHARIA DESTINADOS A FROTA MUNICIPAL DO MUNICIPIO DE IPORA PR.",
       "orgao_nome": "MUNICIPIO DE IPORA",
@@ -26,7 +10,7 @@
       "modalidade_id": 6,
       "valor_estimado": "79266.9",
       "data_encerramento_proposta": "2026-11-26T14:50:00",
-      "link_origem": " ",
+      "link_origem": null,
       "linhas": [],
       "orgao_cnpj": "75738484000170",
       "situacao_nome": "Divulgada no PNCP",
@@ -42,7 +26,7 @@
       "modalidade_id": 6,
       "valor_estimado": "1388473.6",
       "data_encerramento_proposta": "2026-11-26T15:00:00",
-      "link_origem": " ",
+      "link_origem": null,
       "linhas": [],
       "orgao_cnpj": "76288760000108",
       "situacao_nome": "Divulgada no PNCP",
@@ -122,7 +106,7 @@
       "modalidade_id": 7,
       "valor_estimado": "43333.0",
       "data_encerramento_proposta": "2026-11-26T23:59:00",
-      "link_origem": "",
+      "link_origem": null,
       "linhas": [],
       "orgao_cnpj": "44441558000188",
       "situacao_nome": "Divulgada no PNCP",
@@ -186,7 +170,7 @@
       "modalidade_id": 7,
       "valor_estimado": "154684.6",
       "data_encerramento_proposta": "2026-11-26T23:59:00",
-      "link_origem": "",
+      "link_origem": null,
       "linhas": [],
       "orgao_cnpj": "44498988000136",
       "situacao_nome": "Divulgada no PNCP",
@@ -202,7 +186,7 @@
       "modalidade_id": 6,
       "valor_estimado": "163912.4",
       "data_encerramento_proposta": "2026-11-26T23:59:00",
-      "link_origem": "",
+      "link_origem": null,
       "linhas": [],
       "orgao_cnpj": "45144748000104",
       "situacao_nome": "Divulgada no PNCP",
@@ -234,7 +218,7 @@
       "modalidade_id": 7,
       "valor_estimado": "194274.0",
       "data_encerramento_proposta": "2026-11-27T00:00:00",
-      "link_origem": "",
+      "link_origem": null,
       "linhas": [],
       "orgao_cnpj": "45141132000171",
       "situacao_nome": "Divulgada no PNCP",
@@ -256,6 +240,22 @@
       "situacao_nome": "Divulgada no PNCP",
       "data_publicacao": "2026-11-11T09:27:49",
       "data_abertura_proposta": "2026-11-11T00:00:00"
+    },
+    {
+      "numero_controle_pncp": "44723674000190-1-000934/2026",
+      "objeto": "CONTRATAÇÃO DE EMPRESA ESPECILALIZADA EM EVENTOS PARA AS FESTIVIDADES DO NATAL ENCANTADO",
+      "orgao_nome": "MUNICIPIO DE CAPIVARI",
+      "uf": "SP",
+      "municipio": "Capivari",
+      "modalidade_id": 6,
+      "valor_estimado": "350000.0",
+      "data_encerramento_proposta": "2026-11-27T00:00:00",
+      "link_origem": null,
+      "linhas": [],
+      "orgao_cnpj": "44723674000190",
+      "situacao_nome": "Divulgada no PNCP",
+      "data_publicacao": "2026-11-11T09:54:42",
+      "data_abertura_proposta": "2026-11-27T00:00:00"
     },
     {
       "numero_controle_pncp": "56023443000152-1-000736/2026",
@@ -321,7 +321,7 @@
       "modalidade_id": 6,
       "valor_estimado": "108000.0",
       "data_encerramento_proposta": "2026-12-01T08:30:00",
-      "link_origem": "",
+      "link_origem": null,
       "linhas": [
         "redes"
       ],
@@ -411,7 +411,7 @@
       "modalidade_id": 5,
       "valor_estimado": "255581.76",
       "data_encerramento_proposta": "2026-12-03T09:30:00",
-      "link_origem": "",
+      "link_origem": null,
       "linhas": [
         "redes"
       ],
@@ -429,7 +429,7 @@
       "modalidade_id": 6,
       "valor_estimado": "9000.0",
       "data_encerramento_proposta": "2026-12-04T08:00:00",
-      "link_origem": "",
+      "link_origem": null,
       "linhas": [
         "perdas"
       ],

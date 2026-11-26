@@ -3,8 +3,9 @@
 from collections.abc import Callable, Iterator
 from dataclasses import replace
 from datetime import datetime
+from enum import StrEnum
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, HTTPException, Query
@@ -31,13 +32,26 @@ def _agora() -> datetime:
 
 def criar_app(
     fabrica: Callable[[], Session] | None = None,
-    config_filtro: Path = Path("config/filtro.toml"),
+    config_filtro: Path | None = None,
     relogio: Callable[[], datetime] | None = None,
 ) -> FastAPI:
-    """`fabrica` devolve uma Session, usada como context manager (uma por requisição)."""
-    fabrica = fabrica or fabrica_sessao(criar_engine(obter_config()))
+    """`fabrica` devolve uma Session, usada como context manager (uma por requisição).
+
+    Sem `config_filtro`, usa `RADAR_CONFIG_FILTRO` (padrão: config/filtro.toml da raiz).
+    """
+    config = obter_config()
+    fabrica = fabrica or fabrica_sessao(criar_engine(config))
     relogio = relogio or _agora
-    criterios = carregar_criterios(config_filtro)
+    criterios = carregar_criterios(config_filtro or config.config_filtro)
+    # `linha` e `uf` são enums dos critérios carregados: o OpenAPI (e o api.d.ts do
+    # front) carrega as uniões `Linha` e `UF`, e valor fora delas é 422 da validação.
+    # Para o mypy são strings (StrEnum é str); o tipo real só existe em tempo de execução.
+    if TYPE_CHECKING:
+        type Linha = str
+        type UF = str
+    else:
+        Linha = StrEnum("Linha", {nome: nome for nome in criterios.linhas})
+        UF = StrEnum("UF", {uf: uf for uf in criterios.ufs})
     app = FastAPI(title="Radar de licitações", docs_url=None, redoc_url=None)
 
     def sessao_da_requisicao() -> Iterator[Session]:
@@ -53,18 +67,16 @@ def criar_app(
     @app.get("/api/editais")
     def listar(
         sessao: SessaoDep,
-        linha: str | None = None,
-        uf: Annotated[list[str] | None, Query()] = None,
+        linha: Linha | None = None,
+        uf: Annotated[list[UF] | None, Query()] = None,
         todos: bool = False,
         limite: Annotated[int, Query(ge=1, le=500)] = 200,
     ) -> ListaOut:
         escolhidos = criterios
         if linha is not None:
-            if linha not in criterios.linhas:
-                raise HTTPException(status_code=422, detail=f"linha desconhecida: {linha}")
-            escolhidos = replace(escolhidos, linhas={linha: criterios.linhas[linha]})
+            escolhidos = replace(escolhidos, linhas={str(linha): criterios.linhas[linha]})
         if uf:
-            pedidas = {u.upper() for u in uf}
+            pedidas = {str(u) for u in uf}
             escolhidos = replace(escolhidos, ufs=[u for u in criterios.ufs if u in pedidas])
         editais = filtrar(sessao, escolhidos, relogio(), somente_abertos=not todos, limite=limite)
         return ListaOut(

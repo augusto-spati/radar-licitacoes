@@ -118,6 +118,11 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /**
+         * Linha
+         * @enum {string}
+         */
+        Linha: "redes" | "perdas" | "comercial" | "consultoria";
         /** ListaOut */
         ListaOut: {
             /** Atualizado Em */
@@ -130,6 +135,11 @@ export interface components {
             /** Atualizado Em */
             atualizado_em: string | null;
         };
+        /**
+         * UF
+         * @enum {string}
+         */
+        UF: "SP" | "PR" | "PE" | "MG";
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -155,8 +165,8 @@ export interface operations {
     listar_api_editais_get: {
         parameters: {
             query?: {
-                linha?: string | null;
-                uf?: string[] | null;
+                linha?: components["schemas"]["Linha"] | null;
+                uf?: components["schemas"]["UF"][] | null;
                 todos?: boolean;
                 limite?: number;
             };

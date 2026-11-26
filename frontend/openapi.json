@@ -233,6 +233,16 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "Linha": {
+        "enum": [
+          "redes",
+          "perdas",
+          "comercial",
+          "consultoria"
+        ],
+        "title": "Linha",
+        "type": "string"
+      },
       "ListaOut": {
         "properties": {
           "atualizado_em": {
@@ -280,6 +290,16 @@
         ],
         "title": "StatusOut",
         "type": "object"
+      },
+      "UF": {
+        "enum": [
+          "SP",
+          "PR",
+          "PE",
+          "MG"
+        ],
+        "title": "UF",
+        "type": "string"
       },
       "ValidationError": {
         "properties": {
@@ -340,7 +360,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/components/schemas/Linha"
                 },
                 {
                   "type": "null"
@@ -357,7 +377,7 @@
               "anyOf": [
                 {
                   "items": {
-                    "type": "string"
+                    "$ref": "#/components/schemas/UF"
                   },
                   "type": "array"
                 },

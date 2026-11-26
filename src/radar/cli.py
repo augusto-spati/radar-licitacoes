@@ -32,7 +32,8 @@ logger = logging.getLogger(__name__)
 app = typer.Typer(help="Radar de licitações.", no_args_is_help=True)
 
 FUSO = ZoneInfo("America/Sao_Paulo")
-ARQUIVO_CONFIG = Path("config/filtro.toml")
+# Padrão de RADAR_CONFIG_FILTRO (config/filtro.toml da raiz, sem depender do cwd).
+ARQUIVO_CONFIG = obter_config().config_filtro
 
 OpcaoConfig = Annotated[
     Path, typer.Option("--config", help="Arquivo de critérios (modalidades, UFs, linhas).")
