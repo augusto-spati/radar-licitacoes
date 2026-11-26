@@ -143,3 +143,26 @@ def test_limpar_outbox_apaga_so_publicadas_antigas(sessao: Session) -> None:
     restantes = set(sessao.scalars(select(Outbox.id)))
     assert id_antiga not in restantes
     assert {recente.id, pendente.id} <= restantes
+
+
+class FilaQueOmite(FilaFalsa):
+    def __init__(self, omitir: int) -> None:
+        super().__init__()
+        self.omitir = omitir
+
+    def enviar_lote(self, mensagens: list[Mensagem]) -> ResultadoEnvio:
+        return super().enviar_lote([m for m in mensagens if m.outbox_id != self.omitir])
+
+
+def test_id_sem_resposta_conta_como_recusada(sessao: Session) -> None:
+    _pendentes(sessao, 3)
+    omitida = sessao.scalars(select(Outbox).order_by(Outbox.id)).first()
+    assert omitida is not None
+
+    resumo = publicar_outbox(sessao, FilaQueOmite(omitir=omitida.id))
+
+    sessao.refresh(omitida)
+    assert (resumo.publicadas, resumo.recusadas) == (2, 1)
+    assert omitida.tentativas == 1
+    assert omitida.erro == "sem resposta da fila"
+    assert omitida.publicada_em is None
