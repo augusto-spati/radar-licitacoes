@@ -131,7 +131,7 @@ describe('contrato-guardado: quem decide é a base', () => {
           cwd: tmp,
           encoding: 'utf8',
           stdio: ['ignore', 'pipe', 'pipe'],
-          env: {...process.env, EVENTO: 'push', ANTES: base},
+          env: {...process.env, BASE_PR: base, CABECA_PR: g('rev-parse', 'HEAD')},
         });
       let falha;
       try {
@@ -155,32 +155,8 @@ describe('contrato-guardado: intervalo', () => {
   it('PR: do merge base até a cabeça do PR', () => {
     const git = gitFalso({'merge-base b1 c1': 'mb1'});
     expect(
-      escolherIntervalo({EVENTO: 'pull_request', BASE_PR: 'b1', CABECA_PR: 'c1'}, git),
+      escolherIntervalo({BASE_PR: 'b1', CABECA_PR: 'c1'}, git),
     ).toEqual({base: 'mb1', topo: 'c1'});
-  });
-
-  it('push: do before até HEAD', () => {
-    const git = gitFalso({'rev-parse HEAD': 'h1', 'cat-file -e a1^{commit}': ''});
-    expect(escolherIntervalo({EVENTO: 'push', ANTES: 'a1'}, git)).toEqual({base: 'a1', topo: 'h1'});
-  });
-
-  it('push de branch nova (before zerado): merge base com o branch padrão', () => {
-    const git = gitFalso({'rev-parse HEAD': 'h1', 'merge-base HEAD origin/main': 'mb1'});
-    expect(
-      escolherIntervalo({EVENTO: 'push', ANTES: '0'.repeat(40), BRANCH_PADRAO: 'main'}, git),
-    ).toEqual({base: 'mb1', topo: 'h1'});
-  });
-
-  it('push no próprio branch padrão sem before válido: commit anterior', () => {
-    const git = gitFalso({
-      'rev-parse HEAD': 'h1',
-      'merge-base HEAD origin/main': 'h1',
-      'rev-parse HEAD~1': 'p1',
-    });
-    expect(escolherIntervalo({EVENTO: 'push', ANTES: 'sumiu', BRANCH_PADRAO: 'main'}, git)).toEqual({
-      base: 'p1',
-      topo: 'h1',
-    });
   });
 });
 
@@ -212,13 +188,9 @@ describe('contrato-guardado: amarrações', () => {
     expect(linhas.every(l => l.endsWith(' @augusto-spati'))).toBe(true);
   });
 
-  it('o CI roda a guarda com o histórico completo e o front roda o verificador', () => {
+  it('o CI não tem mais o job antigo e o front roda o verificador', () => {
     const ci = readFileSync(path.join(raiz, '.github', 'workflows', 'ci.yml'), 'utf8');
-    expect(ci).toContain('  contrato-guardado:');
-    expect(ci).toContain('fetch-depth: 0');
-    expect(ci).toContain('git show "$BASE:frontend/scripts/contrato-guardado.mjs"');
-    expect(ci).toContain('node "$RUNNER_TEMP/guarda.mjs"');
-    expect(ci).not.toContain('run: node frontend/scripts/contrato-guardado.mjs');
+    expect(ci).not.toContain('contrato-guardado');
     expect(ci).toContain('npm run contrato:verificar');
     expect(ci).toContain('git diff --exit-code src/dados/api.d.ts');
   });
