@@ -17,6 +17,28 @@ jobs:
       - run: uv run lint-imports
       - run: uv run pytest -v
 
+  infra:
+    # Valida o Terraform sem acessar a AWS (sem credenciais).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.17.2
+          terraform_wrapper: false
+      - run: terraform fmt -check -recursive infra
+      - name: Validar bootstrap
+        run: |
+          terraform -chdir=infra/bootstrap init -backend=false -input=false
+          terraform -chdir=infra/bootstrap validate
+      - name: Validar prod
+        run: |
+          terraform -chdir=infra/prod init -backend=false -input=false
+          terraform -chdir=infra/prod validate
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --locked
+      - run: uv run pytest tests/unit/test_infra_estatico.py -v
+
   front:
     runs-on: ubuntu-latest
     defaults:

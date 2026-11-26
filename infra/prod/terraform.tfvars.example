@@ -1,0 +1,3 @@
+# Copie para terraform.tfvars (nao versionado) e preencha.
+email_alertas     = "voce@exemplo.com"
+emails_com_acesso = ["voce@exemplo.com"]
