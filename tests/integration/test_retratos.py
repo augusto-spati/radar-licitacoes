@@ -717,3 +717,40 @@ def test_auditar_sem_fontes_de_retrato_nao_muda(
 
     assert resultado.exit_code == 0, resultado.output
     assert "retrato" not in resultado.output
+
+
+def test_cli_registra_a_sanepar_real_e_atualizar_grava_com_a_fonte(
+    fabrica: sessionmaker[Session], config_filtro: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from radar.coleta.sanepar import ler_lista
+
+    assert [f.nome for f in cli._fontes_retrato()] == ["sanepar"]
+
+    dados = Path(__file__).resolve().parent.parent / "dados" / "fontes"
+
+    def ler(nome: str) -> str:
+        return (dados / nome).read_text(encoding="utf-8").replace("57 editais", "40 editais")
+
+    p1, p2, vazia = (
+        ler("lista-oe-abertura-p1.html"),
+        ler("lista-oe-abertura-p2.html"),
+        ler("lista-oe-abertura-p4-vazia.html"),
+    )
+    detalhe = ler("detalhe-345-26-vazamentos.html")
+    base = "https://www.sanepar.com.br"
+    rotas: Rota = {
+        f"{base}/licitacoes?Tipo=OE&Situacao=Abertura&page=0": httpx.Response(200, text=p1),
+        f"{base}/licitacoes?Tipo=OE&Situacao=Abertura&page=1": httpx.Response(200, text=p2),
+        f"{base}/licitacoes?Tipo=OE&Situacao=Abertura&page=2": httpx.Response(200, text=vazia),
+        f"{base}/licitacoes?Tipo=OE&Situacao=Julgamento&page=0": httpx.Response(200, text=vazia),
+    }
+    for linha in ler_lista(p1).linhas + ler_lista(p2).linhas:
+        rotas[f"{base}{linha.caminho_detalhe}"] = httpx.Response(200, text=detalhe)
+    monkeypatch.setattr(cli, "_criar_cliente_retrato", lambda _fonte: _cliente(rotas))
+
+    resultado = _atualizar(config_filtro, "sanepar")
+
+    assert resultado.exit_code == 0, resultado.output
+    situacoes = _situacoes(fabrica, "sanepar")
+    assert len(situacoes) == 40 and "OE-352/26" in situacoes
+    assert set(situacoes.values()) == {"aberta"}

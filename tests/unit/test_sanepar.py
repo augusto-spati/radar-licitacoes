@@ -179,6 +179,16 @@ class _ClienteFalso:
         return _Resposta(self._respostas[url])
 
 
+def _com_total(html: str, total: int) -> str:
+    return html.replace("57 editais encontrados", f"{total} editais encontrados")
+
+
+def _sem_linhas(html: str) -> str:
+    """A mesma página com o contador, mas sem nenhuma linha na tabela."""
+    ini = html.index("<tbody>") + len("<tbody>")
+    return html[:ini] + html[html.index("</tbody>") :]
+
+
 def _lista_url(situacao: str, pagina: int) -> str:
     return f"{BASE}/licitacoes?Tipo=OE&Situacao={situacao}&page={pagina}"
 
@@ -190,8 +200,8 @@ def _detalhes_de(html: str) -> dict[str, str]:
 def test_coletar_pagina_ate_a_lista_vazia_e_busca_todos_os_detalhes() -> None:
     respostas = (
         {
-            _lista_url("Abertura", 0): LISTA_P1,
-            _lista_url("Abertura", 1): LISTA_P2,
+            _lista_url("Abertura", 0): _com_total(LISTA_P1, 40),
+            _lista_url("Abertura", 1): _com_total(LISTA_P2, 40),
             _lista_url("Abertura", 2): LISTA_VAZIA,
             _lista_url("Julgamento", 0): LISTA_VAZIA,
         }
@@ -218,8 +228,8 @@ def test_coletar_pagina_ate_a_lista_vazia_e_busca_todos_os_detalhes() -> None:
 
 def test_coletar_para_se_a_pagina_repete_os_ids_da_anterior() -> None:
     respostas = {
-        _lista_url("Abertura", 0): LISTA_P1,
-        _lista_url("Abertura", 1): LISTA_P1,  # servidor ignorou `page`
+        _lista_url("Abertura", 0): _com_total(LISTA_P1, 20),
+        _lista_url("Abertura", 1): _com_total(LISTA_P1, 20),  # servidor ignorou `page`
         _lista_url("Julgamento", 0): LISTA_VAZIA,
     } | _detalhes_de(LISTA_P1)
     cliente = _ClienteFalso(respostas)
@@ -234,4 +244,29 @@ def test_coletar_para_se_a_pagina_repete_os_ids_da_anterior() -> None:
 def test_coletar_lista_sem_contador_para_com_erro() -> None:
     cliente = _ClienteFalso({_lista_url("Abertura", 0): "<html></html>"})
     with pytest.raises(ErroFonte, match="layout"):
+        list(FonteSanepar().coletar(cliente))  # type: ignore[arg-type]
+
+
+def test_coletar_contador_sem_linhas_na_pagina_1_nao_trunca() -> None:
+    cliente = _ClienteFalso(
+        {
+            _lista_url("Abertura", 0): LISTA_P1,
+            _lista_url("Abertura", 1): _sem_linhas(LISTA_P2),
+        }
+        | _detalhes_de(LISTA_P1)
+    )
+    with pytest.raises(ErroFonte, match="layout: contador sem linhas"):
+        list(FonteSanepar().coletar(cliente))  # type: ignore[arg-type]
+
+
+def test_coletar_lista_incompleta_falha() -> None:
+    # Contador diz 57, mas a paginação acaba depois de 40 ids.
+    cliente = _ClienteFalso(
+        {
+            _lista_url("Abertura", 0): LISTA_P1,
+            _lista_url("Abertura", 1): LISTA_P2,
+            _lista_url("Abertura", 2): LISTA_VAZIA,
+        }
+    )
+    with pytest.raises(ErroFonte, match=r"layout: lista incompleta: 40 de 57"):
         list(FonteSanepar().coletar(cliente))  # type: ignore[arg-type]

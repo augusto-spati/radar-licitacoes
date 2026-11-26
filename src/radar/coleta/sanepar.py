@@ -49,6 +49,8 @@ def parse_data(texto: str | None, exige_hora: bool = False) -> datetime | None:
     """`dd/mm/aaaa [às HHhMM]`. Em intervalo ("a até b") vale o fim. Sem data: None."""
     achadas = _DATA.findall(texto or "")
     if not achadas:
+        if _limpo(texto):
+            logger.debug("data_nao_reconhecida", extra={"texto": _limpo(texto)})
         return None
     dia, mes, ano, hora, minuto = achadas[-1]
     try:
@@ -193,23 +195,30 @@ class FonteSanepar:
         caminhos: dict[str, None] = {}  # ordem de chegada, sem repetir
         for situacao in SITUACOES:
             vistos: set[str] = set()
+            esperado = 0
             for pagina in range(MAX_PAGINAS):
                 url = _url_lista(situacao, pagina)
                 html = cliente.get(url).text
-                linhas = ler_lista(html).linhas
-                if not linhas:
+                lista = ler_lista(html)
+                if not lista.linhas:
+                    if lista.total:
+                        # Contador sem linhas: seletor quebrado, não fim da lista (truncaria).
+                        raise ErroFonte("layout: contador sem linhas")
                     yield PaginaColetada(url, "html", html)
                     break
-                ids = {linha.numero for linha in linhas}
+                esperado = lista.total or 0
+                ids = {linha.numero for linha in lista.linhas}
                 if ids <= vistos:
                     logger.warning("lista_repetida", extra={"url": url})
                     break
                 vistos |= ids
                 yield PaginaColetada(url, "html", html)
-                for linha in linhas:
+                for linha in lista.linhas:
                     caminhos.setdefault(linha.caminho_detalhe)
             else:
                 raise ErroFonte(f"lista sem fim: mais de {MAX_PAGINAS} páginas em {situacao}")
+            if len(vistos) < esperado:
+                raise ErroFonte(f"layout: lista incompleta: {len(vistos)} de {esperado}")
         for caminho in caminhos:
             url = f"{BASE}{caminho}"
             yield PaginaColetada(url, "html", cliente.get(url).text)
@@ -218,6 +227,7 @@ class FonteSanepar:
         linhas: dict[str, LinhaLista] = {}  # a última lista que traz o edital vence
         detalhes: dict[str, tuple[str, Detalhe]] = {}
         for pagina in paginas:
+            # Um detalhe ilegível derruba o retrato inteiro de propósito (fail-loud).
             if _e_lista(pagina.url):
                 for linha in ler_lista(pagina.texto).linhas:
                     linhas[linha.numero] = linha
