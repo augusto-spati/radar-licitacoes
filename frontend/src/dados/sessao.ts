@@ -44,7 +44,7 @@ const MENSAGENS: Record<string, string> = {
 export const loginReal = (): boolean => import.meta.env.VITE_FONTE === 'api';
 
 async function chamar(operacao: string, corpo: object): Promise<RespostaCognito> {
-  const regiao = import.meta.env.VITE_COGNITO_REGION ?? 'us-east-1';
+  const regiao = import.meta.env.VITE_COGNITO_REGION ?? 'us-east-2';
   let resposta: Response;
   try {
     resposta = await fetch(`https://cognito-idp.${regiao}.amazonaws.com/`, {

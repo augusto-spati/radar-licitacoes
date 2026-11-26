@@ -1,7 +1,7 @@
 variable "regiao" {
   description = "Regiao AWS."
   type        = string
-  default     = "us-east-1"
+  default     = "us-east-2"
 }
 
 variable "email_alertas" {

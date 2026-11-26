@@ -51,7 +51,7 @@ describe('Entrar (protótipo, fonte de exemplo)', () => {
 describe('Entrar (login real, Cognito)', () => {
   it('pede o código por EMAIL_OTP, confirma e guarda o id token', async () => {
     vi.stubEnv('VITE_FONTE', 'api');
-    vi.stubEnv('VITE_COGNITO_REGION', 'us-east-1');
+    vi.stubEnv('VITE_COGNITO_REGION', 'us-east-2');
     vi.stubEnv('VITE_COGNITO_CLIENT_ID', 'cliente-1');
     const mock = simularFetch(respostaJson(desafioCognito), respostaJson(tokensCognito));
     abrir();
@@ -60,7 +60,7 @@ describe('Entrar (login real, Cognito)', () => {
     await pedirCodigo(' Tio@FR.com.br ');
     expect(screen.getByText('Se este e-mail tiver acesso, o código chega em instantes.')).toBeTruthy();
     const [url, init] = mock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('https://cognito-idp.us-east-1.amazonaws.com/');
+    expect(url).toBe('https://cognito-idp.us-east-2.amazonaws.com/');
     expect((init.headers as Record<string, string>)['X-Amz-Target']).toBe(
       'AWSCognitoIdentityProviderService.InitiateAuth',
     );

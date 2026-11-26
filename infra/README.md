@@ -1,6 +1,6 @@
 # Infraestrutura (Terraform)
 
-Regiao `us-east-1`. Nada aqui cobra parado: o teste `tests/unit/test_infra_estatico.py`
+Regiao `us-east-2`. Nada aqui cobra parado: o teste `tests/unit/test_infra_estatico.py`
 reprova NAT Gateway, load balancer, RDS, EC2 e EIP.
 
 ## 1. Bootstrap (uma vez)
@@ -21,9 +21,9 @@ do apply, o primeiro deploy tem tres passos: criar os repositorios, empurrar a t
     cp terraform.tfvars.example terraform.tfvars   # preencher; nao e versionado
     terraform init -backend-config="bucket=radar-licitacoes-tfstate-<account_id>"
     terraform apply -target=aws_ecr_repository.api -target=aws_ecr_repository.coletor
-    aws ecr get-login-password | docker login --username AWS --password-stdin <account_id>.dkr.ecr.us-east-1.amazonaws.com
-    docker build --platform linux/amd64 --provenance=false -f docker/api-lambda.Dockerfile -t <account_id>.dkr.ecr.us-east-1.amazonaws.com/radar-api:bootstrap .
-    docker push <account_id>.dkr.ecr.us-east-1.amazonaws.com/radar-api:bootstrap
+    aws ecr get-login-password | docker login --username AWS --password-stdin <account_id>.dkr.ecr.us-east-2.amazonaws.com
+    docker build --platform linux/amd64 --provenance=false -f docker/api-lambda.Dockerfile -t <account_id>.dkr.ecr.us-east-2.amazonaws.com/radar-api:bootstrap .
+    docker push <account_id>.dkr.ecr.us-east-2.amazonaws.com/radar-api:bootstrap
 
 Rode o `docker build` na raiz do repositorio. `--platform linux/amd64 --provenance=false`
 e obrigatorio: o Lambda rejeita manifestos OCI index (o buildx gera um com proveniencia).
@@ -59,7 +59,7 @@ de novo. Os e-mails ficam em minusculas (`lower()`), e o login nao diferencia ma
   `terraform apply`, a pessoa clica no link.
 - O primeiro e-mail com codigo pode cair no **spam** (remetente pessoal enviado pelo SES).
   Marque como "nao e spam" uma vez.
-- O build do front usa `VITE_FONTE=api`, `VITE_COGNITO_REGION=us-east-1` e
+- O build do front usa `VITE_FONTE=api`, `VITE_COGNITO_REGION=us-east-2` e
   `VITE_COGNITO_CLIENT_ID=<saida cognito_client_id>`.
 
 ### Sair do sandbox depois (sem mudar codigo)
@@ -94,6 +94,7 @@ de novo. Os e-mails ficam em minusculas (`lower()`), e o login nao diferencia ma
 | Variavel | Valor |
 | --- | --- |
 | `AWS_ROLE_ARN` | saida `role_deploy_arn` |
+| `AWS_REGION` | regiao (opcional; padrao `us-east-2`) |
 | `S3_BUCKET_FRONT` | `radar-licitacoes-front-<account_id>` |
 | `CLOUDFRONT_DISTRIBUTION_ID` | saida `id_distribuicao` |
 | `COGNITO_CLIENT_ID` | saida `cognito_client_id` |

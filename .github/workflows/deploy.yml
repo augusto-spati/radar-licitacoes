@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  AWS_REGION: us-east-1
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-2' }}
 
 jobs:
   # Sem credenciais AWS e sem id-token: roda scripts de terceiros (npm) isolado.
@@ -50,7 +50,7 @@ jobs:
         working-directory: frontend
         env:
           VITE_FONTE: api
-          VITE_COGNITO_REGION: us-east-1
+          VITE_COGNITO_REGION: ${{ vars.AWS_REGION || 'us-east-2' }}
           VITE_COGNITO_CLIENT_ID: ${{ vars.COGNITO_CLIENT_ID }}
         run: |
           npm ci --ignore-scripts
@@ -91,7 +91,7 @@ jobs:
       - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
-          aws-region: us-east-1
+          aws-region: ${{ vars.AWS_REGION || 'us-east-2' }}
 
       - id: ecr
         uses: aws-actions/amazon-ecr-login@7290e214a610b32bc0eef81748948b6d466a8783 # v2.2.0
