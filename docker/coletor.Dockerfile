@@ -14,8 +14,11 @@ RUN pip install --no-cache-dir --no-deps .
 COPY config/ /app/config/
 COPY migrations/ /app/migrations/
 COPY alembic.ini /app/alembic.ini
-ENV PYTHONPATH=/app/src \
-    RADAR_DB_NULLPOOL=true \
+# Sem PYTHONPATH: o pacote ja esta instalado no site-packages (pip install .), entao
+# `radar` e os imports funcionam; config/ e migrations/ ficam em /app (cwd do alembic).
+RUN useradd --system --no-create-home radar
+USER radar
+ENV RADAR_DB_NULLPOOL=true \
     RADAR_CONFIG_FILTRO=/app/config/filtro.toml
 ENTRYPOINT ["radar"]
 CMD ["atualizar"]
