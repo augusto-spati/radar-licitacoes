@@ -37,6 +37,8 @@ packages = ["src/radar"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+addopts = "-m 'not rede'"
+markers = ["rede: acessa a rede real (PNCP); fora do CI"]
 
 [tool.ruff]
 line-length = 100
