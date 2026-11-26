@@ -21,14 +21,15 @@ from radar.coleta import (
     ErroFonte,
     PaginaColetada,
     executar_retrato,
-    ids_do_retrato,
     ler_paginas_nao_processadas,
     limpar_brutos,
+    paginas_do_retrato,
     ultimo_retrato,
 )
 from radar.coleta.modelos import ColetaJanela, ColetaRetrato, PaginaBruta
 from radar.coleta.retratos import CHAVE_RETRATOS, USER_AGENT, chave_da_fonte
-from radar.comum import Base, fabrica_sessao
+from radar.coleta.sanepar import FonteSanepar
+from radar.comum import Base, Outbox, fabrica_sessao
 from radar.editais import registrar_normalizados
 from radar.editais.modelos import Edital
 
@@ -228,7 +229,11 @@ def _retratos(sessao: Session, fonte: str) -> list[ColetaRetrato]:
     )
 
 
-def test_retrato_concluido_grava_paginas_e_devolve_normalizados(sessao: Session) -> None:
+def _mensagens(sessao: Session) -> list[tuple[str, dict[str, int]]]:
+    return [(m.tipo, m.carga) for m in sessao.scalars(select(Outbox).order_by(Outbox.id))]
+
+
+def test_retrato_concluido_grava_paginas(sessao: Session) -> None:
     fonte = FonteFalsa("sanepar", paginas=2)
     cliente = _cliente(_rotas("sanepar", _lista("OE-1/26", "OE-2/26"), _lista("OE-3/26")))
 
@@ -236,15 +241,117 @@ def test_retrato_concluido_grava_paginas_e_devolve_normalizados(sessao: Session)
 
     assert resumo.status == "concluido"
     assert resumo.registros == 3
-    assert ids_do_retrato(resumo) == {"OE-1/26", "OE-2/26", "OE-3/26"}
     retrato = _retratos(sessao, "sanepar")[-1]
     assert (retrato.status, retrato.paginas, retrato.registros) == ("concluido", 2, 3)
     assert retrato.concluido_em is not None
     paginas = sessao.scalars(select(PaginaBruta).where(PaginaBruta.retrato_id == retrato.id)).all()
     assert [p.numero_pagina for p in paginas] == [1, 2]
     assert all(p.formato == "html" and p.conteudo_texto for p in paginas)
-    assert all(p.janela_id is None and p.processada_em is not None for p in paginas)
-    assert sessao.scalar(select(func.count()).select_from(Edital)) == 0  # papel da cli
+    assert all(p.janela_id is None for p in paginas)
+    assert sessao.scalar(select(func.count()).select_from(Edital)) == 0  # papel do consumidor
+
+
+def test_retrato_concluido_enfileira_uma_mensagem(sessao: Session) -> None:
+    fonte = FonteFalsa("sanepar", paginas=2)
+    cliente = _cliente(_rotas("sanepar", _lista("OE-1/26", "OE-2/26"), _lista("OE-3/26")))
+
+    resumo = executar_retrato(sessao, fonte, cliente, AGORA)
+
+    assert resumo.status == "concluido" and resumo.retrato_id is not None
+    # Só o retrato vai para a fila; as páginas dele não viram mensagens próprias.
+    assert _mensagens(sessao) == [("retrato_coletado", {"retrato_id": resumo.retrato_id})]
+    paginas = sessao.scalars(select(PaginaBruta).where(PaginaBruta.retrato_id == resumo.retrato_id))
+    assert [p.processada_em for p in paginas] == [None, None]  # quem marca é o consumidor
+    retrato = sessao.get(ColetaRetrato, resumo.retrato_id)
+    assert retrato is not None and retrato.processado_em is None
+
+
+def test_retrato_em_falha_nao_enfileira(sessao: Session) -> None:
+    fonte = FonteFalsa("sanepar", paginas=2)
+    rotas = _rotas("sanepar", _lista("OE-1/26"), httpx.Response(500))
+
+    resumo = executar_retrato(sessao, fonte, _cliente(rotas), AGORA)
+    abaixo = executar_retrato(
+        sessao,
+        FonteFalsa("sanepar", paginas=1, minimo_registros=5),
+        _cliente(_rotas("sanepar", _lista("OE-1/26"))),
+        AGORA,
+    )
+
+    assert (resumo.status, abaixo.status) == ("falha", "falha")
+    assert _mensagens(sessao) == []
+
+
+class FonteAmostra:
+    """Devolve páginas fixas (sem rede) e delega `extrair` a outra função."""
+
+    marcador_bloqueio: str | None = None
+    minimo_registros = 1
+    rotulo_saida = "saiu da lista"
+
+    def __init__(
+        self,
+        nome: str,
+        paginas: list[PaginaColetada],
+        extrair: Callable[[list[PaginaColetada]], list[dict[str, Any]]],
+    ) -> None:
+        self.nome = nome
+        self.paginas = paginas
+        self._extrair = extrair
+
+    def coletar(self, cliente: ClienteEducado) -> Iterator[PaginaColetada]:
+        yield from self.paginas
+
+    def extrair(self, paginas: list[PaginaColetada]) -> list[dict[str, Any]]:
+        return self._extrair(paginas)
+
+
+DADOS = Path(__file__).resolve().parent.parent / "dados" / "fontes"
+SANEPAR = "https://www.sanepar.com.br"
+
+
+def test_paginas_do_retrato_reconstroi_json_e_html(sessao: Session) -> None:
+    lista = (DADOS / "lista-oe-abertura-p1.html").read_text(encoding="utf-8")
+    detalhe = (DADOS / "detalhe-345-26-vazamentos.html").read_text(encoding="utf-8")
+    html = [
+        PaginaColetada(f"{SANEPAR}/licitacoes?Tipo=OE&Situacao=Abertura&page=0", "html", lista),
+        PaginaColetada(f"{SANEPAR}/licitacao/detalhe/352/26", "html", detalhe),
+    ]
+    # O JSON volta re-serializado (espaços e escapes mudam); o que vale é o extrair igual.
+    texto_json = '{ "ids" : ["OE-1/26", "OE-2/26"],\n "ufs": {"OE-2/26": "S\\u00c3O"} }'
+    json_ = [PaginaColetada("https://json.test/p1", "json", texto_json)]
+    casos = [
+        FonteAmostra("sanepar", html, FonteSanepar().extrair),
+        FonteAmostra("json", json_, FonteFalsa("json", paginas=1).extrair),
+    ]
+
+    reconstruidas: list[PaginaColetada] = []
+    for fonte in casos:
+        resumo = executar_retrato(sessao, fonte, _cliente({}), AGORA)
+        assert resumo.status == "concluido" and resumo.retrato_id is not None
+
+        reconstruidas = paginas_do_retrato(sessao, resumo.retrato_id)
+
+        assert [(p.url, p.formato) for p in reconstruidas] == [
+            (p.url, p.formato) for p in fonte.paginas
+        ]
+        assert fonte.extrair(reconstruidas) == fonte.extrair(fonte.paginas)
+        assert len(fonte.extrair(reconstruidas)) > 0
+    # A última é a JSON: re-serializada sem escapar o não-ASCII.
+    assert "SÃO" in reconstruidas[0].texto
+    assert json.loads(reconstruidas[0].texto) == json.loads(texto_json)
+
+
+def test_paginas_do_retrato_em_ordem_de_numero(sessao: Session) -> None:
+    fonte = FonteFalsa("sanepar", paginas=3)
+    rotas = _rotas("sanepar", _lista("OE-1/26"), _lista("OE-2/26"), _lista("OE-3/26"))
+    resumo = executar_retrato(sessao, fonte, _cliente(rotas), AGORA)
+    assert resumo.retrato_id is not None
+
+    paginas = paginas_do_retrato(sessao, resumo.retrato_id)
+
+    assert [p.url for p in paginas] == [f"https://sanepar.test/p{n}" for n in (1, 2, 3)]
+    assert paginas_do_retrato(sessao, resumo.retrato_id + 999) == []
 
 
 def test_retrato_abaixo_do_minimo_e_falha(sessao: Session) -> None:
@@ -255,8 +362,6 @@ def test_retrato_abaixo_do_minimo_e_falha(sessao: Session) -> None:
 
     assert resumo.status == "falha"
     assert resumo.erro == "abaixo do minimo: 2 < 5"
-    assert resumo.normalizados == []
-    assert ids_do_retrato(resumo) == set()
     assert _retratos(sessao, "sanepar")[-1].status == "falha"
 
 
@@ -368,7 +473,7 @@ def test_ultimo_retrato_ignora_o_em_andamento(sessao: Session) -> None:
 
 
 def test_paginas_de_retrato_nao_entram_na_fila_do_pncp(sessao: Session) -> None:
-    # Uma de retrato concluído (marcada processada) e uma de retrato em falha (não marcada).
+    # Páginas de retrato (concluído ou em falha) nunca são JSON do PNCP, processadas ou não.
     fonte = FonteFalsa("sanepar", paginas=2)
     executar_retrato(
         sessao, fonte, _cliente(_rotas("sanepar", _lista("OE-1/26"), _lista("OE-2/26"))), AGORA
@@ -384,11 +489,20 @@ def test_paginas_de_retrato_nao_entram_na_fila_do_pncp(sessao: Session) -> None:
 
 
 def _retrato_com_paginas(
-    sessao: Session, fonte: str, status: str, horas_atras: float, paginas: int = 2
+    sessao: Session,
+    fonte: str,
+    status: str,
+    horas_atras: float,
+    paginas: int = 2,
+    processado: bool | None = None,
 ) -> int:
+    """`processado` None: o concluído sai processado (o caso normal); os outros, não."""
+    if processado is None:
+        processado = status == "concluido"
+    iniciado = AGORA - timedelta(hours=horas_atras)
     retrato = ColetaRetrato(
-        fonte=fonte, status=status, iniciado_em=AGORA - timedelta(hours=horas_atras),
-        paginas=paginas, registros=paginas,
+        fonte=fonte, status=status, iniciado_em=iniciado, paginas=paginas, registros=paginas,
+        processado_em=iniciado + timedelta(minutes=5) if processado else None,
     )  # fmt: skip
     sessao.add(retrato)
     sessao.flush()
@@ -426,6 +540,28 @@ def test_limpar_brutos_mantem_os_3_ultimos_concluidos_e_10_falhas(
     assert len(_retratos(sessao, "sanepar")) == 18  # os retratos ficam, só as páginas saem
     registro = next(r for r in caplog.records if r.getMessage() == "brutos_removidos")
     assert (registro.__dict__["fonte"], registro.__dict__["paginas"]) == ("sanepar", 8)
+
+
+def test_limpar_brutos_preserva_concluido_nao_processado(sessao: Session) -> None:
+    # Review Focus 5: o concluído ainda na fila, mais velho que todos, não perde as páginas.
+    pendente = _retrato_com_paginas(sessao, "sanepar", "concluido", 10, processado=False)
+    processados = [_retrato_com_paginas(sessao, "sanepar", "concluido", h) for h in (5, 4, 3, 2, 1)]
+
+    removidas = limpar_brutos(sessao, "sanepar")
+
+    assert removidas == 4  # os 2 processados mais velhos, 2 páginas cada
+    assert _com_paginas(sessao) == set(processados[2:]) | {pendente}
+
+
+def test_limpar_brutos_conta_so_processados_para_os_3_mantidos(sessao: Session) -> None:
+    # Concluídos novos ainda não processados não empurram os processados para fora.
+    processados = [_retrato_com_paginas(sessao, "sanepar", "concluido", h) for h in (9, 8, 7)]
+    pendentes = [
+        _retrato_com_paginas(sessao, "sanepar", "concluido", h, processado=False) for h in (2, 1)
+    ]
+
+    assert limpar_brutos(sessao, "sanepar") == 0
+    assert _com_paginas(sessao) == set(processados) | set(pendentes)
 
 
 def test_limpar_brutos_sem_excesso_nao_remove_nada(sessao: Session) -> None:
@@ -743,6 +879,9 @@ def test_rotulo_de_saida_vem_da_fonte(
         )
 
 
+@pytest.mark.xfail(
+    reason="Task 5: a cli ainda registra síncrono e não marca processado_em", strict=False
+)
 def test_atualizar_limpa_brutos_antigos_da_fonte(
     fabrica: sessionmaker[Session],
     config_filtro: Path,

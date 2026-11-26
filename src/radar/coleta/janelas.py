@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from radar.coleta.modelos import ColetaJanela, PaginaBruta
 from radar.coleta.pncp import ClientePNCP, ErroPNCP
+from radar.comum import enfileirar
 
 logger = logging.getLogger(__name__)
 
@@ -151,8 +152,7 @@ def ler_paginas_nao_processadas(
     """Pares (pagina_id, registros) das páginas do PNCP ainda não processadas, em ordem de id.
 
     `excluir` são ids a pular (páginas que falharam nesta execução). As páginas de retrato
-    ficam de fora: o fluxo do retrato as marca como processadas ao concluir, e nem as de um
-    retrato em falha são JSON do PNCP.
+    ficam de fora: não são JSON do PNCP, e quem as processa é o consumidor do retrato.
     """
     consulta = select(PaginaBruta.id, PaginaBruta.conteudo).where(
         PaginaBruta.processada_em.is_(None), PaginaBruta.janela_id.is_not(None)
@@ -337,7 +337,7 @@ def _gravar_pagina(
     comando = pg_insert(PaginaBruta).values(
         janela_id=janela.id, numero_pagina=numero, conteudo=bruto, coletada_em=agora
     )
-    sessao.execute(
+    pagina_id: int = sessao.execute(
         comando.on_conflict_do_update(
             constraint="uq_pagina_bruta_janela_numero",
             set_={
@@ -345,9 +345,11 @@ def _gravar_pagina(
                 "coletada_em": agora,
                 "processada_em": None,
             },
-        )
-    )
-    sessao.commit()  # checkpoint: a página sobrevive a uma falha posterior
+        ).returning(PaginaBruta.id)
+    ).scalar_one()
+    # Regravada também volta à fila: processada_em voltou a NULL.
+    enfileirar(sessao, "pagina_coletada", {"pagina_id": pagina_id})
+    sessao.commit()  # checkpoint: a página (e a mensagem) sobrevive a uma falha posterior
 
 
 def _sem_paginas(sessao: Session, janela: ColetaJanela) -> bool:

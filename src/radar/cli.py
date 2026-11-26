@@ -3,7 +3,7 @@
 import logging
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
 import typer
@@ -22,11 +22,11 @@ from radar.coleta import (
     criar_http,
     criar_http_educado,
     executar_retrato,
-    ids_do_retrato,
     ler_paginas_nao_processadas,
     limpar_brutos,
     marcar_processada,
     marcar_retrato_falha,
+    paginas_do_retrato,
     planejar_janelas,
     trava_fonte,
     ultimo_retrato,
@@ -98,6 +98,18 @@ def _escolher_fontes(opcao: str | None, disponiveis: list[str]) -> list[str]:
     return [nome for nome in disponiveis if nome in pedidas]
 
 
+def _extrair_do_retrato(
+    sessao: Session, fonte: FonteRetrato, retrato_id: int
+) -> tuple[list[dict[str, Any]], set[str]]:
+    """Normalizados e ids listados, relidos das páginas brutas do retrato.
+
+    TODO Task 5: ponte temporária; o registro síncrono sai da cli e vai para o consumidor.
+    """
+    normalizados = fonte.extrair(paginas_do_retrato(sessao, retrato_id))
+    ids = {str(n["id_na_fonte"]) for n in normalizados if n.get("id_na_fonte") not in (None, "")}
+    return normalizados, ids
+
+
 def _rodar_retrato(sessao: Session, fonte: FonteRetrato) -> int:
     """Retrato de uma fonte; devolve 1 se falhou. Falha de uma fonte não para as outras."""
     retrato_id: int | None = None
@@ -115,8 +127,9 @@ def _rodar_retrato(sessao: Session, fonte: FonteRetrato) -> int:
                 typer.echo(f"retrato {fonte.nome}: falha: {resumo.erro}")
                 return 1
             # Fronteira coleta -> editais: gravar e reconciliar numa transação só.
-            vistos = ids_do_retrato(resumo)
-            resultado = registrar_normalizados(sessao, resumo.normalizados)
+            assert retrato_id is not None  # concluido sempre tem id
+            normalizados, vistos = _extrair_do_retrato(sessao, fonte, retrato_id)  # TODO Task 5
+            resultado = registrar_normalizados(sessao, normalizados)
             if resultado.invalidos > FRACAO_INVALIDOS * resumo.registros:
                 sessao.rollback()  # desfaz o registro: nada gravado, nada reconciliado
                 erro = f"muitos inválidos: {resultado.invalidos} de {resumo.registros}"
@@ -124,7 +137,6 @@ def _rodar_retrato(sessao: Session, fonte: FonteRetrato) -> int:
                     "retrato_muitos_invalidos",
                     extra={"fonte": fonte.nome, "retrato_id": retrato_id, "erro": erro},
                 )
-                assert retrato_id is not None  # concluido sempre tem id
                 marcar_retrato_falha(sessao, retrato_id, erro)
                 typer.echo(f"retrato {fonte.nome}: falha: {erro}")
                 return 1
