@@ -21,9 +21,9 @@ Cada item marcado aponta para o arquivo e o commit onde está implementado e par
 
 ## Eventos e AWS
 
-Filas ficam como futuro, no tema 2: primeiro pgmq no Postgres, depois outbox, depois SQS. A etapa "2b-brutos" (páginas brutas no S3) foi descartada: a retenção de brutos da etapa 3 (`limpar_brutos`) mantém o banco em cerca de 120 MB. O S3 volta no tema 4, para os PDFs dos editais.
+Filas ficam como futuro, no tema 2: outbox + SQS (etapa 4a; o pgmq não existe no Neon) e depois a coleta do PNCP por janela em Lambda (4b). A etapa "2b-brutos" (páginas brutas no S3) foi descartada: a retenção de brutos da etapa 3 (`limpar_brutos`) mantém o banco em cerca de 120 MB. O S3 volta no tema 4, para os PDFs dos editais.
 
-- [ ] Coleta, fila e processamento: fila em memória, depois pgmq (tema 2).
+- [ ] Coleta, fila e processamento: outbox + SQS com consumidor idempotente (etapa 4a).
 - [ ] Padrão outbox e SQS (tema 2).
 - [x] Infraestrutura como código (Terraform): S3, CloudFront, Lambda, API Gateway, ECS Fargate, EventBridge Scheduler, Cognito, SES, SSM, alarmes e orçamento. `infra/bootstrap/`, `infra/prod/*.tf`, `infra/README.md`. Vídeo: a gravar (`docs/videos/02b-aws.md`).
 - [x] IAM com papel por função e deploy sem chave fixa (OIDC do GitHub Actions, trust com `sub` imutável e `job_workflow_ref`). `infra/prod/github_oidc.tf`, `.github/workflows/deploy.yml` (commits `80ec1d9`, `c34b14f`). Vídeo: a gravar.
