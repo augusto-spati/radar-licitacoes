@@ -13,13 +13,13 @@ código cria campos ocultos (`new HTMLHidden('SCL', 12, <id>, '<valor>')` seguid
 `d.c_<id>.field = '<nome>'`): de lá saem `lc_chave`, Custo Estimado, Município etc.
 
 Armadilhas vistas nas amostras (`tests/dados/fontes/compesa-p*-reduzida.js.txt`):
-- data: `dd/MM/yyyy` na página 1 (refresh) e `MM/dd/yyyy` nas seguintes (refreshpage), apesar
-  de a coluna declarar `dd/MM/yyyy` nas duas. O estilo vem da URL da página (`estilo_da_url`),
-  que fica gravada com a página bruta. Uma data impossível no estilo da página (mês 13) é lida
-  no outro e loga `data_formato_inconsistente`; mais de 20% de datas impossíveis numa página
-  é erro de layout (o estilo mudou), em vez de trocar dia e mês em silêncio;
-- custo estimado: `2856395,49` na página 1 e `223078.49` nas seguintes (o mesmo troca-troca de
-  locale), então o separador decimal também segue o estilo da página;
+- locale: o portal formata data e número pelo `Accept-Language` da requisição, não pela página.
+  Sem o header (o padrão do httpx) tudo vem en-US (`11/24/2026`, `223078.49`); com
+  `Accept-Language: pt-BR` tudo vem pt-BR (`24/11/2026`, `2856395,49`), nas duas páginas, apesar
+  de a coluna declarar `dd/MM/yyyy` sempre. Por isso toda requisição manda `IDIOMA` e toda página
+  é lida em pt-BR. Uma data impossível em dd/MM (mês 13) é lida como MM/dd e loga
+  `data_formato_inconsistente`; mais de 20% delas numa página é erro de layout (o locale mudou),
+  em vez de trocar dia e mês em silêncio;
 - encoding: o header diz ISO-8859-1, mas o corpo é windows-1252 (o travessão vem como 0x96),
   então ISO-8859-1 é lido como windows-1252 (como fazem os navegadores);
 - o portal repete linhas idênticas (mesmo `lc_chave`); a última vence.
@@ -69,7 +69,8 @@ _COL_ABERTURA = "field817072"
 _COL_HORA = "field817073"
 _COL_SITUACAO = "field817232"
 
-Estilo = Literal["br", "us"]
+# Sem isto o portal responde em en-US (MM/dd/yyyy e ponto decimal).
+IDIOMA = {"Accept-Language": "pt-BR,pt;q=0.9"}
 
 _SITUACAO: dict[str, str] = {
     "abertura": "aberta",
@@ -91,7 +92,7 @@ _SITUACAO: dict[str, str] = {
 # MI ("MI 001/2026 CEL-2", consultoria financiada pela AFD) não foi confirmado: cai no fallback
 # `Compesa (MI)` com log `modalidade_desconhecida`.
 MODALIDADES_COMPESA: dict[str, str] = {"LC": "Licitação", "ECR": "Credenciamento"}
-FRACAO_DATAS_IMPOSSIVEIS = 0.2  # acima disso, o estilo de data da página está errado
+FRACAO_DATAS_IMPOSSIVEIS = 0.2  # acima disso, a página não veio em dd/MM
 
 # --- literal JavaScript ----------------------------------------------------------------------
 
@@ -298,40 +299,30 @@ def decodificar(conteudo: bytes, charset: str | None) -> str:
         return conteudo.decode("utf-8", errors="replace")
 
 
-def estilo_da_url(url: str) -> Estilo:
-    """A página 1 (`param=refresh`) vem em pt-BR; as do `refreshpage`, em en-US."""
-    return "us" if "param=refreshpage" in url else "br"
-
-
 _DATA = re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4})(?:\s+(\d{1,2}):(\d{2}))?")
 _HORA = re.compile(r"(\d{1,2}):(\d{2})")
 
 
-def _dia_mes(a: int, b: int, estilo: Estilo) -> tuple[int, int]:
-    return (a, b) if estilo == "br" else (b, a)
-
-
-def data_impossivel(data: str | None, estilo: Estilo) -> bool:
-    """A data existe no texto mas não é uma data válida no estilo da página (ex.: mês 13)."""
+def data_impossivel(data: str | None) -> bool:
+    """A data existe no texto mas não é válida em dd/MM/yyyy (ex.: `11/24/2026`)."""
     achado = _DATA.search(data or "")
     if not achado:
         return False
-    dia, mes = _dia_mes(int(achado.group(1)), int(achado.group(2)), estilo)
     try:
-        datetime(int(achado.group(3)), mes, dia)
+        datetime(int(achado.group(3)), int(achado.group(2)), int(achado.group(1)))
     except ValueError:
         return True
     return False
 
 
-def parse_data(data: str | None, hora: str | None, estilo: Estilo) -> datetime | None:
-    """Data da coluna ABERTURA mais a HORA, no estilo da página (`br` = dd/MM, `us` = MM/dd)."""
+def parse_data(data: str | None, hora: str | None) -> datetime | None:
+    """Data da coluna ABERTURA (dd/MM/yyyy) mais a HORA."""
     achado = _DATA.search(data or "")
     if not achado:
         if (data or "").strip():
             logger.warning("data_nao_reconhecida", extra={"texto": data})
         return None
-    a, b, ano = int(achado.group(1)), int(achado.group(2)), int(achado.group(3))
+    dia, mes, ano = int(achado.group(1)), int(achado.group(2)), int(achado.group(3))
     relogio = _HORA.search(hora or "")
     if relogio:
         hh, mm = int(relogio.group(1)), int(relogio.group(2))
@@ -340,7 +331,6 @@ def parse_data(data: str | None, hora: str | None, estilo: Estilo) -> datetime |
     else:
         logger.warning("data_sem_hora", extra={"texto": data})
         hh = mm = 0
-    dia, mes = _dia_mes(a, b, estilo)
     try:
         return datetime(ano, mes, dia, hh, mm)
     except ValueError:
@@ -350,18 +340,17 @@ def parse_data(data: str | None, hora: str | None, estilo: Estilo) -> datetime |
     except ValueError:
         logger.warning("data_invalida", extra={"texto": data, "hora": hora})
         return None
-    logger.warning("data_formato_inconsistente", extra={"texto": data, "estilo": estilo})
+    logger.warning("data_formato_inconsistente", extra={"texto": data})
     return trocada
 
 
-def parse_valor(texto: str | None, estilo: Estilo) -> Decimal | None:
-    """Número no estilo da página: `br` = 1.234,56; `us` = 1,234.56. Vazio: None."""
+def parse_valor(texto: str | None) -> Decimal | None:
+    """Número em pt-BR (1.234,56). Vazio: None."""
     limpo = (texto or "").strip()
     if not limpo:
         return None
-    milhar, decimal = (".", ",") if estilo == "br" else (",", ".")
     try:
-        return Decimal(limpo.replace(milhar, "").replace(decimal, "."))
+        return Decimal(limpo.replace(".", "").replace(",", "."))
     except InvalidOperation:
         logger.warning("valor_invalido", extra={"texto": limpo})
         return None
@@ -442,7 +431,7 @@ def _texto(linha: dict[str, Any], coluna: str) -> str:
     return " ".join(valor.split())
 
 
-def _linha(bruta: Any, estilo: Estilo) -> LinhaCompesa:
+def _linha(bruta: Any) -> LinhaCompesa:
     if not isinstance(bruta, dict):
         raise ErroFonte("layout: linha da grade não é objeto")
     botao = bruta.get(_COL_BOTAO)
@@ -460,15 +449,15 @@ def _linha(bruta: Any, estilo: Estilo) -> LinhaCompesa:
         objeto=_texto(bruta, _COL_OBJETO),
         data_texto=data_texto,
         hora=hora,
-        abertura=parse_data(data_texto, hora, estilo),
+        abertura=parse_data(data_texto, hora),
         situacao=_texto(bruta, _COL_SITUACAO),
-        custo=parse_valor(campos.get("Custo Estimado"), estilo),
+        custo=parse_valor(campos.get("Custo Estimado")),
         municipio=municipio or None,
         campos=campos,
     )
 
 
-def ler_grade(texto: str, estilo: Estilo) -> Grade:
+def ler_grade(texto: str) -> Grade:
     marcador = _MARCADOR.search(texto)
     if marcador is None:
         raise ErroFonte(f"layout: resposta sem data_{GRADE}")
@@ -479,20 +468,20 @@ def ler_grade(texto: str, estilo: Estilo) -> Grade:
     navegacao = _NAVEGACAO.findall(texto)
     # Sem a chamada de navegação não dá para saber: segue, e o fim vem pela falta de chave nova.
     tem_proxima = navegacao[-1][2] == "true" if navegacao else True
-    # Uma data impossível solta é lida no outro estilo (com log); muitas são sinal de que o
-    # estilo da página mudou, e trocar dia e mês em silêncio daria datas erradas.
+    # Uma data impossível em dd/MM solta é lida como MM/dd (com log); muitas são sinal de que a
+    # página veio em outro locale, e trocar dia e mês em silêncio daria datas erradas.
     datas = [bruta.get(_COL_ABERTURA) for bruta in linhas if isinstance(bruta, dict)]
-    impossiveis = sum(data_impossivel(d, estilo) for d in datas if isinstance(d, str))
+    impossiveis = sum(data_impossivel(d) for d in datas if isinstance(d, str))
     if datas and impossiveis > FRACAO_DATAS_IMPOSSIVEIS * len(datas):
         raise ErroFonte(
-            f"layout: estilo de data inconsistente ({impossiveis} de {len(datas)} impossíveis "
-            f"em {estilo})"
+            f"layout: estilo de data inconsistente ({impossiveis} de {len(datas)} "
+            "impossíveis em dd/MM)"
         )
     return Grade(
         inicio=int(inicio.group(1)) if inicio else None,
         fim=int(fim.group(1)) if fim else None,
         tem_proxima=tem_proxima,
-        linhas=[_linha(bruta, estilo) for bruta in linhas],
+        linhas=[_linha(bruta) for bruta in linhas],
     )
 
 
@@ -507,17 +496,17 @@ class FonteCompesa:
     marcador_bloqueio: str | None = "<title>Request Rejected</title>"
 
     def coletar(self, cliente: ClienteEducado) -> Iterator[PaginaColetada]:
-        cliente.get(URL_FORM)  # cookie de sessão (JSESSIONID e os do WAF)
-        cliente.get(URL_OPENFORM)
+        cliente.get(URL_FORM, headers=IDIOMA)  # cookie de sessão (JSESSIONID e os do WAF)
+        cliente.get(URL_OPENFORM, headers=IDIOMA)
         vistos: set[str] = set()
         esperado: int | None = None
         for pagina in range(MAX_PAGINAS):
             if pagina:
-                cliente.get(URL_PROXIMA)
+                cliente.get(URL_PROXIMA, headers=IDIOMA)
             url = URL_PAGINA if pagina else URL_GRADE
-            resposta = cliente.get(url)
+            resposta = cliente.get(url, headers=IDIOMA)
             texto = decodificar(resposta.content, resposta.charset_encoding)
-            grade = ler_grade(texto, estilo_da_url(url))
+            grade = ler_grade(texto)
             if esperado is not None and grade.inicio is not None and grade.inicio != esperado:
                 raise ErroFonte(
                     f"layout: página fora de ordem: início {grade.inicio}, esperado {esperado}"
@@ -534,15 +523,14 @@ class FonteCompesa:
         raise ErroFonte(f"lista sem fim: mais de {MAX_PAGINAS} páginas")
 
     def extrair(self, paginas: list[PaginaColetada]) -> list[dict[str, Any]]:
-        linhas: dict[str, tuple[LinhaCompesa, Estilo]] = {}  # a última linha com a chave vence
+        linhas: dict[str, LinhaCompesa] = {}  # a última linha com a chave vence
         for pagina in paginas:
-            estilo = estilo_da_url(pagina.url)
-            for linha in ler_grade(pagina.texto, estilo).linhas:
-                linhas[linha.chave] = (linha, estilo)
+            for linha in ler_grade(pagina.texto).linhas:
+                linhas[linha.chave] = linha
         desconhecidas: set[str] = set()
         modalidades_vistas: set[str] = set()  # um log por código desconhecido por retrato
         normalizados = []
-        for linha, estilo in linhas.values():
+        for linha in linhas.values():
             situacao = _SITUACAO.get(linha.situacao.casefold())
             if situacao is None:
                 situacao = "outra"
@@ -561,13 +549,11 @@ class FonteCompesa:
                     logger.warning(
                         "modalidade_desconhecida", extra={"fonte": self.nome, "codigo": codigo}
                     )
-            normalizados.append(_normalizar(linha, estilo, situacao, modalidade))
+            normalizados.append(_normalizar(linha, situacao, modalidade))
         return normalizados
 
 
-def _normalizar(
-    linha: LinhaCompesa, estilo: Estilo, situacao: str, modalidade: str
-) -> dict[str, Any]:
+def _normalizar(linha: LinhaCompesa, situacao: str, modalidade: str) -> dict[str, Any]:
     return {
         "fonte": "compesa",
         "id_na_fonte": linha.chave,
@@ -591,7 +577,6 @@ def _normalizar(
             "abertura": linha.data_texto,
             "hora": linha.hora,
             "situacao": linha.situacao,
-            "estilo": estilo,
             "campos": linha.campos,
         },
     }

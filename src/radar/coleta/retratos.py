@@ -84,12 +84,18 @@ class ClienteEducado:
     def cookies(self) -> httpx.Cookies:
         return self._http.cookies
 
-    def get(self, url: str, params: dict[str, Any] | None = None) -> httpx.Response:
+    def get(
+        self,
+        url: str,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> httpx.Response:
+        """`headers` somam-se aos do cliente só nesta requisição (o User-Agent fica)."""
         if not self._primeira:
             self._dormir(self._intervalo_s)
         self._primeira = False
         try:
-            resposta = self._http.get(url, params=params)
+            resposta = self._http.get(url, params=params, headers=headers)
         except httpx.HTTPError as erro:
             raise ErroFonte(f"{type(erro).__name__} em {url}: {erro}") from erro
         if resposta.status_code >= 400:

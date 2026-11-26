@@ -19,7 +19,9 @@ Sim. Resultado dos testes:
 - `gridEdit.do` refresh funcionou até sem cookie (200, 100 linhas).
 - Fluxo completo com cookie: GET `form.jsp` (recebe `JSESSIONID`, `TS0157363c`, `TS0146df9a`) > GET `openform.do` (Referer = form.jsp) > GET `gridEdit.do refresh` > `navigate.do next` > `gridEdit.do refreshpage`. Tudo 200 com UA identificável. A paginação exige o cookie (estado na sessão).
 - Cuidados: manter o mesmo cookie jar e enviar Referer; o WAF rejeita POSTs fora de contexto e pode bloquear por taxa. 1 página custa ~1 MB; 1 coleta diária de 2-3 páginas é leve.
-- Armadilha de formato: a data vem `dd/MM/yyyy` no refresh (`24/11/2026`) e `MM/dd/yyyy` no refreshpage (`03/13/2026`). Normalizar pela página de origem ou usar o `lc_chave` como referência e validar (dia > 12 denuncia o formato).
+- Armadilha de formato: a data vem `dd/MM/yyyy` no refresh (`24/11/2026`) e `MM/dd/yyyy` no refreshpage (`03/13/2026`). Normalizar pela página de origem ou usar o `lc_chave` como referência e validar (dia > 12 denuncia o formato). **CORRIGIDO em 26/11/2026, ver abaixo.**
+
+**Correção (26/11/2026, verificada no portal ao vivo):** o formato não depende da página. Ele depende do `Accept-Language` da requisição. Sem o header (curl, httpx) todas as páginas vêm em en-US: a página 1 traz `11/24/2026` e o custo vem com ponto decimal (`223078.49`). Com `Accept-Language: pt-BR,pt;q=0.9` todas vêm em pt-BR: a página 1 traz `24/11/2026`, a página 2 traz `30/06/2026`, e o custo vem com vírgula (`223078,49`). O modelo "p1 em pt-BR, p2 em en-US" surgiu porque o estudo pegou a página 1 pelo navegador (pt-BR) e a página 2 por curl (sem header). O coletor manda `Accept-Language: pt-BR` em toda requisição e lê tudo como dd/MM e vírgula decimal. Se mais de 20% das datas de uma página forem impossíveis em dd/MM, ele falha com erro de layout.
 
 ## 3. Campos e identificador
 Colunas visíveis: ANEXOS (botão), NUMERO PROCESSO (ex. `LC 213/2026 CEL-1`), OBJETO, "+" (botão detalhe), ABERTURA (data), HORA, ACOMPANHAMENTO (botão), SITUAÇÃO (Habilitação 40, Contrato 39, Abertura 11, Fracassada 5, Suspensa 2, Revogada, Homologação, Deserta, na página 1).

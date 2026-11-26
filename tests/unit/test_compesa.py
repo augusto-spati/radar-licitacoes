@@ -9,6 +9,7 @@ import pytest
 
 from radar.coleta import ErroFonte, PaginaColetada
 from radar.coleta.compesa import (
+    IDIOMA,
     URL_FORM,
     URL_GRADE,
     URL_OPENFORM,
@@ -26,12 +27,16 @@ from radar.editais.registro import EditalNormalizado
 
 DADOS = Path(__file__).resolve().parent.parent / "dados" / "fontes"
 
-# A p1 foi salva em UTF-8 pela captura; a p2 veio crua do servidor, em windows-1252
-# (o header diz ISO-8859-1, e o travessão do objeto é o byte 0x96).
-P1_BYTES = (DADOS / "compesa-p1-reduzida.js.txt").read_bytes()
-P2_BYTES = (DADOS / "compesa-p2-reduzida.js.txt").read_bytes()
-P1 = P1_BYTES.decode("utf-8")
-P2 = decodificar(P2_BYTES, "ISO-8859-1")
+
+def _amostra(nome: str) -> str:
+    return (DADOS / nome).read_text(encoding="utf-8")
+
+
+# Capturas com `Accept-Language: pt-BR` (salvas em UTF-8) e a p1 sem o header (en-US).
+P1 = _amostra("compesa-p1-ptbr-reduzida.js.txt")
+P2 = _amostra("compesa-p2-ptbr-reduzida.js.txt")
+P1_SEM_IDIOMA = _amostra("compesa-p1-sem-idioma-reduzida.js.txt")
+# O servidor manda windows-1252 com header ISO-8859-1 (o travessão é o byte 0x96).
 LATIN1 = "text/html; charset=ISO-8859-1"
 
 
@@ -77,30 +82,27 @@ def test_ler_literal_quebrado_e_erro_de_layout(fonte: str) -> None:
 # --- datas, valores, encoding ----------------------------------------------------------------
 
 
-def test_parse_data_por_estilo() -> None:
-    assert parse_data("05/11/2026", "13:00", "br") == datetime(2026, 11, 5, 13, 0)
-    assert parse_data("05/11/2026", "13:00", "us") == datetime(2026, 5, 11, 13, 0)
-    assert parse_data("04/09/2026 14:00:00", "", "us") == datetime(2026, 4, 9, 14, 0)
-    assert parse_data("24/11/2026", "", "br") == datetime(2026, 11, 24)
-    assert parse_data("", "09:00", "br") is None
+def test_parse_data_dd_mm() -> None:
+    assert parse_data("05/11/2026", "13:00") == datetime(2026, 11, 5, 13, 0)
+    assert parse_data("09/04/2026 14:00:00", "") == datetime(2026, 4, 9, 14, 0)
+    assert parse_data("24/11/2026", "") == datetime(2026, 11, 24)
+    assert parse_data("", "09:00") is None
 
 
-def test_parse_data_impossivel_no_estilo_tenta_o_outro_e_loga(
+def test_parse_data_impossivel_em_dd_mm_tenta_mm_dd_e_loga(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     with caplog.at_level(logging.WARNING):
-        assert parse_data("03/13/2026", "09:00", "br") == datetime(2026, 3, 13, 9, 0)
+        assert parse_data("03/13/2026", "09:00") == datetime(2026, 3, 13, 9, 0)
     assert "data_formato_inconsistente" in caplog.messages
 
 
-def test_parse_valor_por_estilo() -> None:
-    assert parse_valor("2856395,49", "br") == Decimal("2856395.49")
-    assert parse_valor("1.234.567,8", "br") == Decimal("1234567.8")
-    assert parse_valor("223078.49", "us") == Decimal("223078.49")
-    assert parse_valor("1,234.5", "us") == Decimal("1234.5")
-    assert parse_valor("997200", "br") == Decimal("997200")
-    assert parse_valor("", "br") is None
-    assert parse_valor("abc", "br") is None
+def test_parse_valor_pt_br() -> None:
+    assert parse_valor("2856395,49") == Decimal("2856395.49")
+    assert parse_valor("1.234.567,8") == Decimal("1234567.8")
+    assert parse_valor("997200") == Decimal("997200")
+    assert parse_valor("") is None
+    assert parse_valor("abc") is None
 
 
 def test_decodificar_conforme_o_header() -> None:
@@ -114,13 +116,14 @@ def test_decodificar_conforme_o_header() -> None:
 
 
 def test_grade_p1() -> None:
-    grade = ler_grade(P1, "br")
+    grade = ler_grade(P1)
     assert (grade.inicio, grade.fim, grade.tem_proxima) == (0, 100, True)
     assert len(grade.linhas) == 13
     primeira = grade.linhas[0]
     assert primeira.chave == "2026LC213CEL-1"
     assert primeira.numero == "LC 213/2026 CEL-1"
     assert primeira.objeto == "REGISTRO DE PREÇOS PARA AQUISIÇÃO DE VÁLVULAS DIVERSAS"
+    # 24/11: impossível em MM/dd, então só a leitura dd/MM dá esta data
     assert primeira.abertura == datetime(2026, 11, 24, 13, 0)
     assert primeira.custo == Decimal("2856395.49")
     assert primeira.situacao == "Abertura"
@@ -130,31 +133,32 @@ def test_grade_p1() -> None:
 
 
 def test_grade_p1_dia_ate_12_sai_dd_mm() -> None:
-    por_chave = {linha.chave: linha for linha in ler_grade(P1, "br").linhas}
+    por_chave = {linha.chave: linha for linha in ler_grade(P1).linhas}
     assert por_chave["2026LC210CSL"].abertura == datetime(2026, 11, 12, 9, 0)  # 12/11
 
 
-def test_grade_p2_data_mm_dd_sai_certa() -> None:
-    """Review Focus 3: na p2 a data vem MM/dd; com dia <= 12 os dois formatos divergem."""
-    grade = ler_grade(P2, "us")
+def test_grade_p2_tambem_vem_dd_mm_e_virgula_decimal() -> None:
+    """Com Accept-Language pt-BR a p2 também vem dd/MM (Review Focus 3, dia <= 12)."""
+    grade = ler_grade(P2)
     assert (grade.inicio, grade.fim, grade.tem_proxima) == (100, 200, True)
     por_chave = {linha.chave: linha for linha in grade.linhas}
-    assert por_chave["2026LC067CPL"].abertura == datetime(2026, 4, 9, 14, 0)  # não 4/set
+    assert por_chave["2026LC067CPL"].abertura == datetime(2026, 4, 9, 14, 0)  # 09/04, não 4/set
     assert por_chave["2026LC013CPL"].abertura == datetime(2026, 4, 9, 14, 0)  # "… 14:00:00"
-    assert por_chave["2026LC034CSL"].abertura == datetime(2026, 3, 12, 9, 0)  # não 3/dez
-    assert por_chave["2026LC119CPL"].abertura == datetime(2026, 6, 30, 14, 0)
+    assert por_chave["2026LC034CSL"].abertura == datetime(2026, 3, 12, 9, 0)  # 12/03, não 3/dez
+    assert por_chave["2026LC119CPL"].abertura == datetime(2026, 6, 30, 14, 0)  # 30/06
+    assert por_chave["2026LC119CPL"].campos["Custo Estimado"] == "223078,49"
     assert por_chave["2026LC119CPL"].custo == Decimal("223078.49")
 
 
 def test_grade_acentos_nas_duas_paginas() -> None:
-    p2 = {linha.chave: linha for linha in ler_grade(P2, "us").linhas}
+    p2 = {linha.chave: linha for linha in ler_grade(P2).linhas}
     assert p2["2026LC119CPL"].objeto == (
         "IMPLANTAÇÃO DO SISTEMA DE ABASTECIMENTO CAJUEIRO 2 EM VITÓRIA DE SANTO ANTÃO"
     )
     assert p2["2026LC056CEL-2"].objeto.startswith(
         "CONTRATAÇÃO DE ENTIDADE SEM FINS LUCRATIVOS – ESFL"
     )
-    assert ler_grade(P1, "br").linhas[2].situacao == "Habilitação"
+    assert ler_grade(P1).linhas[2].situacao == "Habilitação"
 
 
 def test_grade_custo_vazio_e_municipio_preenchido() -> None:
@@ -162,19 +166,35 @@ def test_grade_custo_vazio_e_municipio_preenchido() -> None:
     texto = P1.replace("\\x272856395,49\\x27", "\\x27\\x27", 1).replace(
         "\\x27\\x27); d.c_1926738125.field", "\\x27RECIFE\\x27); d.c_1926738125.field", 1
     )
-    primeira = ler_grade(texto, "br").linhas[0]
+    primeira = ler_grade(texto).linhas[0]
     assert primeira.custo is None
     assert primeira.municipio == "RECIFE"
 
 
 def test_grade_sem_data_e_erro_de_layout() -> None:
     with pytest.raises(ErroFonte, match="layout"):
-        ler_grade("<html><title>Erro</title></html>", "br")
+        ler_grade("<html><title>Erro</title></html>")
 
 
 def test_grade_linha_sem_lc_chave_e_erro_de_layout() -> None:
     with pytest.raises(ErroFonte, match="layout: linha sem lc_chave"):
-        ler_grade(P1.replace("field = \\x27lc_chave\\x27", "field = \\x27outro\\x27", 1), "br")
+        ler_grade(P1.replace("field = \\x27lc_chave\\x27", "field = \\x27outro\\x27", 1))
+
+
+def test_pagina_sem_accept_language_vem_mm_dd_e_e_erro_de_layout() -> None:
+    # A p1 real pedida sem o header: 10 das 13 datas são impossíveis em dd/MM (11/24/2026...).
+    with pytest.raises(ErroFonte, match="layout: estilo de data inconsistente"):
+        ler_grade(P1_SEM_IDIOMA)
+
+
+def test_uma_data_impossivel_abaixo_do_limite_so_loga(caplog: pytest.LogCaptureFixture) -> None:
+    # 1 de 13 datas trocadas (< 20%): a linha é lida como MM/dd, com log.
+    p1 = P1.replace("'field817072':'24\\/11\\/2026'", "'field817072':'11\\/24\\/2026'", 1)
+    assert p1 != P1
+    with caplog.at_level(logging.WARNING):
+        grade = ler_grade(p1)
+    assert grade.linhas[0].abertura == datetime(2026, 11, 24, 13, 0)
+    assert "data_formato_inconsistente" in caplog.messages
 
 
 # --- extrair ---------------------------------------------------------------------------------
@@ -210,11 +230,10 @@ def test_extrair_normaliza_e_deduplica() -> None:
     assert primeiro["link_origem"] is None
     assert primeiro["anexos"] == []
     assert primeiro["bruto"]["numero"] == "LC 213/2026 CEL-1"
-    assert primeiro["bruto"]["estilo"] == "br"
     assert primeiro["bruto"]["campos"]["Custo Estimado"] == "2856395,49"
 
-    # a data da p2 segue o estilo da página de onde veio
     assert por_id["2026LC067CPL"]["data_abertura_proposta"] == datetime(2026, 4, 9, 14, 0)
+    assert por_id["2026LC119CPL"]["valor_estimado"] == Decimal("223078.49")
     assert por_id["2026ECR001CEL-1"]["modalidade_nome"] == "Credenciamento"
     assert por_id["2026MI001CEL-2"]["modalidade_nome"] == "Compesa (MI)"  # não confirmado
 
@@ -282,22 +301,6 @@ def test_modalidade_desconhecida_loga_uma_vez_por_codigo(
     assert sorted(codigos) == ["MI", "XYZ"]
 
 
-def test_muitas_datas_impossiveis_no_estilo_da_pagina_e_erro() -> None:
-    # A p2 (MM/dd) lida como se fosse dd/MM: 6 das 11 datas ficam impossíveis (dia > 12 no mês).
-    with pytest.raises(ErroFonte, match="layout: estilo de data inconsistente"):
-        ler_grade(P2, "br")
-
-
-def test_uma_data_impossivel_abaixo_do_limite_so_loga(caplog: pytest.LogCaptureFixture) -> None:
-    # 1 de 13 datas trocadas (< 20%): a linha é lida no outro estilo, com log.
-    p1 = P1.replace("'field817072':'24\\/11\\/2026'", "'field817072':'11\\/24\\/2026'", 1)
-    assert p1 != P1
-    with caplog.at_level(logging.WARNING):
-        grade = ler_grade(p1, "br")
-    assert grade.linhas[0].abertura == datetime(2026, 11, 24, 13, 0)
-    assert "data_formato_inconsistente" in caplog.messages
-
-
 def test_minimo_nome_e_marcador() -> None:
     fonte = FonteCompesa()
     assert fonte.nome == "compesa"
@@ -314,10 +317,17 @@ class _ClienteFalso:
     def __init__(self, roteiro: dict[str, list[httpx.Response]]) -> None:
         self._roteiro = {url: list(respostas) for url, respostas in roteiro.items()}
         self.urls: list[str] = []
+        self.headers: list[dict[str, str] | None] = []
 
-    def get(self, url: str, params: dict[str, Any] | None = None) -> httpx.Response:
+    def get(
+        self,
+        url: str,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> httpx.Response:
         assert params is None
         self.urls.append(url)
+        self.headers.append(headers)
         return self._roteiro[url].pop(0)
 
 
@@ -329,8 +339,9 @@ def _js(texto: str, charset: str = "UTF-8") -> httpx.Response:
     )
 
 
-def _p2_bruta() -> httpx.Response:
-    return httpx.Response(200, content=P2_BYTES, headers={"content-type": LATIN1})
+def _como_servidor(texto: str) -> httpx.Response:
+    """Como o portal responde: windows-1252 com header ISO-8859-1."""
+    return httpx.Response(200, content=texto.encode("cp1252"), headers={"content-type": LATIN1})
 
 
 def _sem_proxima(texto: str) -> str:
@@ -357,14 +368,7 @@ def _roteiro(*paginas: httpx.Response) -> dict[str, list[httpx.Response]]:
 
 
 def test_coletar_sequencia_de_urls_ate_acabar_a_navegacao() -> None:
-    cliente = _ClienteFalso(
-        _roteiro(
-            _js(P1),
-            httpx.Response(
-                200, content=_sem_proxima(P2).encode("cp1252"), headers={"content-type": LATIN1}
-            ),
-        )
-    )
+    cliente = _ClienteFalso(_roteiro(_js(P1), _como_servidor(_sem_proxima(P2))))
 
     paginas = list(FonteCompesa().coletar(cliente))  # type: ignore[arg-type]
 
@@ -375,11 +379,20 @@ def test_coletar_sequencia_de_urls_ate_acabar_a_navegacao() -> None:
     assert "VITÓRIA DE SANTO ANTÃO" in paginas[1].texto
 
 
+def test_coletar_pede_pt_br_em_toda_requisicao() -> None:
+    """Sem Accept-Language o portal responde em en-US (MM/dd e ponto decimal)."""
+    assert IDIOMA == {"Accept-Language": "pt-BR,pt;q=0.9"}
+    cliente = _ClienteFalso(_roteiro(_js(P1), _como_servidor(_sem_proxima(P2))))
+
+    list(FonteCompesa().coletar(cliente))  # type: ignore[arg-type]
+
+    assert len(cliente.headers) == 5
+    assert all(h == IDIOMA for h in cliente.headers)
+
+
 def test_coletar_para_quando_a_pagina_nao_traz_chave_nova() -> None:
-    repetida = httpx.Response(
-        200, content=_deslocada(P2, 200, 300).encode("cp1252"), headers={"content-type": LATIN1}
-    )
-    cliente = _ClienteFalso(_roteiro(_js(P1), _p2_bruta(), repetida))
+    repetida = _como_servidor(_deslocada(P2, 200, 300))
+    cliente = _ClienteFalso(_roteiro(_js(P1), _como_servidor(P2), repetida))
 
     paginas = list(FonteCompesa().coletar(cliente))  # type: ignore[arg-type]
 
@@ -396,8 +409,8 @@ def test_coletar_para_quando_a_pagina_nao_traz_chave_nova() -> None:
 
 
 def test_coletar_pagina_fora_de_ordem_falha_em_vez_de_truncar() -> None:
-    # Sessão perdida: o refreshpage volta ao começo da lista (setGridPageIni(0)).
-    cliente = _ClienteFalso(_roteiro(_js(P1), _js(_deslocada(P2, 0, 100), "cp1252")))
+    # Sessão perdida: o refreshpage devolve a página 1 de novo (setGridPageIni(0)).
+    cliente = _ClienteFalso(_roteiro(_js(P1), _js(P1)))
     with pytest.raises(ErroFonte, match=r"layout: página fora de ordem: início 0, esperado 100"):
         list(FonteCompesa().coletar(cliente))  # type: ignore[arg-type]
 
@@ -412,6 +425,6 @@ def test_coletar_trava_de_paginas(monkeypatch: pytest.MonkeyPatch) -> None:
     import radar.coleta.compesa as compesa
 
     monkeypatch.setattr(compesa, "MAX_PAGINAS", 2)
-    cliente = _ClienteFalso(_roteiro(_js(P1), _p2_bruta()))
+    cliente = _ClienteFalso(_roteiro(_js(P1), _como_servidor(P2)))
     with pytest.raises(ErroFonte, match="lista sem fim: mais de 2 páginas"):
         list(FonteCompesa().coletar(cliente))  # type: ignore[arg-type]

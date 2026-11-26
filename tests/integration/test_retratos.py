@@ -169,6 +169,24 @@ def test_cliente_expoe_cookies() -> None:
     assert cliente.cookies.get("sessao") == "abc"
 
 
+def test_headers_por_requisicao_sem_trocar_o_user_agent() -> None:
+    vistos: list[httpx.Headers] = []
+
+    def tratar(requisicao: httpx.Request) -> httpx.Response:
+        vistos.append(requisicao.headers)
+        return httpx.Response(200, text="ok")
+
+    cliente = ClienteEducado(
+        httpx.Client(transport=httpx.MockTransport(tratar)), dormir=lambda _s: None
+    )
+    cliente.get("https://x.test/", headers={"Accept-Language": "pt-BR"})
+    cliente.get("https://x.test/")
+
+    assert vistos[0]["Accept-Language"] == "pt-BR"
+    assert "Accept-Language" not in vistos[1]  # vale só para aquela requisição
+    assert [h["User-Agent"] for h in vistos] == [USER_AGENT] * 2
+
+
 # --- executar_retrato ------------------------------------------------------------------
 
 
