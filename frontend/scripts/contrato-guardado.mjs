@@ -2,9 +2,9 @@
 // no intervalo de commits do push ou do PR, pelo menos um commit do intervalo
 // tem de trazer o trailer `Contrato-Front: aprovado` (aprovação do Augusto).
 //
-// Roda no CI (job `contrato-guardado`), da raiz do repositório, a partir da
-// cópia deste script na BASE do intervalo (não a do commit testado), para que um
-// commit não possa editar a guarda e se aprovar. A lista GUARDADOS usada é a da base.
+// Roda no CI pelo workflow `guarda-base` (pull_request_target), da raiz do
+// repositório, a partir do checkout da BASE do PR (não da cabeça), para que um PR
+// não possa editar a guarda e se aprovar. A lista GUARDADOS usada é a da base.
 //   node frontend/scripts/contrato-guardado.mjs
 // O intervalo vem das variáveis do GitHub Actions (veja `escolherIntervalo`).
 import {execFileSync} from 'node:child_process';
@@ -69,34 +69,15 @@ export function decidir(alterados, trailersPorCommit) {
   return {ok: guardados.length === 0 || aprovado, guardados, aprovado};
 }
 
-const SEM_COMMIT = /^0+$/;
-
 /**
- * Intervalo `base..topo` a conferir.
- * - PR: do merge base entre a base e a cabeça do PR até a cabeça.
- * - push: do commit anterior ao push (`before`) até HEAD; branch nova ou
- *   force push (sem `before` válido) compara com o merge base do branch
- *   padrão e, sem ele, com o commit anterior.
- * `git(args)` devolve a saída do git ou null se o comando falhar.
+ * Intervalo `base..topo` a conferir: do merge base entre a base e a cabeça do PR
+ * até a cabeça. `git(args)` devolve a saída do git ou null se o comando falhar.
  */
 export function escolherIntervalo(ambiente, git) {
-  const {EVENTO, BASE_PR, CABECA_PR, ANTES, BRANCH_PADRAO} = ambiente;
-  if (EVENTO === 'pull_request' || EVENTO === 'pull_request_target') {
-    const base = git(['merge-base', BASE_PR, CABECA_PR]);
-    if (base === null) throw new Error('sem merge base entre a base e a cabeça do PR');
-    return {base, topo: CABECA_PR};
-  }
-  const topo = git(['rev-parse', 'HEAD']);
-  if (ANTES && !SEM_COMMIT.test(ANTES) && git(['cat-file', '-e', `${ANTES}^{commit}`]) !== null) {
-    return {base: ANTES, topo};
-  }
-  if (BRANCH_PADRAO) {
-    const base = git(['merge-base', 'HEAD', `origin/${BRANCH_PADRAO}`]);
-    if (base !== null && base !== topo) return {base, topo};
-  }
-  const anterior = git(['rev-parse', 'HEAD~1']);
-  if (anterior === null) throw new Error('sem commit anterior para comparar');
-  return {base: anterior, topo};
+  const {BASE_PR, CABECA_PR} = ambiente;
+  const base = git(['merge-base', BASE_PR, CABECA_PR]);
+  if (base === null) throw new Error('sem merge base entre a base e a cabeça do PR');
+  return {base, topo: CABECA_PR};
 }
 
 function git(args) {
