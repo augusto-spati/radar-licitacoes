@@ -36,8 +36,7 @@ export const GUARDADOS = [
   'frontend/src/componentes/Shell.tsx',
   'frontend/e2e/',
   'frontend/scripts/',
-  '.github/workflows/ci.yml',
-  '.github/workflows/guarda-base.yml',
+  '.github/workflows/',
   '.github/CODEOWNERS',
 ];
 

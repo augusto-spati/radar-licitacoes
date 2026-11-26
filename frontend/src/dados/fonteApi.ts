@@ -1,4 +1,5 @@
 import type {Fonte, Filtros} from './fonte';
+import {obterToken, sair} from './sessao';
 import type {EditalDetalhe} from './tipos';
 
 export class ErroFonte extends Error {
@@ -10,12 +11,24 @@ export class ErroFonte extends Error {
   }
 }
 
+// Com sessão, manda o id token; um 401 encerra a sessão e leva para a tela de entrar.
 async function buscar(caminho: string): Promise<Response> {
+  let resposta: Response;
   try {
-    return await fetch(caminho);
+    // Falha ao renovar o token (rede) aparece como falha de conexão; a sessão fica.
+    const token = await obterToken();
+    resposta = token
+      ? await fetch(caminho, {headers: {Authorization: `Bearer ${token}`}})
+      : await fetch(caminho);
   } catch (erro) {
     throw new ErroFonte(`Sem conexão com a API: ${String(erro)}`);
   }
+  if (resposta.status === 401) {
+    sair();
+    window.location.hash = '#/entrar';
+    throw new ErroFonte('Sessão expirada: entre de novo', 401);
+  }
+  return resposta;
 }
 
 async function lerJson<T>(caminho: string): Promise<T> {

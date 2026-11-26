@@ -9,14 +9,46 @@ import {Icon} from '@astryxdesign/core/Icon';
 import {VStack} from '@astryxdesign/core/Layout';
 import {Heading, Text} from '@astryxdesign/core/Text';
 import {TextInput} from '@astryxdesign/core/TextInput';
+import {confirmarCodigo, enviarCodigo, loginReal, type Desafio} from '../dados/sessao';
+
+// Desafio do protótipo: com a fonte de exemplo nada vai ao Cognito.
+const DESAFIO_VISUAL: Desafio = {email: '', session: ''};
 
 // A partir do template `login`: coluna centrada de até 400 px com marca,
-// cartão e formulário. Só visual nesta etapa: "Entrar" vai para a lista.
+// cartão e formulário. Com a API, o código chega por e-mail (Cognito); com a
+// fonte de exemplo a tela é só visual e "Entrar" vai direto para a lista.
 export function Entrar() {
   const navegar = useNavigate();
+  const real = loginReal();
   const [email, setEmail] = useState('');
   const [codigo, setCodigo] = useState('');
-  const [codigoEnviado, setCodigoEnviado] = useState(false);
+  const [desafio, setDesafio] = useState<Desafio | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [aguardando, setAguardando] = useState(false);
+
+  async function executar(acao: () => Promise<void>) {
+    setErro(null);
+    setAguardando(true);
+    try {
+      await acao();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAguardando(false);
+    }
+  }
+
+  const pedirCodigo = () =>
+    executar(async () => {
+      setCodigo('');
+      setDesafio(real ? await enviarCodigo(email) : DESAFIO_VISUAL);
+    });
+
+  const entrar = () =>
+    executar(async () => {
+      if (real && desafio) await confirmarCodigo(desafio, codigo);
+      navegar('/');
+    });
 
   return (
     <Center axis="both" padding={6}>
@@ -39,11 +71,17 @@ export function Entrar() {
               </Text>
             </VStack>
 
-            <Banner
-              status="info"
-              title="O login real chega na próxima etapa"
-              description="Por enquanto, qualquer e-mail e código abrem a lista."
-            />
+            {!real && (
+              <Banner
+                status="info"
+                title="Protótipo com dados de exemplo"
+                description="Aqui qualquer e-mail e código abrem a lista."
+              />
+            )}
+            {erro && <Banner status="error" title={erro} />}
+            {real && desafio && !erro && (
+              <Banner status="info" title="Se este e-mail tiver acesso, o código chega em instantes." />
+            )}
 
             <TextInput
               label="E-mail"
@@ -53,12 +91,13 @@ export function Entrar() {
               type="email"
               size="lg"
             />
-            {!codigoEnviado ? (
+            {!desafio ? (
               <Button
                 label="Enviar código"
                 variant="primary"
                 size="lg"
-                onClick={() => setCodigoEnviado(true)}
+                isLoading={aguardando}
+                onClick={pedirCodigo}
               />
             ) : (
               <VStack gap={4} hAlign="stretch">
@@ -66,10 +105,22 @@ export function Entrar() {
                   label="Código"
                   value={codigo}
                   onChange={setCodigo}
-                  placeholder="Código de 6 dígitos"
+                  placeholder="Código recebido por e-mail"
                   size="lg"
                 />
-                <Button label="Entrar" variant="primary" size="lg" onClick={() => navegar('/')} />
+                <Button
+                  label="Entrar"
+                  variant="primary"
+                  size="lg"
+                  isLoading={aguardando}
+                  onClick={entrar}
+                />
+                <Button
+                  label="Pedir outro código"
+                  variant="ghost"
+                  isLoading={aguardando}
+                  onClick={pedirCodigo}
+                />
               </VStack>
             )}
           </VStack>

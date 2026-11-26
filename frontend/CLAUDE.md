@@ -9,7 +9,7 @@ Antes de criar um componente: `astryx search`, depois `src/componentes/`; compon
 - **Rotas (lista fechada da v1)**, todas em `src/rotas.tsx`, que também gera o menu:
   - `/`: lista de editais (única no menu)
   - `/edital/:id`: detalhe
-  - `/entrar`: login visual, sem autenticação nesta etapa
+  - `/entrar`: login por código no e-mail (Cognito, `src/dados/sessao.ts`); com a fonte de exemplo é só visual
 
   Rota nova, página nova ou item de menu novo só com pedido explícito. O roteador é `HashRouter` e o build usa `base: './'`.
 - **Shell fixo**: `src/componentes/Shell.tsx` (template `shell-top-nav`). Não mude a moldura, o cabeçalho nem a navegação; o menu sai de `rotas`.

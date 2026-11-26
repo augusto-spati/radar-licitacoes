@@ -15,6 +15,7 @@ dependencies = [
     "typer>=0.12",
     "fastapi>=0.165.0",
     "uvicorn>=0.54.0",
+    "mangum>=0.22.0",
     "selectolax>=1.0.2",
 ]
 
@@ -42,6 +43,7 @@ packages = ["src/radar"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-m 'not rede'"
+filterwarnings = ["ignore:There is no current event loop:DeprecationWarning:mangum.adapter"]
 markers = ["rede: acessa a rede real (PNCP); fora do CI"]
 
 [tool.ruff]
