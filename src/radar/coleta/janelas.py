@@ -148,17 +148,19 @@ def _coletar_todas(
 def ler_paginas_nao_processadas(
     sessao: Session, limite: int = 100, excluir: Collection[int] = ()
 ) -> list[tuple[int, list[dict[str, Any]]]]:
-    """Pares (pagina_id, registros) das páginas ainda não processadas, em ordem de id.
+    """Pares (pagina_id, registros) das páginas do PNCP ainda não processadas, em ordem de id.
 
-    `excluir` são ids a pular (páginas que falharam nesta execução).
+    `excluir` são ids a pular (páginas que falharam nesta execução). As páginas de retrato
+    ficam de fora: o fluxo do retrato as marca como processadas ao concluir, e nem as de um
+    retrato em falha são JSON do PNCP.
     """
     consulta = select(PaginaBruta.id, PaginaBruta.conteudo).where(
-        PaginaBruta.processada_em.is_(None)
+        PaginaBruta.processada_em.is_(None), PaginaBruta.janela_id.is_not(None)
     )
     if excluir:
         consulta = consulta.where(PaginaBruta.id.not_in(excluir))
     linhas = sessao.execute(consulta.order_by(PaginaBruta.id).limit(limite)).all()
-    return [(pagina_id, conteudo.get("data") or []) for pagina_id, conteudo in linhas]
+    return [(pagina_id, (conteudo or {}).get("data") or []) for pagina_id, conteudo in linhas]
 
 
 def marcar_processada(sessao: Session, pagina_id: int) -> None:

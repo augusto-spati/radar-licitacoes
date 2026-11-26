@@ -1,7 +1,16 @@
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, Text, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -30,15 +39,55 @@ class ColetaJanela(Base):
     concluida_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
-class PaginaBruta(Base):
-    __tablename__ = "pagina_bruta"
+class ColetaRetrato(Base):
+    """Uma leitura completa da lista de uma fonte de retrato (Sanepar, Compesa)."""
+
+    __tablename__ = "coleta_retrato"
     __table_args__ = (
-        UniqueConstraint("janela_id", "numero_pagina", name="uq_pagina_bruta_janela_numero"),
+        CheckConstraint(
+            "status IN ('em_andamento', 'concluido', 'falha')", name="ck_coleta_retrato_status"
+        ),
+        Index("ix_coleta_retrato_fonte_iniciado", "fonte", "iniciado_em"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    janela_id: Mapped[int] = mapped_column(ForeignKey("coleta_janela.id"))
+    fonte: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text)  # em_andamento | concluido | falha
+    iniciado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    concluido_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    paginas: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    registros: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    erro: Mapped[str | None] = mapped_column(Text)
+
+
+class PaginaBruta(Base):
+    """Página bruta de uma janela do PNCP (JSON) ou de um retrato (HTML, JS ou JSON)."""
+
+    __tablename__ = "pagina_bruta"
+    __table_args__ = (
+        UniqueConstraint("janela_id", "numero_pagina", name="uq_pagina_bruta_janela_numero"),
+        UniqueConstraint("retrato_id", "numero_pagina", name="uq_pagina_bruta_retrato_numero"),
+        CheckConstraint(
+            "(janela_id IS NULL) <> (retrato_id IS NULL)", name="ck_pagina_bruta_origem"
+        ),
+        CheckConstraint("formato IN ('json', 'html', 'js')", name="ck_pagina_bruta_formato"),
+        CheckConstraint(
+            "janela_id IS NULL OR formato = 'json'", name="ck_pagina_bruta_janela_json"
+        ),
+        CheckConstraint(
+            "(formato = 'json' AND conteudo IS NOT NULL)"
+            " OR (formato IN ('html', 'js') AND conteudo_texto IS NOT NULL)",
+            name="ck_pagina_bruta_conteudo",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    janela_id: Mapped[int | None] = mapped_column(ForeignKey("coleta_janela.id"))
+    retrato_id: Mapped[int | None] = mapped_column(ForeignKey("coleta_retrato.id"))
     numero_pagina: Mapped[int] = mapped_column(Integer)
-    conteudo: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    formato: Mapped[str] = mapped_column(Text, default="json", server_default="json")
+    conteudo: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    conteudo_texto: Mapped[str | None] = mapped_column(Text)
+    url: Mapped[str | None] = mapped_column(Text)
     coletada_em: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     processada_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

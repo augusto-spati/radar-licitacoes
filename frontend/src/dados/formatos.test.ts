@@ -11,10 +11,10 @@ import {
   formatarHora,
   formatarPrazo,
   formatarValor,
-  linkPncp,
   localidade,
   nomeLinha,
-  nomeModalidade,
+  NOMES_FONTE,
+  idNaFonte,
 } from './formatos';
 
 // 26/11/2026 12:00 em Brasília.
@@ -73,18 +73,6 @@ describe('formatarPrazo', () => {
   });
 });
 
-describe('nomeModalidade', () => {
-  it('traduz as quatro modalidades', () => {
-    expect(nomeModalidade(4)).toBe('Concorrência eletrônica');
-    expect(nomeModalidade(5)).toBe('Concorrência presencial');
-    expect(nomeModalidade(6)).toBe('Pregão eletrônico');
-    expect(nomeModalidade(7)).toBe('Pregão presencial');
-  });
-  it('desconhecida cai num texto genérico', () => {
-    expect(nomeModalidade(99)).toBe('Modalidade 99');
-  });
-});
-
 describe('estaDesatualizado', () => {
   it('nulo conta como desatualizado', () => {
     expect(estaDesatualizado(null, agora)).toBe(true);
@@ -117,19 +105,21 @@ describe('formatarCnpj', () => {
   it('aplica a máscara de 14 dígitos', () => {
     expect(formatarCnpj('13127340000120')).toBe('13.127.340/0001-20');
   });
-  it('fora do formato devolve como veio', () => {
+  it('fora do formato devolve como veio; nulo (fontes sem CNPJ) vira travessão', () => {
     expect(formatarCnpj('123')).toBe('123');
+    expect(formatarCnpj(null)).toBe('—');
   });
 });
 
-describe('linkPncp', () => {
-  it('monta o link do edital no PNCP a partir do número de controle', () => {
-    expect(linkPncp('13127340000120-1-000036/2025')).toBe(
-      'https://pncp.gov.br/app/editais/13127340000120/2025/36',
-    );
+describe('fontes', () => {
+  it('cada fonte tem seu nome de tela', () => {
+    expect(NOMES_FONTE).toEqual({pncp: 'PNCP', sanepar: 'Sanepar', compesa: 'Compesa'});
   });
-  it('número fora do formato não gera link', () => {
-    expect(linkPncp('qualquer-coisa')).toBeNull();
+  it('idNaFonte tira o prefixo "fonte~" e mantém o resto', () => {
+    expect(idNaFonte('sanepar~OE-345/26')).toBe('OE-345/26');
+    expect(idNaFonte('pncp~13127340000120-1-000036/2025')).toBe('13127340000120-1-000036/2025');
+    expect(idNaFonte('sanepar~OE~estranho')).toBe('OE~estranho');
+    expect(idNaFonte('sem-separador')).toBe('sem-separador');
   });
 });
 

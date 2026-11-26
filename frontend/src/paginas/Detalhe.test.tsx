@@ -6,7 +6,7 @@ import {Detalhe} from './Detalhe';
 
 afterEach(cleanup);
 
-const ID = '13127340000120-1-000036/2025';
+const ID = 'pncp~13127340000120-1-000036/2025';
 // A lista navega com o id codificado num segmento só (%2F no lugar da barra).
 const abrir = (obter: (id: string) => Promise<ReturnType<typeof edital> | null>, consulta = '') =>
   renderizar(<Detalhe />, {
@@ -30,7 +30,9 @@ describe('Detalhe', () => {
     );
     expect(valorDe('CNPJ do órgão')).toBe('13.127.340/0001-20');
     expect(valorDe('Município/UF')).toBe('Holambra/SP');
-    expect(valorDe('Modalidade')).toBe('Concorrência eletrônica');
+    expect(valorDe('Modalidade')).toBe('Concorrência - Eletrônica');
+    expect(valorDe('Fonte')).toBe('PNCP');
+    expect(valorDe('Identificador na fonte')).toBe('13127340000120-1-000036/2025');
     expect(valorDe('Situação')).toBe('Divulgada no PNCP');
     expect(valorDe('Valor estimado')).toBe('R$ 845 mil');
     expect(valorDe('Publicação')).toBe('20/11/2026 10:16');
@@ -69,23 +71,42 @@ describe('Detalhe', () => {
     expect(valorDe('Abertura das propostas')).toBe('—');
     expect(valorDe('Encerramento das propostas')).toBe('—');
     expect(valorDe('Linhas de serviço')).toBe('—');
-    // Sem link de origem: cai na página do edital no PNCP.
-    const pncp = screen.getByRole('link', {name: /Abrir no PNCP/});
-    expect(pncp.getAttribute('href')).toBe('https://pncp.gov.br/app/editais/13127340000120/2025/36');
-    expect(pncp.getAttribute('rel')).toContain('noopener');
+    // Sem link (a API já manda o de reserva): o front não monta um por conta própria.
+    expect(screen.queryByRole('link', {name: /Abrir no/})).toBeNull();
     expect(screen.getByRole('link', {name: /Voltar/}).getAttribute('href')).toBe('/');
   });
 
   it.each(['', '   ', 'javascript:alert(1)', 'www.compras.gov.br/36'])(
-    'link de origem %j (vazio ou sem http) cai no PNCP',
+    'link %j (vazio ou sem http) não vira botão: o front não monta link por conta própria',
     async link => {
       abrir(async () => edital({link_origem: link}));
       await screen.findByText('Execução de rede de esgoto no bairro Centro');
-      expect(screen.queryByRole('link', {name: /Abrir no sistema de origem/})).toBeNull();
-      const pncp = screen.getByRole('link', {name: /Abrir no PNCP/});
-      expect(pncp.getAttribute('href')).toBe('https://pncp.gov.br/app/editais/13127340000120/2025/36');
+      expect(screen.queryByRole('link', {name: /Abrir no/})).toBeNull();
     },
   );
+
+  it('detalhe_sanepar_com_barra_no_id_abre', async () => {
+    const obter = vi.fn(async () =>
+      edital({
+        fonte: 'sanepar',
+        id_publico: 'sanepar~OE-345/26',
+        link_origem: 'https://www.sanepar.com.br/licitacao/detalhe/345/26',
+      }),
+    );
+    renderizar(<Detalhe />, {
+      fonte: fonteFalsa({obter}),
+      endereco: `/edital/${encodeURIComponent('sanepar~OE-345/26')}`,
+      padrao: '/edital/:id',
+    });
+
+    expect(await screen.findByText('Execução de rede de esgoto no bairro Centro')).toBeTruthy();
+    expect(obter).toHaveBeenCalledWith('sanepar~OE-345/26');
+    expect(valorDe('Fonte')).toBe('Sanepar');
+    expect(valorDe('Identificador na fonte')).toBe('OE-345/26');
+    expect(
+      screen.getByRole('link', {name: /Abrir no sistema de origem/}).getAttribute('href'),
+    ).toBe('https://www.sanepar.com.br/licitacao/detalhe/345/26');
+  });
 
   it('detalhe_inexistente_mostra_nao_encontrado', async () => {
     abrir(async () => null);

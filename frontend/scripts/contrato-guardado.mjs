@@ -2,7 +2,9 @@
 // no intervalo de commits do push ou do PR, pelo menos um commit do intervalo
 // tem de trazer o trailer `Contrato-Front: aprovado` (aprovação do Augusto).
 //
-// Roda no CI (job `contrato-guardado`), da raiz do repositório:
+// Roda no CI (job `contrato-guardado`), da raiz do repositório, a partir da
+// cópia deste script na BASE do intervalo (não a do commit testado), para que um
+// commit não possa editar a guarda e se aprovar. A lista GUARDADOS usada é a da base.
 //   node frontend/scripts/contrato-guardado.mjs
 // O intervalo vem das variáveis do GitHub Actions (veja `escolherIntervalo`).
 import {execFileSync} from 'node:child_process';
@@ -12,12 +14,19 @@ import {fileURLToPath} from 'node:url';
 export const TRAILER = 'Contrato-Front';
 export const APROVADO = 'aprovado';
 
-// Caminhos a partir da raiz do repositório. Termina em "/" = a pasta inteira.
+// Caminhos a partir da raiz do repositório. Termina em "/" = a pasta inteira;
+// com "*" = glob (o "*" casa qualquer coisa menos "/"). O CODEOWNERS espelha a lista.
 export const GUARDADOS = [
-  'frontend/eslint.config.js',
+  'frontend/eslint.config.*',
   'frontend/.jscpd.json',
   'frontend/package.json',
-  'frontend/vite.config.ts',
+  'frontend/package-lock.json',
+  'frontend/index.html',
+  'frontend/vite.config.*',
+  'frontend/vitest.config.*',
+  'frontend/tsconfig*.json',
+  '.gitignore',
+  'frontend/.gitignore',
   'frontend/playwright.config.ts',
   'frontend/CLAUDE.md',
   'frontend/src/rotas.test.ts',
@@ -28,11 +37,22 @@ export const GUARDADOS = [
   'frontend/e2e/',
   'frontend/scripts/',
   '.github/workflows/ci.yml',
+  '.github/workflows/guarda-base.yml',
   '.github/CODEOWNERS',
 ];
 
+function casa(guardado, caminho) {
+  if (guardado.endsWith('/')) return caminho.startsWith(guardado);
+  if (!guardado.includes('*')) return caminho === guardado;
+  const regex = guardado
+    .split('*')
+    .map(parte => parte.replace(/[.+?^${}()|[\]\\]/g, '\\$&'))
+    .join('[^/]*');
+  return new RegExp(`^${regex}$`).test(caminho);
+}
+
 export function ehGuardado(caminho) {
-  return GUARDADOS.some(g => (g.endsWith('/') ? caminho.startsWith(g) : caminho === g));
+  return GUARDADOS.some(g => casa(g, caminho));
 }
 
 /**

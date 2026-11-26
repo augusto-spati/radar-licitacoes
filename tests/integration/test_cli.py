@@ -90,6 +90,7 @@ def test_carga_inicial_ponta_a_ponta(
                 )
     falso = ClienteFalso(roteiro)
     monkeypatch.setattr(cli, "_criar_cliente", lambda: como_cliente(falso))
+    monkeypatch.setattr(cli, "_fontes_retrato", lambda: [])  # este teste é só do PNCP
 
     resultado = runner.invoke(
         cli.app, ["carga-inicial", "--dias", "2", "--config", str(config_filtro)]

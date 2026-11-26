@@ -54,10 +54,10 @@ def test_exporta_casados_e_completa_com_outros_abertos(sessao: Session) -> None:
 
     assert dados["atualizado_em"] is None
     editais = dados["editais"]
-    assert [e["numero_controle_pncp"] for e in editais] == [
-        "outro-cedo/2026",
-        "casa/2026",
-        "outro-tarde/2026",
+    assert [e["id_publico"] for e in editais] == [
+        "pncp~outro-cedo/2026",
+        "pncp~casa/2026",
+        "pncp~outro-tarde/2026",
     ]
     assert [e["linhas"] for e in editais] == [[], ["perdas"], []]
     for item in editais:
@@ -75,4 +75,4 @@ def test_respeita_o_maximo_priorizando_os_casados(sessao: Session) -> None:
 
     dados = exportar_exemplo(sessao, CRITERIOS, AGORA, maximo=1)
 
-    assert [e["numero_controle_pncp"] for e in dados["editais"]] == ["casa/2026"]
+    assert [e["id_publico"] for e in dados["editais"]] == ["pncp~casa/2026"]
