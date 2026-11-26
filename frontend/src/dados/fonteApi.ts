@@ -13,9 +13,10 @@ export class ErroFonte extends Error {
 
 // Com sessão, manda o id token; um 401 encerra a sessão e leva para a tela de entrar.
 async function buscar(caminho: string): Promise<Response> {
-  const token = await obterToken();
   let resposta: Response;
   try {
+    // Falha ao renovar o token (rede) aparece como falha de conexão; a sessão fica.
+    const token = await obterToken();
     resposta = token
       ? await fetch(caminho, {headers: {Authorization: `Bearer ${token}`}})
       : await fetch(caminho);

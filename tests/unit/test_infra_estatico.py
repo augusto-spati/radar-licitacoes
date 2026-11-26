@@ -87,3 +87,12 @@ def test_nenhum_estado_ou_tfvars_versionado() -> None:
         if ".tfstate" in f or f.endswith("terraform.tfvars") or f.endswith(".auto.tfvars")
     ]
     assert not ruins, f"arquivos sensiveis versionados: {ruins}"
+
+
+def test_login_fechado_e_sem_diferenciar_maiusculas() -> None:
+    auth = re.sub(r"\s+", " ", (RAIZ / "infra" / "prod" / "auth.tf").read_text(encoding="utf-8"))
+    assert "allow_admin_create_user_only = true" in auth, "cadastro aberto ligado"
+    assert "username_configuration { case_sensitive = false }" in auth, (
+        "login diferencia maiusculas"
+    )
+    assert "lower(e)" in auth and "lower(var.email_remetente)" in auth, "e-mails sem lower()"

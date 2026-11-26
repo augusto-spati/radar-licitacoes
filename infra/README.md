@@ -39,9 +39,14 @@ O user pool manda os codigos pelo SES e so pode ser criado com o remetente
 (`email_remetente`) ja verificado. Por isso o primeiro apply tem dois passos:
 
     terraform apply -target=aws_sesv2_email_identity.email
-    # cada e-mail de email_remetente e emails_com_acesso recebe "Amazon Web Services –
+    # cada e-mail de email_remetente e emails_com_acesso recebe "Amazon Web Services -
     # Email Address Verification Request": clicar no link (o remetente, antes do passo seguinte)
     terraform apply
+
+Se o remetente ainda nao clicou no link, o segundo apply falha ao criar o user pool
+com um erro do SES de identidade nao verificada ("identity not verified").
+Basta clicar no link e rodar `terraform apply`
+de novo. Os e-mails ficam em minusculas (`lower()`), e o login nao diferencia maiusculas.
 
 ## Login (codigo por e-mail, SES no sandbox)
 

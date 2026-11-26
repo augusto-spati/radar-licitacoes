@@ -6,8 +6,12 @@
 # clica uma vez no e-mail de verificacao da AWS (veja infra/README.md).
 
 locals {
+  # E-mail em minusculas em todo lugar: o front tambem normaliza antes do login.
+  email_remetente   = lower(var.email_remetente)
+  emails_com_acesso = toset([for e in var.emails_com_acesso : lower(e)])
+
   # O remetente pode estar tambem na lista de acesso: um set evita identidade duplicada.
-  identidades_ses = toset(concat([var.email_remetente], var.emails_com_acesso))
+  identidades_ses = setunion([local.email_remetente], local.emails_com_acesso)
 
   cognito = var.cognito != null ? var.cognito : {
     issuer   = "https://${aws_cognito_user_pool.radar.endpoint}"
@@ -28,8 +32,15 @@ resource "aws_cognito_user_pool" "radar" {
   auto_verified_attributes = ["email"]
   mfa_configuration        = "OFF"
 
-  # A API exige PASSWORD na lista; os usuarios sao criados sem senha, entao so o
-  # codigo por e-mail funciona (e o app client so permite USER_AUTH).
+  # Login nao diferencia maiusculas. Mudar isto depois recria o pool (e os usuarios).
+  username_configuration {
+    case_sensitive = false
+  }
+
+  # CDK e o console exigem PASSWORD na lista; mantido por seguranca: os usuarios nao
+  # tem senha, entao so o codigo por e-mail funciona (e o client so permite USER_AUTH).
+  # https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.aws_cognito.AllowedFirstAuthFactors.html
+  # ("password: ... This must be true.")
   sign_in_policy {
     allowed_first_auth_factors = ["EMAIL_OTP", "PASSWORD"]
   }
@@ -48,13 +59,13 @@ resource "aws_cognito_user_pool" "radar" {
 
   email_configuration {
     email_sending_account = "DEVELOPER"
-    source_arn            = aws_sesv2_email_identity.email[var.email_remetente].arn
-    from_email_address    = var.email_remetente
+    source_arn            = aws_sesv2_email_identity.email[local.email_remetente].arn
+    from_email_address    = local.email_remetente
   }
 }
 
 resource "aws_cognito_user" "acesso" {
-  for_each     = toset(var.emails_com_acesso)
+  for_each     = local.emails_com_acesso
   user_pool_id = aws_cognito_user_pool.radar.id
   username     = each.value
 

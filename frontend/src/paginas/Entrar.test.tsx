@@ -57,7 +57,8 @@ describe('Entrar (login real, Cognito)', () => {
     abrir();
     expect(screen.queryByText('Protótipo com dados de exemplo')).toBeNull();
 
-    await pedirCodigo(' tio@fr.com.br ');
+    await pedirCodigo(' Tio@FR.com.br ');
+    expect(screen.getByText('Se este e-mail tiver acesso, o código chega em instantes.')).toBeTruthy();
     const [url, init] = mock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('https://cognito-idp.us-east-1.amazonaws.com/');
     expect((init.headers as Record<string, string>)['X-Amz-Target']).toBe(
@@ -95,15 +96,21 @@ describe('Entrar (login real, Cognito)', () => {
     expect(sessionStorage.getItem('radar.sessao')).toBeNull();
   });
 
-  it('e-mail sem acesso mostra a mensagem e não pede o código', async () => {
+  it('"Pedir outro código" fica ocupado enquanto o pedido não volta', async () => {
     vi.stubEnv('VITE_FONTE', 'api');
-    simularFetch(respostaJson({__type: 'UserNotFoundException'}, 400));
+    let responder: (r: Response) => void = () => undefined;
+    const pendente = new Promise<Response>(resolve => (responder = resolve));
+    const mock = simularFetch(respostaJson(desafioCognito));
+    mock.mockReturnValueOnce(pendente);
     abrir();
 
-    fireEvent.change(screen.getByLabelText('E-mail'), {target: {value: 'outro@x.com'}});
-    fireEvent.click(screen.getByRole('button', {name: 'Enviar código'}));
+    await pedirCodigo('tio@fr.com.br');
+    const outro = screen.getByRole('button', {name: 'Pedir outro código'});
+    fireEvent.click(outro);
+    await vi.waitFor(() => expect(outro.getAttribute('aria-busy')).toBe('true'));
 
-    expect(await screen.findByText('Este e-mail não tem acesso ao radar.')).toBeTruthy();
-    expect(screen.queryByLabelText('Código')).toBeNull();
+    responder(respostaJson(desafioCognito));
+    await vi.waitFor(() => expect(outro.getAttribute('aria-busy')).not.toBe('true'));
+    expect(mock).toHaveBeenCalledTimes(2);
   });
 });

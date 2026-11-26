@@ -19,20 +19,25 @@ type RespostaCognito = {
 /** Desafio pendente entre "Enviar código" e "Entrar". */
 export type Desafio = {email: string; session: string};
 
+/** Erro do login; `tipo` é o `__type` do Cognito (ou 'rede' sem conexão). */
 export class ErroSessao extends Error {
-  constructor(mensagem: string) {
+  tipo: string;
+  constructor(mensagem: string, tipo = '') {
     super(mensagem);
     this.name = 'ErroSessao';
+    this.tipo = tipo;
   }
 }
 
+const MUITAS_TENTATIVAS = 'Muitas tentativas. Espere alguns minutos.';
+// Com prevent_user_existence_errors, a tela não diz se o e-mail existe.
 const MENSAGENS: Record<string, string> = {
   CodeMismatchException: 'Código incorreto. Confira o e-mail e tente de novo.',
   ExpiredCodeException: 'O código expirou. Peça um novo.',
-  NotAuthorizedException: 'Não foi possível entrar com este e-mail. Peça um novo código.',
-  UserNotFoundException: 'Este e-mail não tem acesso ao radar.',
-  LimitExceededException: 'Muitas tentativas. Espere alguns minutos.',
-  TooManyRequestsException: 'Muitas tentativas. Espere alguns minutos.',
+  NotAuthorizedException: 'Código incorreto ou expirado. Peça um novo código.',
+  UserNotFoundException: 'Não foi possível enviar o código para este e-mail.',
+  LimitExceededException: MUITAS_TENTATIVAS,
+  TooManyRequestsException: MUITAS_TENTATIVAS,
 };
 
 /** Login real só com a API; com a fonte de exemplo a tela de entrar é só visual. */
@@ -51,13 +56,13 @@ async function chamar(operacao: string, corpo: object): Promise<RespostaCognito>
       body: JSON.stringify({ClientId: import.meta.env.VITE_COGNITO_CLIENT_ID, ...corpo}),
     });
   } catch {
-    throw new ErroSessao('Sem conexão. Tente de novo.');
+    throw new ErroSessao('Sem conexão. Tente de novo.', 'rede');
   }
   const dados = (await resposta.json().catch(() => ({}))) as RespostaCognito & {__type?: string};
   if (!resposta.ok) {
     // __type vem como "Nome" ou "prefixo#Nome".
     const tipo = (dados.__type ?? '').split('#').pop() ?? '';
-    throw new ErroSessao(MENSAGENS[tipo] ?? 'Não foi possível entrar agora. Tente de novo.');
+    throw new ErroSessao(MENSAGENS[tipo] ?? 'Não foi possível entrar agora. Tente de novo.', tipo);
   }
   return dados;
 }
@@ -80,14 +85,16 @@ function ler(): Tokens | null {
 }
 
 export async function enviarCodigo(email: string): Promise<Desafio> {
+  // O pool não diferencia maiúsculas; normalizar evita usuário "diferente" por digitação.
+  const usuario = email.trim().toLowerCase();
   const resposta = await chamar('InitiateAuth', {
     AuthFlow: 'USER_AUTH',
-    AuthParameters: {USERNAME: email, PREFERRED_CHALLENGE: 'EMAIL_OTP'},
+    AuthParameters: {USERNAME: usuario, PREFERRED_CHALLENGE: 'EMAIL_OTP'},
   });
   if (resposta.ChallengeName !== 'EMAIL_OTP' || !resposta.Session) {
-    throw new ErroSessao('Não foi possível enviar o código para este e-mail.');
+    throw new ErroSessao(MENSAGENS.UserNotFoundException);
   }
-  return {email, session: resposta.Session};
+  return {email: usuario, session: resposta.Session};
 }
 
 export async function confirmarCodigo({email, session}: Desafio, codigo: string): Promise<void> {
@@ -96,9 +103,28 @@ export async function confirmarCodigo({email, session}: Desafio, codigo: string)
     Session: session,
     ChallengeResponses: {USERNAME: email, EMAIL_OTP_CODE: codigo.trim()},
   });
-  if (!resposta.AuthenticationResult) throw new ErroSessao('Código incorreto. Confira o e-mail e tente de novo.');
+  if (!resposta.AuthenticationResult) throw new ErroSessao(MENSAGENS.CodeMismatchException);
   guardar(resposta.AuthenticationResult);
 }
+
+async function renovar(refreshToken: string): Promise<string | null> {
+  try {
+    const resposta = await chamar('InitiateAuth', {
+      AuthFlow: 'REFRESH_TOKEN_AUTH',
+      AuthParameters: {REFRESH_TOKEN: refreshToken},
+    });
+    if (!resposta.AuthenticationResult) return sair();
+    guardar(resposta.AuthenticationResult, refreshToken);
+    return resposta.AuthenticationResult.IdToken;
+  } catch (erro) {
+    // Refresh recusado encerra a sessão; falha de rede ou do serviço a mantém.
+    if (erro instanceof ErroSessao && erro.tipo === 'NotAuthorizedException') return sair();
+    throw erro;
+  }
+}
+
+// Chamadas simultâneas com token vencido dividem uma renovação só.
+let renovando: Promise<string | null> | null = null;
 
 /** id token válido (renovado pelo refresh token se venceu) ou null se não há sessão. */
 export async function obterToken(): Promise<string | null> {
@@ -106,20 +132,16 @@ export async function obterToken(): Promise<string | null> {
   if (!tokens) return null;
   if (tokens.expiraEm - FOLGA_MS > Date.now()) return tokens.idToken;
   if (!tokens.refreshToken) return sair();
-  try {
-    const resposta = await chamar('InitiateAuth', {
-      AuthFlow: 'REFRESH_TOKEN_AUTH',
-      AuthParameters: {REFRESH_TOKEN: tokens.refreshToken},
-    });
-    if (!resposta.AuthenticationResult) return sair();
-    guardar(resposta.AuthenticationResult, tokens.refreshToken);
-    return resposta.AuthenticationResult.IdToken;
-  } catch {
-    return sair();
-  }
+  renovando ??= renovar(tokens.refreshToken).finally(() => {
+    renovando = null;
+  });
+  return renovando;
 }
 
+/** Encerra a sessão: revoga o refresh token no Cognito (sem esperar) e apaga os tokens. */
 export function sair(): null {
+  const refreshToken = ler()?.refreshToken;
+  if (refreshToken) chamar('RevokeToken', {Token: refreshToken}).catch(() => undefined);
   sessionStorage.removeItem(CHAVE);
   return null;
 }

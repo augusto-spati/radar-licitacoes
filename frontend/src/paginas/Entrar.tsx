@@ -41,7 +41,7 @@ export function Entrar() {
   const pedirCodigo = () =>
     executar(async () => {
       setCodigo('');
-      setDesafio(real ? await enviarCodigo(email.trim()) : DESAFIO_VISUAL);
+      setDesafio(real ? await enviarCodigo(email) : DESAFIO_VISUAL);
     });
 
   const entrar = () =>
@@ -79,6 +79,9 @@ export function Entrar() {
               />
             )}
             {erro && <Banner status="error" title={erro} />}
+            {real && desafio && !erro && (
+              <Banner status="info" title="Se este e-mail tiver acesso, o código chega em instantes." />
+            )}
 
             <TextInput
               label="E-mail"
@@ -102,7 +105,7 @@ export function Entrar() {
                   label="Código"
                   value={codigo}
                   onChange={setCodigo}
-                  placeholder="Código de 6 dígitos"
+                  placeholder="Código recebido por e-mail"
                   size="lg"
                 />
                 <Button
@@ -112,7 +115,12 @@ export function Entrar() {
                   isLoading={aguardando}
                   onClick={entrar}
                 />
-                <Button label="Pedir outro código" variant="ghost" onClick={pedirCodigo} />
+                <Button
+                  label="Pedir outro código"
+                  variant="ghost"
+                  isLoading={aguardando}
+                  onClick={pedirCodigo}
+                />
               </VStack>
             )}
           </VStack>
