@@ -11,14 +11,37 @@ bootstrap e local e nao vai para o repositorio.
     cd infra/bootstrap
     terraform init && terraform apply
 
-## 2. Ambiente `prod`
+## 2. Imagem inicial da API (antes do primeiro apply de `prod`)
+
+A Lambda precisa de uma imagem existente no ECR. Como o repositorio so existe depois
+do apply, o primeiro deploy tem tres passos: criar os repositorios, empurrar a tag
+`bootstrap` e aplicar o resto.
 
     cd infra/prod
     cp terraform.tfvars.example terraform.tfvars   # preencher; nao e versionado
     terraform init -backend-config="bucket=radar-licitacoes-tfstate-<account_id>"
-    terraform plan
+    terraform apply -target=aws_ecr_repository.api -target=aws_ecr_repository.coletor
+    aws ecr get-login-password | docker login --username AWS --password-stdin <account_id>.dkr.ecr.us-east-1.amazonaws.com
+    docker build -f docker/api-lambda.Dockerfile -t <account_id>.dkr.ecr.us-east-1.amazonaws.com/radar-api:bootstrap .
+    docker push <account_id>.dkr.ecr.us-east-1.amazonaws.com/radar-api:bootstrap
 
-O estado fica no S3 com lock nativo (`use_lockfile`), chave `prod/terraform.tfstate`.
+As tags dos repositorios sao mutaveis: o deploy normal publica tags por SHA.
+
+## 3. Ambiente `prod`
+
+    terraform apply
+
+## 4. URL do banco e front
+
+1. Ponha a URL do Neon no parametro (o Terraform nunca sobrescreve o valor):
+
+       aws ssm put-parameter --name /radar/prod/database_url --type SecureString --overwrite --value "<url do Neon>"
+
+2. Faca o deploy do front no bucket `radar-licitacoes-front-<account_id>` e invalide a
+   distribuicao (`id_distribuicao`). O site fica em `url_site`.
+
+Ate o Cognito ser configurado (variavel `cognito`), `/api/*` fica sem autorizador e a
+saida `aviso_api_sem_login` avisa.
 
 ## Alertas por e-mail
 
