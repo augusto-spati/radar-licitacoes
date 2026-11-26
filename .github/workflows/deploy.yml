@@ -1,0 +1,118 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verificar se o deploy esta configurado
+        id: gate
+        run: |
+          if [ -z "$AWS_ROLE_ARN" ]; then
+            echo "::notice::AWS_ROLE_ARN nao definida (conta AWS ainda nao existe): deploy ignorado."
+            echo "ativo=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ativo=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.ativo == 'true'
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        if: steps.gate.outputs.ativo == 'true'
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - id: ecr
+        if: steps.gate.outputs.ativo == 'true'
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # --platform/--provenance=false: a Lambda rejeita manifesto OCI index.
+      - name: Build e push das imagens (tag = SHA)
+        if: steps.gate.outputs.ativo == 'true'
+        env:
+          REGISTRO: ${{ steps.ecr.outputs.registry }}
+        run: |
+          for item in "api:api-lambda" "coletor:coletor"; do
+            repo="${item%%:*}"; arquivo="${item##*:}"
+            docker build --platform linux/amd64 --provenance=false \
+              -f "docker/${arquivo}.Dockerfile" -t "${REGISTRO}/radar-${repo}:${GITHUB_SHA}" .
+            docker push "${REGISTRO}/radar-${repo}:${GITHUB_SHA}"
+          done
+
+      - name: Atualizar a Lambda da API
+        if: steps.gate.outputs.ativo == 'true'
+        env:
+          REGISTRO: ${{ steps.ecr.outputs.registry }}
+        run: |
+          aws lambda update-function-code --function-name radar-api \
+            --image-uri "${REGISTRO}/radar-api:${GITHUB_SHA}" > /dev/null
+          aws lambda wait function-updated --function-name radar-api
+
+      # Nova revisao a partir da ULTIMA: so a imagem muda (segredos, env, logs e roles ficam).
+      # Sem terraform apply no CI. Um apply manual depois deve usar -var tag_coletor=<sha>.
+      - name: Registrar nova revisao da task do coletor
+        if: steps.gate.outputs.ativo == 'true'
+        env:
+          REGISTRO: ${{ steps.ecr.outputs.registry }}
+        run: |
+          aws ecs describe-task-definition --task-definition radar-coletor \
+            --query taskDefinition --output json > taskdef.json
+          jq --arg img "${REGISTRO}/radar-coletor:${GITHUB_SHA}" '
+            .containerDefinitions[0].image = $img
+            | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                  .compatibilities, .registeredAt, .registeredBy)
+          ' taskdef.json > novo.json
+          aws ecs register-task-definition --cli-input-json file://novo.json \
+            --query taskDefinition.taskDefinitionArn --output text
+
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.ativo == 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build do front
+        if: steps.gate.outputs.ativo == 'true'
+        working-directory: frontend
+        env:
+          VITE_FONTE: api
+          VITE_COGNITO_REGION: us-east-1
+          VITE_COGNITO_CLIENT_ID: ${{ vars.COGNITO_CLIENT_ID }}
+        run: |
+          npm ci
+          npm run build
+
+      - name: Publicar o front e invalidar o CloudFront
+        if: steps.gate.outputs.ativo == 'true'
+        env:
+          S3_BUCKET_FRONT: ${{ vars.S3_BUCKET_FRONT }}
+          CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
+        run: |
+          aws s3 sync frontend/dist "s3://${S3_BUCKET_FRONT}" --delete
+          aws cloudfront create-invalidation \
+            --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" --paths "/*" > /dev/null
+
+      - name: Verificacao (smoke)
+        if: steps.gate.outputs.ativo == 'true' && vars.URL_SITE != ''
+        env:
+          URL_SITE: ${{ vars.URL_SITE }}
+        run: curl -fsS --retry 5 --retry-delay 5 --retry-all-errors "${URL_SITE%/}/api/status"

@@ -27,7 +27,7 @@ do apply, o primeiro deploy tem tres passos: criar os repositorios, empurrar a t
 
 Rode o `docker build` na raiz do repositorio. `--platform linux/amd64 --provenance=false`
 e obrigatorio: o Lambda rejeita manifestos OCI index (o buildx gera um com proveniencia).
-O workflow de deploy (Task 7) deve usar as mesmas flags.
+O workflow de deploy (`.github/workflows/deploy.yml`) usa as mesmas flags.
 
 As tags dos repositorios sao mutaveis: o deploy normal publica tags por SHA. A tag
 `bootstrap` so e necessaria na criacao da Lambda; depois o deploy e dono da imagem
@@ -85,7 +85,29 @@ de novo. Os e-mails ficam em minusculas (`lower()`), e o login nao diferencia ma
 `/api/*` (menos `/api/status`) exige o JWT do user pool de `auth.tf`. Com
 `exigir_login = false` o autorizador sai e a saida `aviso_api_sem_login` avisa.
 
+## Deploy pelo GitHub Actions (OIDC)
+
+`github_oidc.tf` cria o provedor OIDC e a role `radar-deploy` (trust so para
+`repo:augusto-spati/radar-licitacoes:ref:refs/heads/main`). Depois do apply, crie as
+**variaveis de repositorio** (Settings > Secrets and variables > Actions > Variables):
+
+| Variavel | Valor |
+| --- | --- |
+| `AWS_ROLE_ARN` | saida `role_deploy_arn` |
+| `S3_BUCKET_FRONT` | `radar-licitacoes-front-<account_id>` |
+| `CLOUDFRONT_DISTRIBUTION_ID` | saida `id_distribuicao` |
+| `COGNITO_CLIENT_ID` | saida `cognito_client_id` |
+| `URL_SITE` | saida `url_site` (opcional; liga o smoke em `/api/status`) |
+
+Sem `AWS_ROLE_ARN` o workflow sai com sucesso e um aviso. O deploy atualiza a Lambda,
+registra uma nova revisao da task `radar-coletor` (copia da ultima, so com a imagem nova)
+e publica o front. O CI nunca roda `terraform apply`: um `terraform apply` manual
+posterior deve passar `-var tag_coletor=<sha implantado>`, senao registra uma revisao com
+a tag configurada (por padrao, a antiga).
+
 ## Alertas por e-mail
+
+O alarme "coletor nao rodou" fica em ALARM ate a primeira execucao agendada: e esperado.
 
 O SNS envia um e-mail de confirmacao para `email_alertas`. O dono precisa clicar no
 link de confirmacao; sem isso a assinatura fica pendente e nenhum alarme chega.

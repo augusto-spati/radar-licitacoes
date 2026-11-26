@@ -14,4 +14,5 @@
 /frontend/e2e/                          @augusto-spati
 /frontend/scripts/                      @augusto-spati
 /.github/workflows/ci.yml               @augusto-spati
+/.github/workflows/deploy.yml               @augusto-spati
 /.github/CODEOWNERS                     @augusto-spati

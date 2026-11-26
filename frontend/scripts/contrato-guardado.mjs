@@ -28,6 +28,7 @@ export const GUARDADOS = [
   'frontend/e2e/',
   'frontend/scripts/',
   '.github/workflows/ci.yml',
+  '.github/workflows/deploy.yml',
   '.github/CODEOWNERS',
 ];
 
