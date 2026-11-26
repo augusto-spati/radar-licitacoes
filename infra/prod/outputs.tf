@@ -47,3 +47,13 @@ output "agenda_coletor" {
   description = "Nome do schedule diario do coletor."
   value       = aws_scheduler_schedule.atualizar_diario.name
 }
+
+output "cognito_user_pool_id" {
+  description = "Id do user pool (login por codigo no e-mail)."
+  value       = aws_cognito_user_pool.radar.id
+}
+
+output "cognito_client_id" {
+  description = "Id do app client publico; vai no build do front como VITE_COGNITO_CLIENT_ID."
+  value       = aws_cognito_user_pool_client.front.id
+}

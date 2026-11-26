@@ -36,6 +36,16 @@ variable "emails_com_acesso" {
   }
 }
 
+variable "email_remetente" {
+  description = "Remetente (FROM) dos codigos de login, verificado no SES."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", var.email_remetente))
+    error_message = "email_remetente deve ser um e-mail valido."
+  }
+}
+
 variable "imagem_api" {
   description = "URI da imagem da Lambda. Vazio usa <ecr radar-api>:bootstrap."
   type        = string
@@ -49,7 +59,7 @@ variable "exigir_login" {
 }
 
 variable "cognito" {
-  description = "Emissor e audiencia do JWT. Preenchido na Task 5; null desliga o autorizador."
+  description = "Sobrescreve emissor e audiencia do JWT. null (padrao) usa o user pool e o app client de auth.tf."
   type = object({
     issuer   = string
     audience = list(string)

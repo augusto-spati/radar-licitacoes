@@ -1,6 +1,6 @@
 locals {
   imagem_api   = coalesce(var.imagem_api, "${aws_ecr_repository.api.repository_url}:bootstrap")
-  com_cognito  = var.exigir_login && var.cognito != null
+  com_cognito  = var.exigir_login && local.cognito != null
   parametro_db = aws_ssm_parameter.database_url.arn
 }
 
@@ -90,7 +90,7 @@ resource "aws_lambda_function" "api" {
 # Avisa no plan quando a API ficaria aberta.
 check "login_configurado" {
   assert {
-    condition     = !(var.exigir_login && var.cognito == null)
+    condition     = !(var.exigir_login && local.cognito == null)
     error_message = "exigir_login=true mas cognito=null: /api/{proxy+} ficara SEM autorizador."
   }
 }
@@ -115,8 +115,8 @@ resource "aws_apigatewayv2_authorizer" "jwt" {
   identity_sources = ["$request.header.Authorization"]
 
   jwt_configuration {
-    issuer   = var.cognito.issuer
-    audience = var.cognito.audience
+    issuer   = local.cognito.issuer
+    audience = local.cognito.audience
   }
 }
 

@@ -1,3 +1,5 @@
 # Copie para terraform.tfvars (nao versionado) e preencha.
 email_alertas     = "voce@exemplo.com"
 emails_com_acesso = ["voce@exemplo.com"]
+# Remetente dos codigos de login (verificado no SES; pode ser um dos e-mails acima).
+email_remetente = "voce@exemplo.com"
