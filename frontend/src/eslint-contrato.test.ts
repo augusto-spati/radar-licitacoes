@@ -183,4 +183,57 @@ describe('contrato do ESLint', () => {
     );
     expect(await regrasVioladas('src/paginas/Lista.test.tsx', codigo)).toEqual([]);
   });
+
+  // Montado em partes: o texto literal da diretiva é proibido em todo o front
+  // (scripts/verificar-contrato.mjs), inclusive neste teste.
+  const diretiva = (resto: string) => ['eslint', resto].join('-');
+
+  it.each([
+    `/* ${diretiva('disable')} */`,
+    `/* ${diretiva('disable')} react/forbid-elements */`,
+    `// ${diretiva('disable-next-line')} react/forbid-elements`,
+    ['/*', 'eslint react/forbid-elements: "off"', '*/'].join(' '),
+  ])('comentário %s não desliga o contrato', async comentario => {
+    const codigo = [comentario, 'export function Amostra() {', '  return <div>Ok</div>;', '}'].join(
+      '\n',
+    );
+    expect(await regrasVioladas('src/paginas/Amostra.tsx', codigo)).toContain(
+      'react/forbid-elements',
+    );
+  });
+
+  it.each([
+    ['src/paginas/Amostra.tsx', '../../e2e/relogio'],
+    ['src/paginas/Amostra.tsx', '../../vite.config'],
+    ['src/componentes/Amostra.tsx', '../../../frontend/e2e/relogio'],
+    ['src/componentes/base/Amostra.tsx', '../../../e2e/relogio'],
+    ['src/Amostra.tsx', '../e2e/relogio'],
+  ])('barra %s importando %s, fora de src/', async (arquivo, fonte) => {
+    const codigo = `import {congelarRelogio} from '${fonte}';\nexport const amostra = congelarRelogio;\n`;
+    expect(await regrasVioladas(arquivo, codigo)).toContain('boundaries/no-unknown-dependencies');
+  });
+
+  it('só teste lê o package.json', async () => {
+    const codigo = "import pacote from '../../package.json';\nexport const amostra = pacote;\n";
+    expect(await regrasVioladas('src/paginas/Amostra.tsx', codigo)).toContain(
+      'boundaries/dependencies',
+    );
+    expect(await regrasVioladas('src/paginas/Amostra.test.ts', codigo)).toEqual([]);
+  });
+
+  it('barra import absoluto (a partir da raiz do projeto)', async () => {
+    const codigo = "import {Botao} from '/ui/Botao';\nexport const amostra = Botao;\n";
+    expect(await regrasVioladas('src/paginas/Amostra.tsx', codigo)).toContain(
+      'no-restricted-imports',
+    );
+  });
+
+  it('as regras de UI valem também fora de src/ (ex.: frontend/ui/)', async () => {
+    const html = 'export function Botao() {\n  return <button className="x">Ok</button>;\n}\n';
+    const violadas = await regrasVioladas('ui/Botao.tsx', html);
+    expect(violadas).toContain('react/forbid-elements');
+    expect(violadas).toContain('react/forbid-dom-props');
+    const mui = "import {Button} from '@mui/material';\nexport const Botao = Button;\n";
+    expect(await regrasVioladas('ui/Botao.tsx', mui)).toContain('no-restricted-imports');
+  });
 });

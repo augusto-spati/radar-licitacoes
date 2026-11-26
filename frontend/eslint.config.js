@@ -21,6 +21,12 @@ const cssProibido = {
   message: 'CSS só entra em src/main.tsx. Estilo vem de props, xstyle e tokens do Astryx.',
 };
 
+// Import absoluto ("/ui/X"): o Vite resolve pela raiz do projeto, por fora de src/.
+const importAbsoluto = {
+  regex: '^/',
+  message: 'Import absoluto não: use caminho relativo dentro de src/.',
+};
+
 const elementosProibidos = [
   'button',
   'input',
@@ -50,17 +56,35 @@ const elementosProibidos = [
 
 export default tseslint.config(
   {ignores: ['dist', 'node_modules', 'playwright-report', 'test-results']},
+  {
+    // Comentário no código não desliga regra: nada de diretiva de desligar nem
+    // de config inline. Diretiva que sobrar vira erro (e o verificar-contrato
+    // reprova o texto dela em qualquer arquivo do front).
+    linterOptions: {noInlineConfig: true, reportUnusedDisableDirectives: 'error'},
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ['**/*.{ts,tsx}'],
+    files: ['**/*.{ts,tsx,js,jsx,mjs,cjs}'],
     languageOptions: {globals: {...globals.browser, ...globals.node}},
   },
   {
+    // As regras de UI valem em todo o front, não só em src/: um frontend/ui/X.tsx
+    // também não pode ter HTML cru, style/className, outra biblioteca nem CSS.
+    files: ['**/*.{ts,tsx,js,jsx,mjs,cjs}'],
+    plugins: {react},
+    rules: {
+      'no-restricted-imports': ['error', {patterns: [bibliotecasProibidas, cssProibido, importAbsoluto]}],
+      'react/forbid-elements': ['error', {forbid: elementosProibidos}],
+      // Sem cor ou medida fixa no DOM. Props de componente do Astryx não são afetadas.
+      'react/forbid-dom-props': ['error', {forbid: ['style', 'className']}],
+    },
+  },
+  {
     files: ['src/**/*.{ts,tsx}'],
-    plugins: {boundaries, react},
+    plugins: {boundaries},
     settings: {
-      'import/resolver': {node: {extensions: ['.ts', '.tsx', '.js', '.jsx']}},
+      'import/resolver': {node: {extensions: ['.ts', '.tsx', '.d.ts', '.js', '.jsx']}},
       // Elementos são pastas (boundaries v7). O rotas.tsx é arquivo, então vira
       // categoria de arquivo; 'src' marca todo o resto de src/ como conhecido,
       // para que nenhum arquivo escape da checagem (ex.: App.tsx importando página).
@@ -77,6 +101,8 @@ export default tseslint.config(
         // Apoio dos testes (fonte falsa, render com @testing-library): só teste importa.
         {category: 'apoio-teste', pattern: 'src/testes/**'},
         {category: 'src', pattern: 'src/**'},
+        // O teste de dependências lê o package.json; é o único arquivo fora de src/ conhecido.
+        {category: 'pacote', pattern: 'package.json'},
       ],
     },
     rules: {
@@ -116,6 +142,15 @@ export default tseslint.config(
               allow: {to: {file: {categories: 'apoio-teste'}}},
             },
             {
+              // O package.json só é lido pelo teste de dependências.
+              disallow: {to: {file: {categories: 'pacote'}}},
+              message: 'Só arquivo de teste lê o package.json.',
+            },
+            {
+              from: {file: {categories: 'teste'}},
+              allow: {to: {file: {categories: 'pacote'}}},
+            },
+            {
               // Ciclo: a página que precisa de outra passa por rotas, não importa rotas.
               from: {element: {type: 'paginas'}},
               disallow: {to: {file: {categories: 'rotas'}}},
@@ -124,17 +159,17 @@ export default tseslint.config(
           ],
         },
       ],
-      'no-restricted-imports': ['error', {patterns: [bibliotecasProibidas, cssProibido]}],
-      'react/forbid-elements': ['error', {forbid: elementosProibidos}],
-      // Sem cor ou medida fixa no DOM. Props de componente do Astryx não são afetadas.
-      'react/forbid-dom-props': ['error', {forbid: ['style', 'className']}],
+      // Nada fora de src/ entra no app (ex.: uma pasta frontend/ui/ paralela): todo
+      // import local tem de cair num elemento ou arquivo conhecido de src/. Vale para
+      // qualquer profundidade de ../, porque a checagem é sobre o caminho resolvido.
+      'boundaries/no-unknown-dependencies': ['error', {require: 'any'}],
     },
   },
   {
     // O único lugar onde CSS entra: a ordem dos imports do Astryx em main.tsx.
     files: ['src/main.tsx'],
     rules: {
-      'no-restricted-imports': ['error', {patterns: [bibliotecasProibidas]}],
+      'no-restricted-imports': ['error', {patterns: [bibliotecasProibidas, importAbsoluto]}],
     },
   },
   {

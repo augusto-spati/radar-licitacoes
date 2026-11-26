@@ -8,9 +8,10 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "lint": "eslint .",
-    "duplicacao": "jscpd src --ignore \"**/api.d.ts\"",
-    "contrato": "openapi-typescript openapi.json -o src/dados/api.d.ts"
+    "lint": "eslint . --max-warnings 0",
+    "duplicacao": "jscpd --config .jscpd.json",
+    "contrato": "openapi-typescript openapi.json -o src/dados/api.d.ts",
+    "contrato:verificar": "node scripts/verificar-contrato.mjs"
   },
   "dependencies": {
     "@astryxdesign/core": "0.7.17",

@@ -10,6 +10,6 @@ export default defineConfig({
   server: {proxy: {'/api': 'http://127.0.0.1:8000'}},
   test: {
     environment: 'node',
-    include: ['src/**/*.test.{ts,tsx}'],
+    include: ['src/**/*.test.{ts,tsx}', 'scripts/**/*.test.mjs'],
   },
 });
