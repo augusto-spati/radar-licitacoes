@@ -45,7 +45,7 @@ Medido com a consulta que o `filtrar` gera (`_montar_consulta`, 4 linhas de serv
 1. **O UPDATE da migração duplica todas as linhas.** No Postgres, UPDATE é delete mais insert: cada um dos 38 mil editais ganhou uma versão nova, e a antiga virou tupla morta. Logo depois da migração, os índices ainda apontavam para as duas versões. A varredura do índice de prazo devolveu 37.790 entradas para 18.935 editais, e o GIN, 351 para 176. Daí a consulta 12 vezes mais lenta e com 4 vezes mais buffers. O heap ficou com 92 MB, e o VACUUM não devolve esse espaço; só um `VACUUM FULL` ou um `pg_repack` devolveria.
 2. **O autovacuum resolveu sozinho**, poucos segundos depois da medição (às 15:22:33, contra 15:22:31 do EXPLAIN). Mesmo assim, o certo é rodar `VACUUM (ANALYZE) edital` logo depois de uma migração que reescreve a tabela, ou incluí-lo no roteiro do deploy. O ANALYZE também atualiza as estatísticas das colunas novas, e sem elas o planejador estima no escuro.
 3. **Depois do VACUUM, a consulta ficou em 4,6 ms contra 2,5 ms.** É ruído nessa escala, e a forma do plano é a mesma. O filtro de modalidade virou `fonte <> 'pncp' OR modalidade_id IN (...)`, e o planejador passou a cruzar também o índice de UF no BitmapAnd. Os blocos de heap lidos caíram pela metade (62 contra 127), porque as linhas reescritas ficaram juntas em páginas novas.
-4. **O índice novo `(situacao_normalizada, data_encerramento_proposta)` não foi escolhido.** Quase todos os editais estão `aberta` (37 mil de 38 mil), então a primeira coluna não filtra quase nada, e o índice só de prazo dá o mesmo resultado. Ele passa a valer quando houver muitos encerrados, por exemplo depois de meses de coleta ou com a Compesa, que traz a lista inteira com todas as situações. Fica para reavaliar na Task 6, com dados das três fontes.
+4. **O índice novo `(situacao_normalizada, data_encerramento_proposta)` não foi escolhido.** Quase todos os editais estão `aberta` (37 mil de 38 mil), então a primeira coluna não filtra quase nada, e o índice só de prazo dá o mesmo resultado. Ele passa a valer quando houver muitos encerrados, por exemplo depois de meses de coleta ou com a Compesa, que traz os últimos 12 meses com todas as situações. Fica para reavaliar na Task 6, com dados das três fontes.
 
 ### Se fosse produção
 
@@ -58,3 +58,36 @@ Com a tabela grande e o sistema no ar, a migração não seria feita numa transa
 5. rodar `VACUUM (ANALYZE)` no fim.
 
 Nesse meio-tempo, o código teria de aceitar os dois formatos de id.
+
+## Duplicatas entre o PNCP e as fontes próprias
+
+Conferido em 2026-11-26, só leitura, no banco local (PNCP: 38.382 editais publicados de 27/10 a
+25/11/2026, modalidades 4 a 7; Sanepar: 92; Compesa: 283, aberturas de 26/11/2025 a 24/11/2026).
+
+| Órgão | CNPJ | No PNCP | Sobreposição com a fonte própria |
+|---|---|---|---|
+| Compesa | 09769035000164 | 0 editais | nenhuma |
+| Sanepar | 76484013000145 | 67 editais, todos `Pregão - Eletrônico` | nenhuma |
+
+- **Compesa:** nenhum edital do PNCP com o CNPJ 09.769.035/0001-64, nem com `orgao_nome` contendo
+  "COMPESA" ou começando por "COMPANHIA PERNAMBUCANA" (o único "Companhia Pernambucana" é a Copergás,
+  CNPJ 41025313000181, 3 editais). O CNPJ foi confirmado fora do banco (cadastro da Receita, sede
+  em Recife). Como o PNCP não traz a Compesa nas modalidades coletadas, não há o que deduplicar: o
+  coletor só passa a gravar `orgao_cnpj = 09769035000164` nos editais da Compesa, para que um
+  cruzamento futuro seja por CNPJ.
+- **Sanepar:** os 67 editais do PNCP são pregões (compras e serviços comuns: material de laboratório,
+  locação de detectores, TI). Os 92 da fonte própria são OE (obras e engenharia, `LICITACAO` e
+  `LICITACAO ELETRONICA`). Cruzando por data de encerramento no mesmo dia, os pares têm objetos sem
+  relação ("AQUIS DE MATERIAL PARA CROMATOGRAFIA" contra "EXECUCAO DE OBRAS DE AMPLIACAO DO SISTEMA
+  DE ESGOTO"); pelos primeiros 40 caracteres do objeto, 0 coincidências.
+
+**Decisão:** sem sobreposição, nenhuma regra de exclusão no `filtrar` (a ideia era esconder do PNCP
+os CNPJs cobertos por portal próprio). Se um dia o PNCP passar a trazer OE da Sanepar ou licitações
+da Compesa, a regra entra com uma lista de CNPJs cobertos fora do `filtro.toml` das linhas e UFs.
+
+## Retenção das páginas brutas
+
+Cada retrato grava todas as páginas (a Sanepar, umas 100 por rodada com os detalhes). Depois de um
+retrato concluído e registrado, `limpar_brutos` apaga as páginas dos retratos mais antigos da
+mesma fonte: ficam as dos 3 concluídos mais novos e as dos 10 em falha mais novos (a falha é o que
+se quer diagnosticar). As linhas de `coleta_retrato` ficam todas. O log é `brutos_removidos`.

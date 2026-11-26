@@ -78,7 +78,8 @@ Ordem combinada: Sanepar primeiro, depois Compesa. A etapa vem antes da 2b (AWS)
 ### Compesa
 - **Fluxo:** cookie jar, `form.jsp` → `openform.do` → `gridEdit.do` (100 por página) → `navigate.do?param=next` → `gridEdit.do?param=refreshpage`.
 - **Resposta:** texto JavaScript (`data_817140 = [...]`), lido sem executar JS.
-- **Datas:** vêm `dd/MM/yyyy` na primeira página e `MM/dd/yyyy` nas seguintes, então são normalizadas por página, com teste.
+- **Datas:** o portal formata data e número pelo `Accept-Language` da requisição, não pela página. Sem o header vem tudo en-US (`MM/dd/yyyy`, ponto decimal), e foi isso que pareceu, no estudo, "p1 em dd/MM e p2 em MM/dd". O coletor manda `Accept-Language: pt-BR` em toda requisição e lê todas as páginas em `dd/MM/yyyy`, com vírgula decimal. Mais de 20% de datas impossíveis em dd/MM numa página é erro de layout (o locale mudou), com teste.
+- **Janela:** a grade é o histórico inteiro (desde 2012, milhares de linhas, em ordem decrescente de abertura). O retrato cobre os últimos 12 meses por data de abertura e para na primeira página toda anterior ao corte.
 - **Chave:** `lc_chave`, por exemplo `2026LC213CEL-1`.
 - **Campos extras:** município, região, órgão solicitante, classificação, custo estimado.
 - **Cortesia:** a mesma da Sanepar. O firewall bloqueou um POST do `executeRule.do`, então o coletor não usa POST.
@@ -126,14 +127,14 @@ Ordem combinada: Sanepar primeiro, depois Compesa. A etapa vem antes da 2b (AWS)
    - Coluna `visto_em`. A Sanepar sai da lista quando o edital deixa a situação Abertura ou Julgamento.
    - Quando um retrato **completo e bem-sucedido** não traz mais um edital que estava `aberta` ou `em_julgamento`, ele vira `encerrada`, com a situação original `"saiu da lista"`.
    - Retrato com qualquer página em falha não reconcilia nada.
-   - A Compesa é coletada pela lista inteira, com todas as situações, então a situação vem da própria fonte.
+   - A Compesa é coletada pelos últimos 12 meses da grade (por data de abertura), com todas as situações, então a situação vem da própria fonte. O edital que sai da janela ainda `aberta` ou `em_julgamento` é encerrado com a situação original `"fora da janela"`.
 3. **Mapa de situações.**
 
    | Fonte | aberta | em_julgamento | encerrada | outra |
    |---|---|---|---|---|
    | PNCP | `situacao_id` 1 (Divulgada) | — | 2 (Revogada), 3 (Anulada) | 4 (Suspensa) |
    | Sanepar | Abertura | Julgamento | ao sair da lista | — |
-   | Compesa | Abertura | Habilitação | Homologação, Contrato, Fracassada, Deserta, Revogada | Suspensa e qualquer valor novo (registrado em log) |
+   | Compesa | Abertura | Habilitação | Homologação, Contrato, Fracassada, Deserta, Revogada, Anulada | Suspensa e qualquer valor novo (registrado em log) |
 
 4. **Migração.**
    - Só existe o banco local, sem produção.
@@ -146,7 +147,7 @@ Ordem combinada: Sanepar primeiro, depois Compesa. A etapa vem antes da 2b (AWS)
    - Valem para as três fontes os filtros de UF, de texto (linhas de serviço) e de aberto.
    - O filtro de modalidades vale só para o PNCP.
    - Sanepar (PR) e Compesa (PE) já estão nas UFs do `filtro.toml`.
-7. **Duplicata Sanepar OE × PNCP.** Conferido em 2026-11-26 pela API do PNCP com o CNPJ 76484013000145: nenhuma concorrência (modalidades 4 e 5) de junho a novembro de 2026. A Sanepar fica só com OE, sem chave de dedupe entre fontes.
+7. **Duplicata Sanepar OE × PNCP.** Conferido em 2026-11-26 pela API do PNCP com o CNPJ 76484013000145: nenhuma concorrência (modalidades 4 e 5) de junho a novembro de 2026. A Sanepar fica só com OE, sem chave de dedupe entre fontes. Conferido de novo em 2026-11-26 no banco local, com Compesa (CNPJ 09769035000164) também: nenhuma sobreposição (ver `docs/etapas/03-coletores.md`).
 8. **Limite mínimo por fonte.**
    - Um retrato abaixo do limite, ou com página em falha, termina com status `falha`. Ele não grava editais e não reconcilia ausências.
    - Uma queda brusca sem chegar ao limite (menos da metade do retrato anterior) gera o aviso `retrato_encolheu` no log e grava normalmente.

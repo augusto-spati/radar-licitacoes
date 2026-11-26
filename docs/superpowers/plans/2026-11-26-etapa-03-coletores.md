@@ -63,7 +63,7 @@
 
 1. **O layout da fonte muda e os seletores não acham nada.** O retrato tem de virar `falha`, sem gravar e sem marcar todos os editais como "saiu da lista". O teste fica na Task 3, e o de cada fonte nas Tasks 4 e 5.
 2. **Uma página do meio do retrato dá erro.** Nada é reconciliado, e os editais continuam abertos. Teste na Task 3.
-3. **A Compesa traz a data `MM/dd/yyyy` a partir da página 2.** A data tem de sair certa, e não com dia e mês trocados. Teste na Task 5.
+3. **A Compesa responde em outro locale (`MM/dd/yyyy`).** O estudo viu isso a partir da página 2; a causa real é o `Accept-Language` da requisição, então o coletor pede pt-BR em toda requisição e lê tudo em dd/MM. A data tem de sair certa, e não com dia e mês trocados: uma página com muitas datas impossíveis em dd/MM é erro de layout. O retrato cobre os últimos 12 meses da grade, não a lista inteira. Teste na Task 5.
 4. **Na Sanepar, a lista não muda mas o detalhe ganha um anexo.** O hash muda e o edital é atualizado. Teste na Task 4.
 5. **O PNCP continua igual depois da migração.** Os mesmos 24 editais abertos aparecem no `filtrar` local, e as janelas e a auditoria seguem funcionando. Testes nas Tasks 1 e 6.
 
