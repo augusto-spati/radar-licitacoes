@@ -26,13 +26,15 @@ Antes de criar um componente: `astryx search`, depois `src/componentes/`; compon
 
 ### Arquivos de guarda e o trailer `Contrato-Front: aprovado`
 
-Estes arquivos fazem o contrato valer e só mudam com aprovação explícita do Augusto: `eslint.config.js`, `.jscpd.json`, `package.json`, `vite.config.ts`, `playwright.config.ts`, este `CLAUDE.md`, `src/rotas.test.ts`, `src/dependencias.test.ts`, `src/componentes.test.ts`, `src/eslint-contrato.test.ts`, `src/componentes/Shell.tsx`, `e2e/` (inclusive os screenshots), `scripts/`, `.github/workflows/ci.yml` e `.github/CODEOWNERS` (lista em `scripts/contrato-guardado.mjs`).
+Estes arquivos fazem o contrato valer e só mudam com aprovação explícita do Augusto: `eslint.config.*`, `.jscpd.json`, `package.json`, `vite.config.*`, `vitest.config.*`, `tsconfig*.json`, `playwright.config.ts`, `.gitignore` (da raiz e do front), este `CLAUDE.md`, `src/rotas.test.ts`, `src/dependencias.test.ts`, `src/componentes.test.ts`, `src/eslint-contrato.test.ts`, `src/componentes/Shell.tsx`, `e2e/` (inclusive os screenshots), `scripts/`, `.github/workflows/ci.yml` e `.github/CODEOWNERS` (lista em `scripts/contrato-guardado.mjs`).
 
 O job `contrato-guardado` do CI reprova o push ou o PR em que algum deles mudou sem que pelo menos um commit do intervalo tenha, no bloco final da mensagem, o trailer:
 
 ```
 Contrato-Front: aprovado
 ```
+
+O job roda o `scripts/contrato-guardado.mjs` da base do intervalo (`git show <base>:...`), não o do commit testado: editar a guarda no próprio commit não a contorna, e a lista de arquivos guardados é a da base. A guarda pressupõe o fluxo por PR, obrigatório na `main` (PR exigido, checks qualidade/front/contrato-guardado/e2e, `enforce_admins`); push direto à `main` sem esse fluxo a esvazia.
 
 Agente nenhum põe esse trailer por conta própria: só quando o Augusto pediu a mudança no contrato. Se a mudança não foi pedida, desfaça-a.
 

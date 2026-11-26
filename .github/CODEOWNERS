@@ -1,9 +1,13 @@
 # Arquivos que guardam o contrato do front (anti-deriva). Mudança aqui também
 # exige o trailer `Contrato-Front: aprovado` (job `contrato-guardado` do CI).
-/frontend/eslint.config.js              @augusto-spati
+/frontend/eslint.config.*               @augusto-spati
 /frontend/.jscpd.json                   @augusto-spati
 /frontend/package.json                  @augusto-spati
-/frontend/vite.config.ts                @augusto-spati
+/frontend/vite.config.*                 @augusto-spati
+/frontend/vitest.config.*                @augusto-spati
+/frontend/tsconfig*.json                @augusto-spati
+/.gitignore                             @augusto-spati
+/frontend/.gitignore                    @augusto-spati
 /frontend/playwright.config.ts          @augusto-spati
 /frontend/CLAUDE.md                     @augusto-spati
 /frontend/src/rotas.test.ts             @augusto-spati

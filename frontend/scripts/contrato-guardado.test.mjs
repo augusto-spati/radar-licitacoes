@@ -1,4 +1,6 @@
-import {readFileSync} from 'node:fs';
+import {execFileSync} from 'node:child_process';
+import {copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {describe, expect, it} from 'vitest';
@@ -22,6 +24,16 @@ describe('contrato-guardado: o que é guardado', () => {
     'frontend/package.json',
     '.github/workflows/ci.yml',
     '.github/CODEOWNERS',
+    'frontend/tsconfig.json',
+    'frontend/tsconfig.app.json',
+    'frontend/tsconfig.node.json',
+    'frontend/vitest.config.ts',
+    'frontend/vitest.config.mts',
+    'frontend/vite.config.ts',
+    'frontend/vite.config.mjs',
+    'frontend/eslint.config.mjs',
+    '.gitignore',
+    'frontend/.gitignore',
   ])('%s é guardado', caminho => {
     expect(ehGuardado(caminho)).toBe(true);
   });
@@ -33,6 +45,12 @@ describe('contrato-guardado: o que é guardado', () => {
     'frontend/e2e-outro/x.ts',
     'src/radar/api/app.py',
     'frontend/src/componentes/Shell.test.tsx',
+    'frontend/src/tsconfig.json',
+    'frontend/tsconfig-extra.txt',
+    'frontend/vitest.setup.ts',
+    'src/.gitignore',
+    'frontend/src/.gitignore',
+    'gitignore',
   ])('%s não é guardado', caminho => {
     expect(ehGuardado(caminho)).toBe(false);
   });
@@ -63,6 +81,60 @@ describe('contrato-guardado: decisão', () => {
 
   it('outro valor do trailer não aprova', () => {
     expect(decidir([guardado], ['nao', 'aprovado-depois', 'pendente']).ok).toBe(false);
+  });
+});
+
+describe('contrato-guardado: quem decide é a base', () => {
+  it.each(['frontend/tsconfig.json', 'frontend/vitest.config.ts', '.gitignore'])(
+    'mudar %s sem o trailer reprova',
+    arquivo => {
+      expect(decidir([arquivo], ['']).ok).toBe(false);
+      expect(decidir([arquivo], ['aprovado']).ok).toBe(true);
+    },
+  );
+
+  it('editar o próprio script sem trailer reprova na decisão da base', () => {
+    const r = decidir(['frontend/scripts/contrato-guardado.mjs'], ['']);
+    expect(r.ok).toBe(false);
+    expect(r.guardados).toEqual(['frontend/scripts/contrato-guardado.mjs']);
+  });
+
+  it('script editado para sempre aprovar, rodando a versão da base, continua reprovado', () => {
+    const raiz = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+    const tmp = mkdtempSync(path.join(os.tmpdir(), 'guarda-'));
+    try {
+      const alvo = path.join(tmp, 'frontend', 'scripts', 'contrato-guardado.mjs');
+      const g = (...args) =>
+        execFileSync(
+          'git',
+          ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...args],
+          {cwd: tmp, encoding: 'utf8'},
+        ).trim();
+      g('init', '-q');
+      mkdirSync(path.dirname(alvo), {recursive: true});
+      copyFileSync(path.join(raiz, 'frontend', 'scripts', 'contrato-guardado.mjs'), alvo);
+      g('add', '.');
+      g('commit', '-q', '-m', 'base');
+      const base = g('rev-parse', 'HEAD');
+      // a cabeça troca o script por um que sempre aprova
+      writeFileSync(alvo, 'console.log("sempre aprova");\n');
+      g('add', '.');
+      g('commit', '-q', '-m', 'adultera a guarda');
+      // a versão da base, como o CI a extrai para fora da árvore
+      const daBase = path.join(tmp, 'guarda-da-base.mjs');
+      writeFileSync(daBase, g('show', `${base}:frontend/scripts/contrato-guardado.mjs`) + '\n');
+      const rodar = script =>
+        execFileSync('node', [script], {
+          cwd: tmp,
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+          env: {...process.env, EVENTO: 'push', ANTES: base},
+        });
+      expect(() => rodar(daBase)).toThrow();
+      expect(rodar(alvo)).toContain('sempre aprova'); // a adulterada passaria
+    } finally {
+      rmSync(tmp, {recursive: true, force: true});
+    }
   });
 });
 
@@ -118,7 +190,9 @@ describe('contrato-guardado: amarrações', () => {
     const ci = readFileSync(path.join(raiz, '.github', 'workflows', 'ci.yml'), 'utf8');
     expect(ci).toContain('  contrato-guardado:');
     expect(ci).toContain('fetch-depth: 0');
-    expect(ci).toContain('node frontend/scripts/contrato-guardado.mjs');
+    expect(ci).toContain('git show "$BASE:frontend/scripts/contrato-guardado.mjs"');
+    expect(ci).toContain('node "$RUNNER_TEMP/guarda.mjs"');
+    expect(ci).not.toContain('run: node frontend/scripts/contrato-guardado.mjs');
     expect(ci).toContain('npm run contrato:verificar');
     expect(ci).toContain('git diff --exit-code src/dados/api.d.ts');
   });
