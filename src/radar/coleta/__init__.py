@@ -11,17 +11,39 @@ from radar.coleta.janelas import (
     ultima_atualizacao,
 )
 from radar.coleta.pncp import ClientePNCP, ErroPNCP, criar_http
+from radar.coleta.retratos import (
+    ClienteEducado,
+    ErroFonte,
+    FonteRetrato,
+    InfoRetrato,
+    PaginaColetada,
+    ResumoRetrato,
+    criar_http_educado,
+    executar_retrato,
+    ids_do_retrato,
+    ultimo_retrato,
+)
 
 __all__ = [
     "Auditoria",
+    "ClienteEducado",
     "ClientePNCP",
+    "ErroFonte",
     "ErroPNCP",
+    "FonteRetrato",
+    "InfoRetrato",
+    "PaginaColetada",
     "ResumoColeta",
+    "ResumoRetrato",
     "auditar",
     "coletar_pendentes",
     "criar_http",
+    "criar_http_educado",
+    "executar_retrato",
+    "ids_do_retrato",
     "ler_paginas_nao_processadas",
     "marcar_processada",
     "planejar_janelas",
     "ultima_atualizacao",
+    "ultimo_retrato",
 ]

@@ -13,18 +13,30 @@ from sqlalchemy.orm import Session
 from radar import __version__
 from radar.api.app import criar_app
 from radar.coleta import (
+    ClienteEducado,
     ClientePNCP,
+    FonteRetrato,
     coletar_pendentes,
     criar_http,
+    criar_http_educado,
+    executar_retrato,
+    ids_do_retrato,
     ler_paginas_nao_processadas,
     marcar_processada,
     planejar_janelas,
+    ultimo_retrato,
 )
 from radar.coleta import (
     auditar as auditar_cobertura,
 )
 from radar.comum import configurar_logs, criar_engine, fabrica_sessao, obter_config
-from radar.editais import EditalResumo, carregar_criterios, registrar
+from radar.editais import (
+    EditalResumo,
+    carregar_criterios,
+    reconciliar_retrato,
+    registrar,
+    registrar_normalizados,
+)
 from radar.editais import filtrar as filtrar_editais
 
 logger = logging.getLogger(__name__)
@@ -32,6 +44,7 @@ logger = logging.getLogger(__name__)
 app = typer.Typer(help="Radar de licitações.", no_args_is_help=True)
 
 FUSO = ZoneInfo("America/Sao_Paulo")
+IDADE_MAXIMA_RETRATO = timedelta(hours=36)
 # Padrão de RADAR_CONFIG_FILTRO (config/filtro.toml da raiz, sem depender do cwd).
 ARQUIVO_CONFIG = obter_config().config_filtro
 
@@ -50,6 +63,79 @@ def _criar_sessao() -> Session:
 
 def _criar_cliente() -> ClientePNCP:
     return ClientePNCP(criar_http())
+
+
+def _fontes_retrato() -> list[FonteRetrato]:
+    """Fontes lidas por retrato, na ordem em que rodam (Sanepar e Compesa entram aqui)."""
+    return []
+
+
+def _criar_cliente_retrato(fonte: FonteRetrato) -> ClienteEducado:
+    return ClienteEducado(criar_http_educado(), marcador_bloqueio=fonte.marcador_bloqueio)
+
+
+def _escolher_fontes(opcao: str | None, disponiveis: list[str]) -> list[str]:
+    """Fontes pedidas em `--fontes` (lista separada por vírgula), na ordem de `disponiveis`."""
+    if opcao is None:
+        return disponiveis
+    pedidas = {nome.strip() for nome in opcao.split(",") if nome.strip()}
+    desconhecidas = sorted(pedidas - set(disponiveis))
+    if desconhecidas or not pedidas:
+        typer.echo(
+            f"fontes desconhecidas: {', '.join(desconhecidas) or '(nenhuma)'}; "
+            f"use {', '.join(disponiveis)}",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    return [nome for nome in disponiveis if nome in pedidas]
+
+
+def _rodar_retrato(sessao: Session, fonte: FonteRetrato) -> int:
+    """Retrato de uma fonte; devolve 1 se falhou. Falha de uma fonte não para as outras."""
+    try:
+        with _criar_cliente_retrato(fonte) as cliente:
+            resumo = executar_retrato(sessao, fonte, cliente, _agora())
+        if resumo.status == "ocupado":
+            typer.echo(f"retrato {fonte.nome}: já em andamento noutro processo")
+            return 0
+        if resumo.status != "concluido":
+            typer.echo(f"retrato {fonte.nome}: falha: {resumo.erro}")
+            return 1
+        # Fronteira coleta -> editais: gravar e reconciliar numa transação só.
+        vistos = ids_do_retrato(resumo)
+        resultado = registrar_normalizados(sessao, resumo.normalizados)
+        if vistos:
+            encerrados = reconciliar_retrato(sessao, fonte.nome, vistos, _agora())
+        else:
+            # Defesa extra: com `vistos` vazio a reconciliação encerraria a fonte inteira.
+            logger.warning(
+                "reconciliacao_ignorada",
+                extra={"fonte": fonte.nome, "retrato_id": resumo.retrato_id},
+            )
+            encerrados = 0
+        sessao.commit()
+    except Exception:  # Ctrl+C (BaseException) continua parando o processo
+        sessao.rollback()
+        logger.exception("retrato_erro_registro", extra={"fonte": fonte.nome})
+        typer.echo(f"retrato {fonte.nome}: erro inesperado (veja o log)")
+        return 1
+    logger.info(
+        "retrato_registrado",
+        extra={
+            "fonte": fonte.nome,
+            "retrato_id": resumo.retrato_id,
+            "inseridos": resultado.inseridos,
+            "atualizados": resultado.atualizados,
+            "invalidos": resultado.invalidos,
+            "encerrados": encerrados,
+        },
+    )
+    typer.echo(
+        f"retrato {fonte.nome}: {resumo.registros} registros, {resultado.inseridos} inseridos, "
+        f"{resultado.atualizados} atualizados, {resultado.invalidos} inválidos, "
+        f"{encerrados} encerrados"
+    )
+    return 0
 
 
 def _processar(sessao: Session, cliente: ClientePNCP) -> int:
@@ -134,17 +220,30 @@ def carga_inicial(
 def atualizar(
     lookback: Annotated[int, typer.Option(min=0, help="Dias de recuo até hoje.")] = 10,
     config: OpcaoConfig = ARQUIVO_CONFIG,
+    fontes: Annotated[
+        str | None,
+        typer.Option(
+            "--fontes", help="Fontes separadas por vírgula, ex.: pncp,sanepar (padrão: todas)."
+        ),
+    ] = None,
 ) -> None:
-    """Planeja janelas de atualização de hoje menos o recuo até hoje, coleta e processa."""
+    """Atualiza o PNCP (janelas do recuo até hoje) e lê o retrato das outras fontes."""
+    retratos = {fonte.nome: fonte for fonte in _fontes_retrato()}
+    escolhidas = _escolher_fontes(fontes, ["pncp", *retratos])
     configurar_logs()
     criterios = carregar_criterios(config)
     hoje = _agora().date()
+    falhas = 0
     with _criar_sessao() as sessao:
-        novas = planejar_janelas(
-            sessao, "atualizacao", hoje - timedelta(days=lookback), hoje, criterios.modalidades
-        )
-        typer.echo(f"janelas novas: {novas}")
-        falhas = _processar(sessao, _criar_cliente())
+        if "pncp" in escolhidas:
+            novas = planejar_janelas(
+                sessao, "atualizacao", hoje - timedelta(days=lookback), hoje, criterios.modalidades
+            )
+            typer.echo(f"janelas novas: {novas}")
+            falhas += _processar(sessao, _criar_cliente())
+        for nome in escolhidas:
+            if nome != "pncp":
+                falhas += _rodar_retrato(sessao, retratos[nome])
     _encerrar(falhas)
 
 
@@ -166,7 +265,7 @@ def auditar(
     ] = None,
     config: OpcaoConfig = ARQUIVO_CONFIG,
 ) -> None:
-    """Confere se todos os dias e modalidades esperados foram coletados."""
+    """Confere a cobertura do PNCP e o último retrato de cada fonte (falha ou mais de 36 h)."""
     if endpoint not in ("publicacao", "atualizacao"):
         typer.echo(f"endpoint inválido: {endpoint!r}; use publicacao ou atualizacao", err=True)
         raise typer.Exit(code=2)
@@ -177,8 +276,10 @@ def auditar(
     hoje = _agora().date()
     fim = hoje if endpoint == "atualizacao" else hoje - timedelta(days=1)
     inicio = hoje - timedelta(days=dias)
+    agora = _agora()
     with _criar_sessao() as sessao:
         auditoria = auditar_cobertura(sessao, endpoint, inicio, fim, criterios.modalidades)
+        retratos = [(f.nome, ultimo_retrato(sessao, f.nome)) for f in _fontes_retrato()]
     typer.echo(f"esperadas: {auditoria.esperadas}")
     typer.echo(f"concluidas: {auditoria.concluidas}")
     typer.echo(f"faltando: {len(auditoria.faltando)}")
@@ -187,7 +288,24 @@ def auditar(
     typer.echo(f"falhas: {len(auditoria.falhas)}")
     for dia, modalidade, erro in auditoria.falhas:
         typer.echo(f"  {dia:%Y-%m-%d} modalidade {modalidade}: {erro}")
-    if auditoria.faltando or auditoria.falhas:
+    retratos_ruins = 0
+    for nome, info in retratos:
+        if info is None:
+            typer.echo(f"retrato {nome}: nenhum")
+            retratos_ruins += 1
+            continue
+        linha = (
+            f"retrato {nome}: {info.status} em {info.iniciado_em.astimezone(FUSO):%Y-%m-%d %H:%M}"
+            f", {info.registros} registros"
+        )
+        if info.status != "concluido":
+            linha += f": {info.erro}"
+            retratos_ruins += 1
+        elif agora - info.iniciado_em > IDADE_MAXIMA_RETRATO:
+            linha += " (mais de 36 h)"
+            retratos_ruins += 1
+        typer.echo(linha)
+    if auditoria.faltando or auditoria.falhas or retratos_ruins:
         raise typer.Exit(code=1)
 
 
