@@ -224,7 +224,7 @@ def test_extrair_normaliza_e_deduplica() -> None:
     assert primeiro["fonte"] == "compesa"
     assert primeiro["objeto"] == "REGISTRO DE PREÇOS PARA AQUISIÇÃO DE VÁLVULAS DIVERSAS"
     assert primeiro["orgao_nome"] == "COMPESA"
-    assert primeiro["orgao_cnpj"] is None  # não vem nos dados
+    assert primeiro["orgao_cnpj"] == "09769035000164"  # a sede da Compesa, em Recife
     assert primeiro["uf"] == "PE"
     assert primeiro["municipio"] is None
     assert primeiro["modalidade_nome"] == "Licitação"
@@ -485,3 +485,21 @@ def test_data_sem_hora_e_debug(caplog: pytest.LogCaptureFixture) -> None:
         parse_data("24/11/2026", "")
     registro = next(r for r in caplog.records if r.message == "data_sem_hora")
     assert registro.levelno == logging.DEBUG
+
+
+def test_rotulo_de_saida_e_fora_da_janela() -> None:
+    # Edital que some do retrato da Compesa quase sempre saiu da janela de 12 meses.
+    assert _fonte().rotulo_saida == "fora da janela"
+
+
+def test_coletar_e_extrair_leem_cada_pagina_uma_vez(caplog: pytest.LogCaptureFixture) -> None:
+    p1 = P1.replace("'field817072':'24\\/11\\/2026'", "'field817072':'11\\/24\\/2026'", 1)
+    assert p1 != P1
+    cliente = _ClienteFalso(_roteiro(_js(p1), _como_servidor(_sem_proxima(P2))))
+    fonte = _fonte()
+
+    with caplog.at_level(logging.WARNING):
+        fonte.extrair(list(fonte.coletar(cliente)))  # type: ignore[arg-type]
+
+    trocadas = [r for r in caplog.records if r.message == "data_formato_inconsistente"]
+    assert len(trocadas) == 1

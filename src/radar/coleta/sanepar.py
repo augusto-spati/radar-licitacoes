@@ -14,6 +14,17 @@ logam `data_sem_hora`; publicação é sempre só data).
 
 A página não traz data de atualização: o sinal de mudança é o hash dos campos e dos anexos
 (ver `registrar_normalizados`), e o detalhe é buscado a cada rodada para pegar anexo novo.
+
+A situação de um edital é a da lista que o trouxe (`Situacao=` da URL), e não o selo: cada linha
+tem de trazer o selo da situação pedida, senão o site ignorou o filtro e o retrato falha. A lista
+de Abertura nunca fica vazia na prática; vazia na página 0 é tratada como site quebrado, para que a
+reconciliação não encerre todos os editais abertos por causa de uma página de erro. A de
+Julgamento pode estar vazia. O selo do detalhe pode atrasar em relação à lista: divergência só
+loga `situacao_desconhecida`.
+
+Um detalhe que responde erro HTTP isolado (404, 500...) não derruba o retrato: o edital fica com
+os dados da lista, sem anexos, e loga `detalhe_falhou`. 403, 429, bloqueio e falha de transporte
+continuam parando tudo, e erro em mais de 20% dos detalhes também (é o site fora do ar).
 """
 
 import logging
@@ -35,10 +46,13 @@ TIPO = "OE"
 SITUACOES = ("Abertura", "Julgamento")  # as duas que alimentam o radar; ordem de coleta
 MAX_PAGINAS = 100  # trava contra paginação sem fim (a lista real tem 3 páginas)
 CNPJ = "76484013000145"
+FRACAO_DETALHES_COM_ERRO = 0.2
+_BLOQUEIO = (403, 429)  # status que param o retrato mesmo num detalhe
 
 _DATA = re.compile(r"(\d{2})/(\d{2})/(\d{4})(?:\s+às\s+(\d{1,2})[h:](\d{2}))?")
 _DETALHE_URL = re.compile(r"/licitacao/detalhe/(\d+)/(\d+)")
 _SITUACAO: dict[str, str] = {"abertura": "aberta", "julgamento": "em_julgamento"}
+_SITUACAO_DA_URL = re.compile(r"[?&]Situacao=([^&#]+)")
 
 
 def _limpo(texto: str | None) -> str:
@@ -179,6 +193,24 @@ def _e_lista(url: str) -> bool:
     return "/licitacoes?" in url
 
 
+def _situacao_da_url(url: str) -> str:
+    achado = _SITUACAO_DA_URL.search(url)
+    if achado is None or achado.group(1).casefold() not in _SITUACAO:
+        raise ErroFonte(f"layout: lista sem situação conhecida na URL {url}")
+    return achado.group(1)
+
+
+def _conferir_situacao(lista: Lista, situacao: str) -> None:
+    """Toda linha tem o selo da situação pedida; senão o filtro da URL foi ignorado."""
+    for linha in lista.linhas:
+        if linha.situacao.casefold() != situacao.casefold():
+            logger.warning(
+                "situacao_inesperada_na_lista",
+                extra={"pedida": situacao, "selo": linha.situacao, "numero": linha.numero},
+            )
+            raise ErroFonte("layout: situação inesperada na lista")
+
+
 class FonteSanepar:
     """Obras e Engenharia da Sanepar, em retrato (Abertura e Julgamento)."""
 
@@ -190,8 +222,21 @@ class FonteSanepar:
     # normal: não há texto de bloqueio conhecido. 403/429 e página sem o contador já param
     # o retrato; um regex aqui só entra quando alguém ver uma página de bloqueio de verdade.
     marcador_bloqueio: str | None = None
+    rotulo_saida = "saiu da lista"
+
+    def __init__(self) -> None:
+        # Listas já lidas em `coletar`, para `extrair` não ler (e logar) cada página de novo.
+        self._listas: dict[tuple[str, int, int], Lista] = {}
+
+    def _ler_lista(self, url: str, html: str) -> Lista:
+        chave = (url, len(html), hash(html))
+        lista = self._listas.get(chave)
+        if lista is None:
+            lista = self._listas[chave] = ler_lista(html)
+        return lista
 
     def coletar(self, cliente: ClienteEducado) -> Iterator[PaginaColetada]:
+        self._listas = {}
         caminhos: dict[str, None] = {}  # ordem de chegada, sem repetir
         for situacao in SITUACOES:
             vistos: set[str] = set()
@@ -199,13 +244,17 @@ class FonteSanepar:
             for pagina in range(MAX_PAGINAS):
                 url = _url_lista(situacao, pagina)
                 html = cliente.get(url).text
-                lista = ler_lista(html)
+                lista = self._ler_lista(url, html)
                 if not lista.linhas:
                     if lista.total:
                         # Contador sem linhas: seletor quebrado, não fim da lista (truncaria).
                         raise ErroFonte("layout: contador sem linhas")
+                    if pagina == 0 and situacao == "Abertura":
+                        # Sem isto, uma página de erro aqui encerraria todos os abertos.
+                        raise ErroFonte("layout: lista de Abertura vazia")
                     yield PaginaColetada(url, "html", html)
                     break
+                _conferir_situacao(lista, situacao)
                 esperado = lista.total or 0
                 ids = {linha.numero for linha in lista.linhas}
                 if ids <= vistos:
@@ -219,29 +268,59 @@ class FonteSanepar:
                 raise ErroFonte(f"lista sem fim: mais de {MAX_PAGINAS} páginas em {situacao}")
             if len(vistos) < esperado:
                 raise ErroFonte(f"layout: lista incompleta: {len(vistos)} de {esperado}")
+        falhas = 0
         for caminho in caminhos:
             url = f"{BASE}{caminho}"
-            yield PaginaColetada(url, "html", cliente.get(url).text)
+            try:
+                resposta = cliente.get(url)
+            except ErroFonte as erro:
+                if erro.status is None or erro.status in _BLOQUEIO:
+                    raise
+                falhas += 1
+                logger.warning("detalhe_falhou", extra={"url": url, "status": erro.status})
+                if falhas > FRACAO_DETALHES_COM_ERRO * len(caminhos):
+                    raise ErroFonte(f"detalhes com erro: {falhas} de {len(caminhos)}") from erro
+                continue  # o edital fica com os dados da lista, sem anexos
+            yield PaginaColetada(url, "html", resposta.text)
 
     def extrair(self, paginas: list[PaginaColetada]) -> list[dict[str, Any]]:
-        linhas: dict[str, LinhaLista] = {}  # a última lista que traz o edital vence
+        # A última lista que traz o edital vence; a situação é a pedida na URL da lista.
+        linhas: dict[str, tuple[LinhaLista, str]] = {}
         detalhes: dict[str, tuple[str, Detalhe]] = {}
         for pagina in paginas:
             # Um detalhe ilegível derruba o retrato inteiro de propósito (fail-loud).
             if _e_lista(pagina.url):
-                for linha in ler_lista(pagina.texto).linhas:
-                    linhas[linha.numero] = linha
+                situacao = _situacao_da_url(pagina.url)
+                for linha in self._ler_lista(pagina.url, pagina.texto).linhas:
+                    linhas[linha.numero] = (linha, situacao)
                 continue
             achado = _DETALHE_URL.search(pagina.url)
             if achado:
                 numero = f"{achado.group(1)}/{achado.group(2)}"
                 detalhes[numero] = (pagina.url, ler_detalhe(pagina.texto))
-        return [self._normalizar(linha, detalhes.get(numero)) for numero, linha in linhas.items()]
+        self._listas = {}
+        return [
+            self._normalizar(linha, situacao, detalhes.get(numero))
+            for numero, (linha, situacao) in linhas.items()
+        ]
 
     @staticmethod
-    def _normalizar(linha: LinhaLista, achado: tuple[str, Detalhe] | None) -> dict[str, Any]:
+    def _normalizar(
+        linha: LinhaLista, situacao: str, achado: tuple[str, Detalhe] | None
+    ) -> dict[str, Any]:
         url, detalhe = achado if achado else (f"{BASE}{linha.caminho_detalhe}", None)
-        situacao = linha.situacao or (detalhe.situacao if detalhe else "")
+        id_na_fonte = f"{TIPO}-{linha.numero}"
+        if detalhe is not None and detalhe.situacao.casefold() != situacao.casefold():
+            # O detalhe pode atrasar em relação à lista: vale a lista, e fica o aviso.
+            logger.warning(
+                "situacao_desconhecida",
+                extra={
+                    "fonte": "sanepar",
+                    "id_na_fonte": id_na_fonte,
+                    "situacao": detalhe.situacao,
+                    "lista": situacao,
+                },
+            )
         abertura = (detalhe.data_abertura if detalhe else None) or linha.data_abertura
         publicacao = (detalhe.data_publicacao if detalhe else None) or linha.data_publicacao
         # Prazo: o campo "Propostas" do detalhe; na falta, a abertura.
@@ -270,7 +349,7 @@ class FonteSanepar:
         }
         return {
             "fonte": "sanepar",
-            "id_na_fonte": f"{TIPO}-{linha.numero}",
+            "id_na_fonte": id_na_fonte,
             "objeto": (detalhe.objeto if detalhe else "") or linha.objeto,
             "orgao_nome": "SANEPAR",
             "orgao_cnpj": CNPJ,
@@ -278,7 +357,7 @@ class FonteSanepar:
             "municipio": None,
             "modalidade_nome": (detalhe.modalidade if detalhe else "") or linha.modalidade,
             "situacao_original": situacao,
-            "situacao_normalizada": _SITUACAO.get(situacao.casefold(), "outra"),
+            "situacao_normalizada": _SITUACAO[situacao.casefold()],
             "valor_estimado": None,
             "data_publicacao": publicacao,
             "data_abertura_proposta": abertura,

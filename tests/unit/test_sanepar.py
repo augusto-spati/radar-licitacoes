@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -169,14 +170,17 @@ class _Resposta:
 
 
 class _ClienteFalso:
-    def __init__(self, respostas: dict[str, str]) -> None:
+    def __init__(self, respostas: dict[str, str | Exception]) -> None:
         self._respostas = respostas
         self.urls: list[str] = []
 
     def get(self, url: str, params: dict[str, Any] | None = None) -> _Resposta:
         assert params is None
         self.urls.append(url)
-        return _Resposta(self._respostas[url])
+        resposta = self._respostas[url]
+        if isinstance(resposta, Exception):
+            raise resposta
+        return _Resposta(resposta)
 
 
 def _com_total(html: str, total: int) -> str:
@@ -193,8 +197,14 @@ def _lista_url(situacao: str, pagina: int) -> str:
     return f"{BASE}/licitacoes?Tipo=OE&Situacao={situacao}&page={pagina}"
 
 
-def _detalhes_de(html: str) -> dict[str, str]:
+def _detalhes_de(html: str) -> dict[str, str | Exception]:
     return {f"{BASE}{linha.caminho_detalhe}": DETALHE_345 for linha in ler_lista(html).linhas}
+
+
+def _julgamento(html: str) -> str:
+    return html.replace("edt-badge--abertura", "edt-badge--julgamento").replace(
+        "Abertura\n", "Julgamento\n"
+    )
 
 
 def test_coletar_pagina_ate_a_lista_vazia_e_busca_todos_os_detalhes() -> None:
@@ -270,3 +280,130 @@ def test_coletar_lista_incompleta_falha() -> None:
     )
     with pytest.raises(ErroFonte, match=r"layout: lista incompleta: 40 de 57"):
         list(FonteSanepar().coletar(cliente))  # type: ignore[arg-type]
+
+
+def test_coletar_abertura_vazia_e_erro_de_layout() -> None:
+    # Abertura nunca está vazia: vazia ali é sinal de site quebrado, não de lista sem editais.
+    cliente = _ClienteFalso(
+        {
+            _lista_url("Abertura", 0): LISTA_VAZIA,
+            _lista_url("Julgamento", 0): _com_total(_julgamento(LISTA_P1), 20),
+        }
+    )
+    with pytest.raises(ErroFonte, match="layout: lista de Abertura vazia"):
+        list(FonteSanepar().coletar(cliente))  # type: ignore[arg-type]
+
+
+def test_coletar_abertura_com_contador_zero_e_erro_de_layout() -> None:
+    cliente = _ClienteFalso({_lista_url("Abertura", 0): _com_total(_sem_linhas(LISTA_P1), 0)})
+    with pytest.raises(ErroFonte, match="layout: lista de Abertura vazia"):
+        list(FonteSanepar().coletar(cliente))  # type: ignore[arg-type]
+
+
+def test_coletar_selo_diferente_da_situacao_pedida_e_erro_de_layout() -> None:
+    # O site ignorou o filtro de situação: a lista de Julgamento veio com editais em Abertura.
+    cliente = _ClienteFalso(
+        {
+            _lista_url("Abertura", 0): _com_total(LISTA_P1, 20),
+            _lista_url("Abertura", 1): LISTA_VAZIA,
+            _lista_url("Julgamento", 0): _com_total(LISTA_P1, 20),
+        }
+    )
+    with pytest.raises(ErroFonte, match="layout: situação inesperada na lista"):
+        list(FonteSanepar().coletar(cliente))  # type: ignore[arg-type]
+
+
+def test_situacao_vem_da_lista_pedida_e_detalhe_divergente_so_loga(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    detalhe = DETALHE_345.replace(
+        '<span class="sli-status-badge">', '<span class="sli-status-badge">Homologação ', 1
+    )
+    assert ler_detalhe(detalhe).situacao.startswith("Homologação")
+
+    with caplog.at_level(logging.WARNING):
+        por_id = {n["id_na_fonte"]: n for n in FonteSanepar().extrair(_paginas(detalhe))}
+
+    assert por_id["OE-352/26"]["situacao_original"] == "Abertura"
+    assert por_id["OE-352/26"]["situacao_normalizada"] == "aberta"
+    divergentes = [r for r in caplog.records if r.getMessage() == "situacao_desconhecida"]
+    assert [r.__dict__["id_na_fonte"] for r in divergentes] == ["OE-352/26"]
+
+
+def test_coletar_detalhe_404_cai_para_a_linha_da_lista(caplog: pytest.LogCaptureFixture) -> None:
+    detalhes = _detalhes_de(LISTA_P1)
+    quebrado = f"{BASE}/licitacao/detalhe/352/26"
+    detalhes[quebrado] = ErroFonte(f"HTTP 404 em {quebrado}", status=404)
+    cliente = _ClienteFalso(
+        {
+            _lista_url("Abertura", 0): _com_total(LISTA_P1, 20),
+            _lista_url("Abertura", 1): LISTA_VAZIA,
+            _lista_url("Julgamento", 0): LISTA_VAZIA,
+        }
+        | detalhes
+    )
+    fonte = FonteSanepar()
+
+    with caplog.at_level(logging.WARNING):
+        paginas = list(fonte.coletar(cliente))  # type: ignore[arg-type]
+    por_id = {n["id_na_fonte"]: n for n in fonte.extrair(paginas)}
+
+    assert quebrado not in [p.url for p in paginas]
+    assert len(por_id) == 20
+    assert por_id["OE-352/26"]["anexos"] == []
+    assert por_id["OE-352/26"]["objeto"].startswith("LOTE UNICO CONTRATACAO")  # da lista
+    falhou = [r for r in caplog.records if r.getMessage() == "detalhe_falhou"]
+    assert [(r.__dict__["url"], r.__dict__["status"]) for r in falhou] == [(quebrado, 404)]
+
+
+@pytest.mark.parametrize("status", [403, 429, None])
+def test_coletar_detalhe_bloqueado_para_o_retrato(status: int | None) -> None:
+    detalhes = _detalhes_de(LISTA_P1)
+    detalhes[f"{BASE}/licitacao/detalhe/352/26"] = ErroFonte("recusou", status=status)
+    cliente = _ClienteFalso(
+        {
+            _lista_url("Abertura", 0): _com_total(LISTA_P1, 20),
+            _lista_url("Abertura", 1): LISTA_VAZIA,
+            _lista_url("Julgamento", 0): LISTA_VAZIA,
+        }
+        | detalhes
+    )
+    with pytest.raises(ErroFonte, match="recusou"):
+        list(FonteSanepar().coletar(cliente))  # type: ignore[arg-type]
+
+
+def test_coletar_muitos_detalhes_com_erro_para_o_retrato() -> None:
+    # Mais de 20% dos detalhes falhando é o site fora do ar, não um edital quebrado.
+    detalhes: dict[str, str | Exception] = {
+        url: ErroFonte(f"HTTP 500 em {url}", status=500) for url in _detalhes_de(LISTA_P1)
+    }
+    cliente = _ClienteFalso(
+        {
+            _lista_url("Abertura", 0): _com_total(LISTA_P1, 20),
+            _lista_url("Abertura", 1): LISTA_VAZIA,
+            _lista_url("Julgamento", 0): LISTA_VAZIA,
+        }
+        | detalhes
+    )
+    with pytest.raises(ErroFonte, match="detalhes com erro"):
+        list(FonteSanepar().coletar(cliente))  # type: ignore[arg-type]
+
+
+def test_coletar_e_extrair_leem_cada_pagina_uma_vez(caplog: pytest.LogCaptureFixture) -> None:
+    # Data de abertura sem hora loga `data_sem_hora`; com o parse único, loga uma vez só.
+    lista = _com_total(LISTA_P1, 20).replace("18/12/2026 às 10h30", "18/12/2026", 1)
+    cliente = _ClienteFalso(
+        {
+            _lista_url("Abertura", 0): lista,
+            _lista_url("Abertura", 1): LISTA_VAZIA,
+            _lista_url("Julgamento", 0): LISTA_VAZIA,
+        }
+        | _detalhes_de(LISTA_P1)
+    )
+    fonte = FonteSanepar()
+
+    with caplog.at_level(logging.WARNING):
+        fonte.extrair(list(fonte.coletar(cliente)))  # type: ignore[arg-type]
+
+    sem_hora = [r for r in caplog.records if r.getMessage() == "data_sem_hora"]
+    assert [r.__dict__["texto"] for r in sem_hora] == ["18/12/2026"]

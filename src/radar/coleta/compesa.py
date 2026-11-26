@@ -31,7 +31,8 @@ anterior ao corte (log `compesa_corte_por_data`; essa página não é rendida), 
 as linhas anteriores ao corte que vieram na última página. Uma página seguinte com abertura mais
 nova que a da anterior quebra a premissa da ordem e é erro de layout. Como a reconciliação só
 enxerga o que o retrato lista, um edital da Compesa que saia da janela ainda `aberta` no banco é
-fechado por ela; é aceitável, porque um edital com abertura de mais de um ano já não está aberto.
+fechado por ela, com a situação original "fora da janela" (`rotulo_saida`); é aceitável, porque
+um edital com abertura de mais de um ano já não está aberto.
 
 Completude: a resposta não traz o total de registros. Dentro da janela, a coleta segue página a
 página enquanto a navegação deixa avançar (`enableNavigation(primeira, anterior, próxima,
@@ -71,6 +72,8 @@ URL_PAGINA = (
 )
 MAX_PAGINAS = 100  # última trava; a janela de 12 meses cabe em poucas páginas
 JANELA_DIAS = 365
+# A grade não traz o CNPJ; é o da sede (Recife), o mesmo que o PNCP usaria para a Compesa.
+CNPJ = "09769035000164"
 FUSO = ZoneInfo("America/Sao_Paulo")
 
 # Colunas visíveis da grade (chaves das linhas de `data_817140`).
@@ -519,9 +522,19 @@ class FonteCompesa:
     minimo_registros = 50
     # A página de bloqueio do WAF vista no estudo (POST rejeitado).
     marcador_bloqueio: str | None = "<title>Request Rejected</title>"
+    rotulo_saida = "fora da janela"
 
     def __init__(self, relogio: Callable[[], datetime] | None = None) -> None:
         self._relogio = relogio or _agora_real
+        # Grades já lidas em `coletar`, para `extrair` não ler (e logar) cada página de novo.
+        self._grades: dict[tuple[str, int, int], Grade] = {}
+
+    def _ler_grade(self, url: str, texto: str) -> Grade:
+        chave = (url, len(texto), hash(texto))
+        grade = self._grades.get(chave)
+        if grade is None:
+            grade = self._grades[chave] = ler_grade(texto)
+        return grade
 
     def corte(self) -> date:
         """Primeiro dia da janela: hoje em Brasília menos `JANELA_DIAS`."""
@@ -529,6 +542,7 @@ class FonteCompesa:
 
     def coletar(self, cliente: ClienteEducado) -> Iterator[PaginaColetada]:
         corte = self.corte()
+        self._grades = {}
         anterior: datetime | None = None  # abertura mais nova da página anterior
         cliente.get(URL_FORM, headers=IDIOMA)  # cookie de sessão (JSESSIONID e os do WAF)
         cliente.get(URL_OPENFORM, headers=IDIOMA)
@@ -540,7 +554,7 @@ class FonteCompesa:
             url = URL_PAGINA if pagina else URL_GRADE
             resposta = cliente.get(url, headers=IDIOMA)
             texto = decodificar(resposta.content, resposta.charset_encoding)
-            grade = ler_grade(texto)
+            grade = self._ler_grade(url, texto)
             if esperado is not None and grade.inicio is not None and grade.inicio != esperado:
                 raise ErroFonte(
                     f"layout: página fora de ordem: início {grade.inicio}, esperado {esperado}"
@@ -571,9 +585,10 @@ class FonteCompesa:
         corte = self.corte()
         linhas: dict[str, LinhaCompesa] = {}  # a última linha com a chave vence
         for pagina in paginas:
-            for linha in ler_grade(pagina.texto).linhas:
+            for linha in self._ler_grade(pagina.url, pagina.texto).linhas:
                 if not _antiga(linha, corte):  # a janela é exata: fora dela não entra
                     linhas[linha.chave] = linha
+        self._grades = {}
         desconhecidas: set[str] = set()
         modalidades_vistas: set[str] = set()  # um log por código desconhecido por retrato
         normalizados = []
@@ -606,7 +621,7 @@ def _normalizar(linha: LinhaCompesa, situacao: str, modalidade: str) -> dict[str
         "id_na_fonte": linha.chave,
         "objeto": linha.objeto,
         "orgao_nome": "COMPESA",
-        "orgao_cnpj": None,  # não vem nos dados da grade
+        "orgao_cnpj": CNPJ,
         "uf": "PE",
         "municipio": linha.municipio,
         "modalidade_nome": modalidade,  # do prefixo do número, por MODALIDADES_COMPESA

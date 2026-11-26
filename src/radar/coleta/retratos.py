@@ -24,7 +24,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal, Protocol
 
 import httpx
-from sqlalchemy import Engine, desc, func, select, update
+from sqlalchemy import Engine, delete, desc, func, select, update
 from sqlalchemy.orm import Session
 
 from radar.coleta.modelos import ColetaRetrato, PaginaBruta
@@ -37,13 +37,24 @@ TIMEOUT_SEGUNDOS = 60.0
 CHAVE_RETRATOS = 7_240_002  # primeira metade do advisory lock; a segunda é a fonte
 FRACAO_ENCOLHEU = 0.5
 LIMITE_ERRO = 500
+MANTER_CONCLUIDOS = 3  # retratos concluídos cujas páginas brutas ficam guardadas
+MANTER_FALHAS = 10  # retratos em falha idem (para diagnóstico)
 
 Formato = Literal["json", "html", "js"]
 StatusRetrato = Literal["concluido", "falha", "ocupado"]
 
 
 class ErroFonte(Exception):
-    """A fonte recusou, bloqueou ou respondeu algo inesperado. O retrato para aqui."""
+    """A fonte recusou, bloqueou ou respondeu algo inesperado. O retrato para aqui.
+
+    `status` é o código HTTP quando o erro foi uma resposta de erro (403, 404, 500...); fica
+    None em falha de transporte, bloqueio por marcador e erro de layout. Assim o coletor pode
+    tolerar um 404 isolado sem tolerar um 403.
+    """
+
+    def __init__(self, mensagem: str, status: int | None = None) -> None:
+        super().__init__(mensagem)
+        self.status = status
 
 
 @dataclass(frozen=True)
@@ -99,7 +110,7 @@ class ClienteEducado:
         except httpx.HTTPError as erro:
             raise ErroFonte(f"{type(erro).__name__} em {url}: {erro}") from erro
         if resposta.status_code >= 400:
-            raise ErroFonte(f"HTTP {resposta.status_code} em {url}")
+            raise ErroFonte(f"HTTP {resposta.status_code} em {url}", status=resposta.status_code)
         if self._bloqueio is not None and self._bloqueio.search(resposta.text):
             raise ErroFonte(f"bloqueio em {url}")
         return resposta
@@ -115,11 +126,16 @@ class ClienteEducado:
 
 
 class FonteRetrato(Protocol):
-    """Uma fonte lida por retrato. `marcador_bloqueio` é um regex opcional (None = sem)."""
+    """Uma fonte lida por retrato. `marcador_bloqueio` é um regex opcional (None = sem).
+
+    `rotulo_saida` é a `situacao_original` gravada no edital que sai de um retrato completo
+    ("saiu da lista" na Sanepar; "fora da janela" na Compesa, cujo retrato é uma janela).
+    """
 
     nome: str
     minimo_registros: int
     marcador_bloqueio: str | None
+    rotulo_saida: str
 
     def coletar(self, cliente: ClienteEducado) -> Iterator[PaginaColetada]:
         """Páginas brutas em ordem; lança `ErroFonte` na primeira falha."""
@@ -333,6 +349,38 @@ def marcar_retrato_falha(sessao: Session, retrato_id: int, erro: str) -> None:
         .values(status="falha", erro=erro[:LIMITE_ERRO])
     )
     sessao.commit()
+
+
+def limpar_brutos(
+    sessao: Session,
+    fonte: str,
+    manter_concluidos: int = MANTER_CONCLUIDOS,
+    manter_falhas: int = MANTER_FALHAS,
+) -> int:
+    """Apaga as páginas brutas dos retratos antigos da fonte; devolve quantas. Com commit.
+
+    Ficam as páginas dos `manter_concluidos` retratos concluídos mais novos e dos
+    `manter_falhas` em falha mais novos (a falha é o que se quer diagnosticar). As linhas de
+    `coleta_retrato` ficam todas: a auditoria e o histórico de contagens continuam valendo.
+    Um retrato em andamento nunca é tocado.
+    """
+
+    def excedentes(status: str, manter: int) -> Any:
+        return (
+            select(ColetaRetrato.id)
+            .where(ColetaRetrato.fonte == fonte, ColetaRetrato.status == status)
+            .order_by(desc(ColetaRetrato.iniciado_em), desc(ColetaRetrato.id))
+            .offset(manter)
+        )
+
+    comando = delete(PaginaBruta).where(
+        PaginaBruta.retrato_id.in_(excedentes("concluido", manter_concluidos))
+        | PaginaBruta.retrato_id.in_(excedentes("falha", manter_falhas))
+    )
+    removidas: int = sessao.execute(comando).rowcount  # type: ignore[attr-defined]
+    sessao.commit()
+    logger.info("brutos_removidos", extra={"fonte": fonte, "paginas": removidas})
+    return removidas
 
 
 def _gravar_pagina(
