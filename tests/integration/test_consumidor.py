@@ -2,20 +2,22 @@
 
 import json
 import logging
+import threading
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import Engine, func, select
+from sqlalchemy import Engine, func, select, text, update
 from sqlalchemy.orm import Session
 
 from radar.coleta import FonteRetrato, PaginaColetada
 from radar.coleta.modelos import ColetaJanela, ColetaRetrato, PaginaBruta
 from radar.coleta.retratos import CHAVE_RETRATOS, chave_da_fonte
 from radar.coleta.sanepar import FonteSanepar
-from radar.comum import Mensagem
+from radar.comum import Base, Mensagem
 from radar.editais import reconciliar_retrato, registrar_normalizados
 from radar.editais.modelos import Edital
 from radar.processador import MensagemAdiada, fontes_retrato, processar_mensagem
@@ -323,3 +325,80 @@ def test_trava_ocupada_adia(sessao: Session, engine: Engine) -> None:
 
 def test_fontes_retrato() -> None:
     assert list(fontes_retrato()) == ["sanepar", "compesa"]
+
+
+class SaneparParserQuebrado(SaneparComInvalidos):
+    def extrair(self, paginas: list[PaginaColetada]) -> list[dict[str, Any]]:
+        raise ValueError("layout novo")
+
+
+def test_retrato_parser_quebrado_e_falha_definitiva(
+    sessao: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    _ja_abertos(sessao, "OE-1/26")
+    antes = _editais(sessao, "sanepar")
+    retrato_id = _retrato(sessao, _paginas_sanepar(_lista("lista-oe-abertura-p1.html")))
+    fontes: dict[str, FonteRetrato] = {"sanepar": SaneparParserQuebrado()}
+
+    with caplog.at_level(logging.INFO):
+        assert processar_mensagem(sessao, _msg_retrato(retrato_id), fontes, AGORA) == (
+            "falha_definitiva"
+        )
+
+    assert _editais(sessao, "sanepar") == antes
+    estado = _estado(sessao, retrato_id)
+    assert (estado.status, estado.processado_em) == ("falha", None)
+    assert estado.erro == "extrair: ValueError('layout novo')"
+    falha = next(r for r in caplog.records if r.getMessage() == "processamento_falhou")
+    assert falha.erro == "extrair: ValueError('layout novo')"
+
+
+def test_retrato_inexistente_e_ok_com_erro_no_log(
+    sessao: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.INFO):
+        assert processar_mensagem(sessao, _msg_retrato(999_999), FONTES, AGORA) == "ok"
+    registro = next(r for r in caplog.records if r.getMessage() == "retrato_inexistente")
+    assert registro.levelno == logging.ERROR
+
+
+@pytest.fixture
+def limpar_tudo(engine: Engine) -> Any:
+    yield
+    tabelas = ", ".join(tabela.name for tabela in Base.metadata.sorted_tables)
+    with engine.begin() as conexao:
+        conexao.execute(text(f"TRUNCATE {tabelas} RESTART IDENTITY CASCADE"))
+
+
+def test_pagina_em_paralelo_espera_e_nao_registra_de_novo(
+    engine: Engine, limpar_tudo: None
+) -> None:
+    # Review Focus 2: a mesma pagina_coletada em duas Lambdas ao mesmo tempo.
+    with Session(engine) as preparo:
+        pagina_id = _pagina_pncp(preparo)
+    resultado: list[Any] = []
+
+    def consumir() -> None:
+        with Session(engine) as sessao:
+            sessao.execute(text("SET lock_timeout = '10s'"))  # não trava a suíte
+            try:
+                resultado.append(processar_mensagem(sessao, _msg_pagina(pagina_id), FONTES, AGORA))
+            except Exception as erro:
+                resultado.append(erro)
+
+    with engine.connect() as outra:
+        outra.execute(select(PaginaBruta.id).where(PaginaBruta.id == pagina_id).with_for_update())
+        consumidor = threading.Thread(target=consumir)
+        consumidor.start()
+        time.sleep(0.5)
+        assert consumidor.is_alive()  # esperando a trava da linha
+        outra.execute(
+            update(PaginaBruta).where(PaginaBruta.id == pagina_id).values(processada_em=func.now())
+        )
+        outra.commit()  # a "primeira Lambda" terminou
+        consumidor.join(timeout=10)
+
+    assert not consumidor.is_alive()
+    assert resultado == ["ok"]
+    with Session(engine) as conferencia:
+        assert conferencia.scalar(select(func.count()).select_from(Edital)) == 0

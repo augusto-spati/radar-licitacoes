@@ -92,7 +92,7 @@ def _processar_retrato(
     antes = estado_retrato(sessao, retrato_id)
     sessao.rollback()  # a leitura antes da trava não deixa transação aberta
     if antes is None:
-        logger.warning("retrato_inexistente", extra={"retrato_id": retrato_id})
+        logger.error("retrato_inexistente", extra={"retrato_id": retrato_id})
         return "ok"
     fonte = fontes[antes.fonte]  # fonte desconhecida é erro de deploy: nova tentativa
     with trava_fonte(sessao, fonte.nome) as obtida:
@@ -101,7 +101,8 @@ def _processar_retrato(
             raise MensagemAdiada(f"trava da fonte {fonte.nome} ocupada")
         # Relido sob a trava: outro consumidor pode ter processado no intervalo.
         retrato = estado_retrato(sessao, retrato_id)
-        assert retrato is not None  # linhas de coleta_retrato não são apagadas
+        if retrato is None:  # linhas de coleta_retrato não são apagadas
+            raise RuntimeError(f"retrato {retrato_id} sumiu entre a leitura e a trava")
         desfecho = _sob_trava(sessao, retrato, fonte, agora)
     return desfecho
 
@@ -128,7 +129,12 @@ def _sob_trava(
     paginas = paginas_do_retrato(sessao, retrato.id)
     if not paginas:
         return _falhar(sessao, retrato.id, fonte.nome, "páginas ausentes")
-    normalizados = fonte.extrair(paginas)
+    try:
+        normalizados = fonte.extrair(paginas)
+    except Exception as falha:  # parser quebrado: repetir não conserta (como na cli antiga)
+        sessao.rollback()
+        logger.exception("retrato_erro_extrair", extra=dados)
+        return _falhar(sessao, retrato.id, fonte.nome, f"extrair: {falha!r}")
     vistos = {str(n["id_na_fonte"]) for n in normalizados if n.get("id_na_fonte") not in (None, "")}
     resultado = registrar_normalizados(sessao, normalizados)
     if resultado.invalidos > FRACAO_INVALIDOS * len(normalizados):
