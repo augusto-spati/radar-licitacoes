@@ -7,6 +7,15 @@ variable "repositorio_github" {
   default     = "augusto-spati/radar-licitacoes"
 }
 
+# Repositorios novos do GitHub usam o "sub" imutavel, com os ids numericos do dono e do
+# repositorio (nao reaproveitaveis se o nome for liberado). Conferir com:
+#   gh api repos/<dono>/<repo>/actions/oidc/customization/sub   -> sub_claim_prefix
+variable "prefixo_sub_github" {
+  description = "Prefixo do claim sub do token OIDC do GitHub (sub_claim_prefix do repositorio)."
+  type        = string
+  default     = "repo:augusto-spati@248562387/radar-licitacoes@1473222870"
+}
+
 # A AWS valida o certificado do GitHub pela sua propria lista de CAs confiaveis, mas o
 # provider 5.x ainda exige thumbprint_list. Valores publicados pelo GitHub:
 # https://github.blog/changelog/2023-06-27-github-actions-update-on-oidc-integration-with-aws/
@@ -51,7 +60,7 @@ data "aws_iam_policy_document" "deploy_assume" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.repositorio_github}:ref:refs/heads/main"]
+      values   = ["${var.prefixo_sub_github}:ref:refs/heads/main"]
     }
 
     # Amarra a role ao workflow de deploy (chave suportada pelo IAM para o GitHub:
