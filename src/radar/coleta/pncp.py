@@ -51,6 +51,24 @@ class _FalhaTransitoria(Exception):
         self.status = status
 
 
+def _interpretar(resposta: httpx.Response, pagina: int) -> Pagina:
+    """Valida o corpo de um 200; corpo inesperado é falha, nunca página vazia."""
+    try:
+        corpo = resposta.json()
+    except ValueError as erro:
+        raise _FalhaTransitoria(f"corpo 200 não é JSON: {resposta.text[:200]!r}", 200) from erro
+    registros = corpo.get("data") if isinstance(corpo, dict) else None
+    total = corpo.get("totalPaginas") if isinstance(corpo, dict) else None
+    if not isinstance(registros, list) or not isinstance(total, int) or isinstance(total, bool):
+        raise _FalhaTransitoria(f"corpo 200 com formato inesperado: {str(corpo)[:200]}", 200)
+    return Pagina(
+        registros=registros,
+        total_paginas=total,
+        numero_pagina=corpo.get("numeroPagina", pagina),
+        bruto=corpo,
+    )
+
+
 class ClientePNCP:
     def __init__(self, http: httpx.Client, tentativas: int = 4, espera_base: float = 5.0) -> None:
         self._http = http
@@ -81,22 +99,13 @@ class ClientePNCP:
             reraise=True,
         )
         try:
-            resposta = tentativas(self._requisitar, caminho, parametros)
+            return tentativas(self._requisitar, caminho, parametros, pagina)
         except _FalhaTransitoria as falha:
             raise ErroPNCP(
                 f"PNCP falhou após {self._tentativas} tentativas: {falha}", falha.status
             ) from falha
-        if resposta.status_code == 204:
-            return Pagina(registros=[], total_paginas=0, numero_pagina=pagina, bruto={})
-        corpo: dict[str, Any] = resposta.json()
-        return Pagina(
-            registros=corpo.get("data", []),
-            total_paginas=corpo.get("totalPaginas", 0),
-            numero_pagina=corpo.get("numeroPagina", pagina),
-            bruto=corpo,
-        )
 
-    def _requisitar(self, caminho: str, parametros: dict[str, Any]) -> httpx.Response:
+    def _requisitar(self, caminho: str, parametros: dict[str, Any], pagina: int) -> Pagina:
         try:
             resposta = self._http.get(caminho, params=parametros)
         except (httpx.TimeoutException, httpx.TransportError) as erro:
@@ -106,7 +115,9 @@ class ClientePNCP:
             raise _FalhaTransitoria(f"HTTP {status}", status)
         if status >= 400:
             raise ErroPNCP(f"HTTP {status}: {resposta.text[:200]}", status)
-        return resposta
+        if status == 204:
+            return Pagina(registros=[], total_paginas=0, numero_pagina=pagina, bruto={})
+        return _interpretar(resposta, pagina)
 
     def _esperar(self, estado: RetryCallState) -> float:
         espera = self._espera_exponencial(estado)

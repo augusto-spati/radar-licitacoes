@@ -1,4 +1,5 @@
 from datetime import date
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -130,3 +131,63 @@ def test_204_e_pagina_vazia() -> None:
     pagina = buscar(cliente)
     assert pagina == Pagina(registros=[], total_paginas=0, numero_pagina=2, bruto={})
     assert len(chamadas) == 1
+
+
+@pytest.mark.parametrize(
+    "corpo",
+    [
+        {"message": "erro"},
+        {"data": []},
+        {"data": [], "totalPaginas": "3"},
+        {"data": None, "totalPaginas": 1},
+        {"data": {}, "totalPaginas": 1},
+        [],
+    ],
+)
+def test_200_malformado_vira_erro(corpo: object) -> None:
+    cliente, chamadas = cliente_com([httpx.Response(200, json=corpo)] * 4)
+    with pytest.raises(ErroPNCP) as erro:
+        buscar(cliente)
+    assert erro.value.status == 200
+    assert len(chamadas) == 4  # retentado até esgotar
+
+
+def test_200_html_vira_erro() -> None:
+    cliente, _ = cliente_com([httpx.Response(200, html="<html>manutencao</html>")] * 4)
+    with pytest.raises(ErroPNCP):
+        buscar(cliente)
+
+
+def test_200_malformado_e_retentado() -> None:
+    cliente, chamadas = cliente_com(
+        [httpx.Response(200, json={"message": "erro"}), httpx.Response(200, json=CORPO_OK)]
+    )
+    assert len(buscar(cliente).registros) == 2
+    assert len(chamadas) == 2
+
+
+def test_espera_minima_apos_429() -> None:
+    esperas: list[float] = []
+    respostas = iter([httpx.Response(429, html="x"), httpx.Response(200, json=CORPO_OK)])
+    http = httpx.Client(
+        base_url="https://x/api", transport=httpx.MockTransport(lambda r: next(respostas))
+    )
+    with patch("tenacity.nap.time.sleep", side_effect=esperas.append):
+        ClientePNCP(http, espera_base=0.5).buscar(
+            "publicacao", date(2026, 11, 1), date(2026, 11, 1), 6, 1
+        )
+    assert len(esperas) == 1
+    assert esperas[0] >= 0.5 * 12
+
+
+def test_espera_apos_500_nao_tem_piso_de_429() -> None:
+    esperas: list[float] = []
+    respostas = iter([httpx.Response(500), httpx.Response(200, json=CORPO_OK)])
+    http = httpx.Client(
+        base_url="https://x/api", transport=httpx.MockTransport(lambda r: next(respostas))
+    )
+    with patch("tenacity.nap.time.sleep", side_effect=esperas.append):
+        ClientePNCP(http, espera_base=0.5).buscar(
+            "publicacao", date(2026, 11, 1), date(2026, 11, 1), 6, 1
+        )
+    assert esperas[0] < 0.5 * 12
