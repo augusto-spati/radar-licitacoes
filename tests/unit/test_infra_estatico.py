@@ -14,8 +14,17 @@ PROIBIDOS = {
     "aws_rds_cluster",
     "aws_instance",
     "aws_eip",
+    "aws_vpc_endpoint",
+    "aws_elasticache_cluster",
+    "aws_elasticache_replication_group",
+    "aws_opensearch_domain",
+    "aws_msk_cluster",
+    "aws_kms_key",
 }
+MODULOS_PERMITIDOS: set[str] = set()
 PADRAO_RECURSO = re.compile(r'^\s*resource\s+"([a-z0-9_]+)"', re.MULTILINE)
+
+PADRAO_MODULO = re.compile(r'^\s*module\s+"([^"]+)"', re.MULTILINE)
 
 
 def _tipos_de_recurso() -> dict[str, set[str]]:
@@ -36,6 +45,15 @@ def test_ha_configuracao_terraform() -> None:
 def test_nenhum_recurso_que_cobra_parado() -> None:
     achados = {t: a for t, a in _tipos_de_recurso().items() if t in PROIBIDOS}
     assert not achados, f"recursos proibidos (cobram parados): {achados}"
+
+
+def test_nenhum_modulo_escondendo_recursos() -> None:
+    modulos: set[str] = set()
+    for arquivo in (RAIZ / "infra").rglob("*.tf"):
+        if ".terraform" in arquivo.parts:
+            continue
+        modulos.update(PADRAO_MODULO.findall(arquivo.read_text(encoding="utf-8")))
+    assert modulos <= MODULOS_PERMITIDOS, f"modulos nao permitidos: {modulos - MODULOS_PERMITIDOS}"
 
 
 def test_gitignore_cobre_estado_e_segredos() -> None:
