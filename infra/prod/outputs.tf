@@ -57,3 +57,13 @@ output "cognito_client_id" {
   description = "Id do app client publico; vai no build do front como VITE_COGNITO_CLIENT_ID."
   value       = aws_cognito_user_pool_client.front.id
 }
+
+output "url_fila" {
+  description = "URL da fila SQS radar-editais."
+  value       = aws_sqs_queue.editais.url
+}
+
+output "url_fila_falhas" {
+  description = "URL da DLQ radar-editais-falhas."
+  value       = aws_sqs_queue.editais_falhas.url
+}

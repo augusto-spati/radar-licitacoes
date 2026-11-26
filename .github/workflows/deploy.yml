@@ -113,6 +113,9 @@ jobs:
           aws lambda update-function-code --function-name radar-api \
             --image-uri "${REGISTRO}/radar-api:${GITHUB_SHA}" > /dev/null
           aws lambda wait function-updated-v2 --function-name radar-api
+          aws lambda update-function-code --function-name radar-processador \
+            --image-uri "${REGISTRO}/radar-api:${GITHUB_SHA}" > /dev/null
+          aws lambda wait function-updated-v2 --function-name radar-processador
 
       # Nova revisao a partir da ULTIMA: so a imagem muda (segredos, env, logs e roles ficam).
       # Sem terraform apply no CI. Um apply manual depois deve usar -var tag_coletor=<sha>.

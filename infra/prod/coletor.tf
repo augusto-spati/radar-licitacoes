@@ -113,8 +113,8 @@ resource "aws_iam_role_policy" "coletor_segredo" {
   policy = data.aws_iam_policy_document.coletor_segredo.json
 }
 
-# Task role: o app nao chama a AWS (a URL do banco chega por `secrets` da task
-# definition, resolvida pelo ECS com a execution role). Role sem permissoes.
+# Task role: a URL do banco chega por `secrets` (execution role). Unica permissao do app:
+# enviar para a fila radar-editais (fila.tf).
 resource "aws_iam_role" "coletor_task" {
   name               = "radar-coletor-task"
   assume_role_policy = data.aws_iam_policy_document.ecs_tasks_assume.json
@@ -147,6 +147,8 @@ resource "aws_ecs_task_definition" "coletor" {
     environment = [
       { name = "RADAR_DB_NULLPOOL", value = "true" },
       { name = "RADAR_CONFIG_FILTRO", value = "/app/config/filtro.toml" },
+      { name = "RADAR_FILA", value = "sqs" },
+      { name = "RADAR_FILA_URL", value = aws_sqs_queue.editais.url },
     ]
 
     secrets = [
@@ -312,7 +314,12 @@ data "aws_iam_policy_document" "alertas_publicar" {
     condition {
       test     = "ArnEquals"
       variable = "aws:SourceArn"
-      values   = [aws_cloudwatch_metric_alarm.coletor_nao_rodou.arn]
+      values = [
+        aws_cloudwatch_metric_alarm.coletor_nao_rodou.arn,
+        aws_cloudwatch_metric_alarm.dlq_com_mensagens.arn,
+        aws_cloudwatch_metric_alarm.fila_parada.arn,
+        aws_cloudwatch_metric_alarm.processamento_falhou.arn,
+      ]
     }
   }
 }
