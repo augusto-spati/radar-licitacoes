@@ -51,7 +51,7 @@ def test_termo_sem_acento_acha_texto_com_acento(sessao: Session) -> None:
 
     resultado = filtrar(sessao, CRITERIOS, AGORA)
 
-    assert [r.numero_controle_pncp for r in resultado] == ["1/2026"]
+    assert [r.id_na_fonte for r in resultado] == ["1/2026"]
     assert set(resultado[0].linhas) == {"comercial", "perdas"}
 
 
@@ -61,7 +61,7 @@ def test_filtra_uf(sessao: Session) -> None:
 
     resultado = filtrar(sessao, CRITERIOS, AGORA)
 
-    assert [r.numero_controle_pncp for r in resultado] == ["sp/2026"]
+    assert [r.id_na_fonte for r in resultado] == ["sp/2026"]
 
 
 def test_somente_abertos(sessao: Session) -> None:
@@ -100,7 +100,7 @@ def test_listar_abertos_ignora_texto_e_respeita_uf_prazo_e_limite(sessao: Sessio
 
     resultado = listar_abertos(sessao, CRITERIOS, AGORA, limite=10)
 
-    assert [r.numero_controle_pncp for r in resultado] == ["cedo/2026", "tarde/2026"]
+    assert [r.id_na_fonte for r in resultado] == ["cedo/2026", "tarde/2026"]
     assert resultado[0].linhas == ["perdas"]
     assert resultado[1].linhas == []
     assert len(listar_abertos(sessao, CRITERIOS, AGORA, limite=1)) == 1

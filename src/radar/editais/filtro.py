@@ -1,4 +1,4 @@
-"""Filtro dos editais por linha de serviço, UF, modalidade e prazo."""
+"""Filtro dos editais por linha de serviço, UF, modalidade (só PNCP) e prazo."""
 
 import tomllib
 from dataclasses import dataclass
@@ -8,10 +8,10 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import ColumnElement, Select, false, func, or_, select
+from sqlalchemy import ColumnElement, Select, and_, false, func, or_, select
 from sqlalchemy.orm import Session
 
-from radar.editais.modelos import Edital
+from radar.editais.modelos import Edital, Fonte
 
 FUSO = ZoneInfo("America/Sao_Paulo")
 
@@ -23,25 +23,47 @@ class Criterios:
     modalidades: list[int]
 
 
+SEPARADOR_ID = "~"
+
+
+def id_publico(fonte: str, id_na_fonte: str) -> str:
+    """Id único entre as fontes: `<fonte>~<id_na_fonte>` (o id da fonte pode ter `/`)."""
+    return f"{fonte}{SEPARADOR_ID}{id_na_fonte}"
+
+
+def separar_id_publico(valor: str) -> tuple[Fonte, str] | None:
+    """O inverso de `id_publico`; None se a fonte for desconhecida ou o id vier vazio."""
+    fonte, separador, id_na_fonte = valor.partition(SEPARADOR_ID)
+    if not separador or not id_na_fonte or fonte not in Fonte.__members__:
+        return None
+    return Fonte(fonte), id_na_fonte
+
+
 @dataclass(frozen=True)
 class EditalResumo:
-    numero_controle_pncp: str
+    fonte: str
+    id_na_fonte: str
     objeto: str
     orgao_nome: str
     uf: str | None
     municipio: str | None
-    modalidade_id: int
+    modalidade_id: int | None
+    modalidade_nome: str
     valor_estimado: Decimal | None
     data_encerramento_proposta: datetime | None
     link_origem: str | None
     linhas: list[str]
 
+    @property
+    def id_publico(self) -> str:
+        return id_publico(self.fonte, self.id_na_fonte)
+
 
 @dataclass(frozen=True)
 class EditalDetalhe(EditalResumo):
-    orgao_cnpj: str
+    orgao_cnpj: str | None
     situacao_nome: str
-    data_publicacao: datetime
+    data_publicacao: datetime | None
     data_abertura_proposta: datetime | None
 
 
@@ -67,12 +89,14 @@ def _casa_termos(termos: list[str]) -> ColumnElement[bool]:
 
 
 _COLUNAS_RESUMO: list[Any] = [
-    Edital.numero_controle_pncp,
+    Edital.fonte,
+    Edital.id_na_fonte,
     Edital.objeto,
     Edital.orgao_nome,
     Edital.uf,
     Edital.municipio,
     Edital.modalidade_id,
+    Edital.modalidade_nome,
     Edital.valor_estimado,
     Edital.data_encerramento_proposta,
     Edital.link_origem,
@@ -96,6 +120,19 @@ def _campos_resumo(linha: Any, criterios: Criterios) -> dict[str, Any]:
     return campos
 
 
+def _modalidade_aceita(criterios: Criterios) -> ColumnElement[bool]:
+    """As modalidades do filtro.toml são códigos do PNCP; as outras fontes passam direto."""
+    return or_(Edital.fonte != Fonte.pncp.value, Edital.modalidade_id.in_(criterios.modalidades))
+
+
+def _aberto(agora: datetime) -> ColumnElement[bool]:
+    """Aberto = situação normalizada `aberta` e prazo no futuro (Brasília). Prazo nulo não é."""
+    agora_brasilia = agora.astimezone(FUSO).replace(tzinfo=None)
+    return and_(
+        Edital.situacao_normalizada == "aberta", Edital.data_encerramento_proposta > agora_brasilia
+    )
+
+
 def _montar_consulta(
     criterios: Criterios, agora: datetime, somente_abertos: bool, limite: int
 ) -> Select[tuple[Any, ...]]:
@@ -105,15 +142,12 @@ def _montar_consulta(
         select(*_COLUNAS_RESUMO, *_rotulos(casamentos))
         .where(or_(*casamentos) if casamentos else false())
         .where(Edital.uf.in_(criterios.ufs))
-        .where(Edital.modalidade_id.in_(criterios.modalidades))
+        .where(_modalidade_aceita(criterios))
         .order_by(Edital.data_encerramento_proposta.asc().nulls_last())
         .limit(limite)
     )
     if somente_abertos:
-        agora_brasilia = agora.astimezone(FUSO).replace(tzinfo=None)
-        consulta = consulta.where(
-            Edital.data_encerramento_proposta > agora_brasilia, Edital.situacao_id == 1
-        )
+        consulta = consulta.where(_aberto(agora))
     return consulta
 
 
@@ -130,7 +164,7 @@ def filtrar(
 
 _COLUNAS_DETALHE: list[Any] = [
     Edital.orgao_cnpj,
-    Edital.situacao_nome,
+    Edital.situacao_original.label("situacao_nome"),
     Edital.data_publicacao,
     Edital.data_abertura_proposta,
 ]
@@ -144,14 +178,14 @@ def _detalhe(linha: Any, criterios: Criterios) -> EditalDetalhe:
 
 
 def obter_edital(
-    sessao: Session, numero_controle_pncp: str, criterios: Criterios
+    sessao: Session, fonte: str, id_na_fonte: str, criterios: Criterios
 ) -> EditalDetalhe | None:
-    """Um edital pelo número, com as linhas que casam (mesma regra de `filtrar`).
+    """Um edital pela chave, com as linhas que casam (mesma regra de `filtrar`).
 
-    Não aplica UF, modalidade nem prazo: quem pede um edital pelo número o recebe.
+    Não aplica UF, modalidade nem prazo: quem pede um edital pela chave o recebe.
     """
     consulta = select(*_COLUNAS_RESUMO, *_COLUNAS_DETALHE, *_rotulos(_casamentos(criterios))).where(
-        Edital.numero_controle_pncp == numero_controle_pncp
+        Edital.fonte == fonte, Edital.id_na_fonte == id_na_fonte
     )
     linha = sessao.execute(consulta).first()
     return None if linha is None else _detalhe(linha, criterios)
@@ -164,12 +198,11 @@ def listar_abertos(
 
     `linhas` vem preenchida quando o edital casa com alguma linha; fica vazia se não.
     """
-    agora_brasilia = agora.astimezone(FUSO).replace(tzinfo=None)
     consulta = (
         select(*_COLUNAS_RESUMO, *_COLUNAS_DETALHE, *_rotulos(_casamentos(criterios)))
         .where(Edital.uf.in_(criterios.ufs))
-        .where(Edital.modalidade_id.in_(criterios.modalidades))
-        .where(Edital.data_encerramento_proposta > agora_brasilia, Edital.situacao_id == 1)
+        .where(_modalidade_aceita(criterios))
+        .where(_aberto(agora))
         .order_by(Edital.data_encerramento_proposta.asc())
         .limit(limite)
     )

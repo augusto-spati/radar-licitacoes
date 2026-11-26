@@ -115,11 +115,11 @@ def test_lista_abertos_ordenados_por_prazo(cliente: TestClient, sessao: Session)
     abertos = cliente.get("/api/editais").json()
     todos = cliente.get("/api/editais", params={"todos": "true"}).json()
 
-    assert [e["numero_controle_pncp"] for e in abertos["editais"]] == ["cedo/2026", "tarde/2026"]
-    assert [e["numero_controle_pncp"] for e in todos["editais"]] == [
-        "velho/2026",
-        "cedo/2026",
-        "tarde/2026",
+    assert [e["id_publico"] for e in abertos["editais"]] == ["pncp~cedo/2026", "pncp~tarde/2026"]
+    assert [e["id_publico"] for e in todos["editais"]] == [
+        "pncp~velho/2026",
+        "pncp~cedo/2026",
+        "pncp~tarde/2026",
     ]
     assert abertos["editais"][0]["data_encerramento_proposta"] == "2026-12-01T10:00:00"
     assert abertos["editais"][0]["linhas"] == ["perdas"]
@@ -140,8 +140,8 @@ def test_lista_filtra_linha_e_uf(cliente: TestClient, sessao: Session) -> None:
     por_uf = cliente.get("/api/editais", params=[("uf", "PR")]).json()
     por_duas_ufs = cliente.get("/api/editais", params=[("uf", "PR"), ("uf", "SP")]).json()
 
-    assert [e["numero_controle_pncp"] for e in por_linha["editais"]] == ["redes-sp/2026"]
-    assert [e["numero_controle_pncp"] for e in por_uf["editais"]] == ["perdas-pr/2026"]
+    assert [e["id_publico"] for e in por_linha["editais"]] == ["pncp~redes-sp/2026"]
+    assert [e["id_publico"] for e in por_uf["editais"]] == ["pncp~perdas-pr/2026"]
     assert len(por_duas_ufs["editais"]) == 3
 
 
@@ -172,11 +172,12 @@ def test_detalhe_com_barra_no_id(cliente: TestClient, sessao: Session) -> None:
     numero = "00394460000141-1-000123/2026"
     registrar(sessao, [_registro(numero, "Leitura de hidrômetros e vazamento")])
 
-    resposta = cliente.get(f"/api/editais/{numero}")
+    resposta = cliente.get(f"/api/editais/pncp~{numero}")
 
     assert resposta.status_code == 200
     corpo = resposta.json()
-    assert corpo["numero_controle_pncp"] == numero
+    assert (corpo["fonte"], corpo["id_publico"]) == ("pncp", f"pncp~{numero}")
+    assert corpo["link_origem"]  # o da fonte ou, na falta, o do PNCP
     assert set(corpo["linhas"]) == {"perdas"}
     assert corpo["orgao_cnpj"]
     assert corpo["situacao_nome"]
@@ -200,7 +201,7 @@ def test_valor_sai_como_string_decimal(cliente: TestClient, sessao: Session) -> 
         ],
     )
 
-    editais = {e["numero_controle_pncp"]: e for e in cliente.get("/api/editais").json()["editais"]}
+    editais = {e["id_publico"]: e for e in cliente.get("/api/editais").json()["editais"]}
 
-    assert editais["com-valor/2026"]["valor_estimado"] == "1369661.52"
-    assert editais["sem-valor/2026"]["valor_estimado"] is None
+    assert editais["pncp~com-valor/2026"]["valor_estimado"] == "1369661.52"
+    assert editais["pncp~sem-valor/2026"]["valor_estimado"] is None

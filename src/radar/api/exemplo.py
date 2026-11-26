@@ -18,16 +18,16 @@ def exportar_exemplo(
     escolhidos = [
         edital
         for resumo in filtrar(sessao, criterios, agora, limite=maximo)
-        if (edital := obter_edital(sessao, resumo.numero_controle_pncp, criterios))
+        if (edital := obter_edital(sessao, resumo.fonte, resumo.id_na_fonte, criterios))
     ]
     if len(escolhidos) < maximo:
-        presentes = {e.numero_controle_pncp for e in escolhidos}
+        presentes = {e.id_publico for e in escolhidos}
         outros = listar_abertos(sessao, criterios, agora, limite=maximo + len(presentes))
-        escolhidos += [e for e in outros if e.numero_controle_pncp not in presentes][
+        escolhidos += [e for e in outros if e.id_publico not in presentes][
             : maximo - len(escolhidos)
         ]
     escolhidos.sort(key=lambda e: e.data_encerramento_proposta or datetime.max)
     return {
         "atualizado_em": iso_com_fuso(ultima_atualizacao(sessao)),
-        "editais": [detalhe_out(e).model_dump() for e in escolhidos],
+        "editais": [detalhe_out(e).model_dump(mode="json") for e in escolhidos],
     }
