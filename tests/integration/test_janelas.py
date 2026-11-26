@@ -1,11 +1,11 @@
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from fakes import VAZIA, Chave, ClienteFalso, como_cliente, pagina
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from radar.coleta import (
-    ClientePNCP,
     ErroPNCP,
     auditar,
     coletar_pendentes,
@@ -14,48 +14,10 @@ from radar.coleta import (
     planejar_janelas,
 )
 from radar.coleta.modelos import ColetaJanela, PaginaBruta
-from radar.coleta.pncp import Pagina
 
 BRT = ZoneInfo("America/Sao_Paulo")
 D1 = date(2026, 11, 1)
 AGORA = datetime(2026, 11, 20, 12, 0, tzinfo=BRT)
-
-Chave = tuple[str, date, date, int, int]
-
-
-def pagina(numero: int, total: int, n: int = 2) -> Pagina:
-    registros = [{"numeroControlePNCP": f"{numero}-{i}"} for i in range(n)]
-    return Pagina(
-        registros=registros,
-        total_paginas=total,
-        numero_pagina=numero,
-        bruto={"data": registros, "totalPaginas": total, "numeroPagina": numero},
-    )
-
-
-VAZIA = Pagina(registros=[], total_paginas=0, numero_pagina=1, bruto={})
-
-
-class ClienteFalso:
-    """Responde por roteiro; um item Exception é levantado, qualquer ausência é erro do teste."""
-
-    def __init__(self, roteiro: dict[Chave, Pagina | Exception]) -> None:
-        self.roteiro = roteiro
-        self.chamadas: list[Chave] = []
-
-    def buscar(
-        self, endpoint: str, data_ini: date, data_fim: date, modalidade: int, pagina: int
-    ) -> Pagina:
-        chave = (endpoint, data_ini, data_fim, modalidade, pagina)
-        self.chamadas.append(chave)
-        resposta = self.roteiro[chave]
-        if isinstance(resposta, Exception):
-            raise resposta
-        return resposta
-
-
-def como_cliente(falso: ClienteFalso) -> ClientePNCP:
-    return falso  # type: ignore[return-value]
 
 
 def janela(sessao: Session, **campos: object) -> ColetaJanela:
