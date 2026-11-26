@@ -56,3 +56,9 @@ variable "cognito" {
   })
   default = null
 }
+
+variable "tag_coletor" {
+  description = "Tag da imagem do coletor na task definition. O deploy (Task 7) registra revisoes novas com a tag do SHA."
+  type        = string
+  default     = "bootstrap"
+}

@@ -32,3 +32,18 @@ output "aviso_api_sem_login" {
   description = "Aviso quando /api/* esta sem autorizador JWT."
   value       = local.com_cognito ? "" : "ATENCAO: /api/{proxy+} sem autorizador JWT (Cognito nao configurado ou exigir_login=false)."
 }
+
+output "cluster_ecs" {
+  description = "Nome do cluster ECS do coletor."
+  value       = aws_ecs_cluster.radar.name
+}
+
+output "task_definition_coletor" {
+  description = "Familia da task definition do coletor."
+  value       = aws_ecs_task_definition.coletor.family
+}
+
+output "agenda_coletor" {
+  description = "Nome do schedule diario do coletor."
+  value       = aws_scheduler_schedule.atualizar_diario.name
+}
