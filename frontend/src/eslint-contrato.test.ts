@@ -171,4 +171,16 @@ describe('contrato do ESLint', () => {
     ].join('\n');
     expect(await regrasVioladas('src/paginas/Amostra.tsx', codigo)).toEqual([]);
   });
+
+  it('barra produção importando o apoio de testes; teste pode importar', async () => {
+    // src/testes/ é apoio de teste (puxa @testing-library): fora do bundle.
+    const codigo = "import {renderizar} from '../testes/apoio';\nexport const amostra = renderizar;\n";
+    expect(await regrasVioladas('src/paginas/Amostra.tsx', codigo)).toContain(
+      'boundaries/dependencies',
+    );
+    expect(await regrasVioladas('src/componentes/Amostra.tsx', codigo)).toContain(
+      'boundaries/dependencies',
+    );
+    expect(await regrasVioladas('src/paginas/Lista.test.tsx', codigo)).toEqual([]);
+  });
 });

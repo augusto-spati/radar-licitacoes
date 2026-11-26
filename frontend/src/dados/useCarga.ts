@@ -8,6 +8,10 @@ export type Carga<T> =
 /**
  * Roda `carregar` quando `chave` muda e de novo a cada `tentarDeNovo`.
  * Resposta de uma chamada antiga (filtro trocado no meio) é descartada.
+ *
+ * `chave` precisa codificar TODA entrada de `carregar` (filtros, id...): o efeito
+ * só repete a chamada quando a chave muda, então uma entrada fora dela deixa
+ * a tela mostrando dados velhos.
  */
 export function useCarga<T>(carregar: () => Promise<T>, chave: string) {
   const [carga, setCarga] = useState<Carga<T>>({estado: 'carregando'});

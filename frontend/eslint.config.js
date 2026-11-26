@@ -74,6 +74,8 @@ export default tseslint.config(
       'boundaries/files': [
         {category: 'rotas', pattern: 'src/rotas.tsx'},
         {category: 'teste', pattern: 'src/**/*.test.{ts,tsx}'},
+        // Apoio dos testes (fonte falsa, render com @testing-library): só teste importa.
+        {category: 'apoio-teste', pattern: 'src/testes/**'},
         {category: 'src', pattern: 'src/**'},
       ],
     },
@@ -103,6 +105,15 @@ export default tseslint.config(
               // Sem porta dos fundos: código de produção não importa arquivo de teste.
               disallow: {to: {file: {categories: 'teste'}}},
               message: 'Arquivo de teste não é importado por ninguém.',
+            },
+            {
+              // O apoio de src/testes/ puxa @testing-library: nunca entra no bundle.
+              disallow: {to: {file: {categories: 'apoio-teste'}}},
+              message: 'Só arquivo de teste importa o apoio de src/testes/.',
+            },
+            {
+              from: {file: {categories: 'teste'}},
+              allow: {to: {file: {categories: 'apoio-teste'}}},
             },
             {
               // Ciclo: a página que precisa de outra passa por rotas, não importa rotas.

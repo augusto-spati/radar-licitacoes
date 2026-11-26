@@ -7,11 +7,11 @@ import {Layout, LayoutContent, LayoutHeader} from '@astryxdesign/core/Layout';
 import {Link} from '@astryxdesign/core/Link';
 import {MetadataList, MetadataListItem} from '@astryxdesign/core/MetadataList';
 import {Section} from '@astryxdesign/core/Section';
-import {Skeleton} from '@astryxdesign/core/Skeleton';
 import {HStack, VStack} from '@astryxdesign/core/Stack';
 import {Heading, Text} from '@astryxdesign/core/Text';
 import {rtlStyles} from '@astryxdesign/core/utils';
-import {TokensLinhas} from '../componentes/CartaoEdital';
+import {Carregando, ErroAoCarregar} from '../componentes/EstadoCarga';
+import {TokensLinhas} from '../componentes/TokensLinhas';
 import {useFonte} from '../dados/FonteContext';
 import {
   formatarCnpj,
@@ -147,16 +147,10 @@ export function Detalhe() {
       content={
         <LayoutContent padding={4}>
           {carga.estado === 'carregando' && (
-            <VStack gap={4} role="status" aria-label="Carregando edital">
-              <Skeleton height={120} />
-              <Skeleton index={1} height={320} />
-            </VStack>
+            <Carregando rotulo="Carregando edital" alturas={[120, 320]} />
           )}
           {carga.estado === 'erro' && (
-            <EmptyState
-              title="Não foi possível carregar o edital"
-              actions={<Button label="Tentar de novo" variant="primary" onClick={tentarDeNovo} />}
-            />
+            <ErroAoCarregar titulo="Não foi possível carregar o edital" onTentarDeNovo={tentarDeNovo} />
           )}
           {carga.estado === 'pronto' &&
             (edital ? (

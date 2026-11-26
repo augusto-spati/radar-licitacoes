@@ -1,21 +1,9 @@
 import {ClickableCard} from '@astryxdesign/core/ClickableCard';
 import {HStack, VStack} from '@astryxdesign/core/Stack';
 import {Text} from '@astryxdesign/core/Text';
-import {Token} from '@astryxdesign/core/Token';
-import {formatarPrazo, formatarValor, localidade, nomeLinha, nomeModalidade} from '../dados/formatos';
+import {formatarPrazo, formatarValor, localidade, nomeModalidade} from '../dados/formatos';
 import type {EditalResumo} from '../dados/tipos';
-
-/** As linhas de serviço do edital como tokens; sem linha, um travessão. */
-export function TokensLinhas({linhas}: {linhas: string[]}) {
-  if (linhas.length === 0) return <Text type="body">—</Text>;
-  return (
-    <HStack gap={1} wrap="wrap">
-      {linhas.map(linha => (
-        <Token key={linha} label={nomeLinha(linha)} size="sm" color="blue" />
-      ))}
-    </HStack>
-  );
-}
+import {TokensLinhas} from './TokensLinhas';
 
 type Props = {edital: EditalResumo; href: string; agora: Date};
 

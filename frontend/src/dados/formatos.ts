@@ -13,7 +13,7 @@ const paredeBrasilia = (ms: number) => new Date(ms + DESLOCAMENTO_BRASILIA_MS);
 const dois = (n: number) => String(n).padStart(2, '0');
 const diaMes = (d: Date) => `${dois(d.getUTCDate())}/${dois(d.getUTCMonth() + 1)}`;
 const horaMinuto = (d: Date) => `${dois(d.getUTCHours())}:${dois(d.getUTCMinutes())}`;
-const diaCalendario =(d: Date) => Math.floor(d.getTime() / UM_DIA_MS);
+const diaCalendario = (d: Date) => Math.floor(d.getTime() / UM_DIA_MS);
 
 export function formatarPrazo(iso: string | null, agora: Date): string {
   if (iso === null) return '—';

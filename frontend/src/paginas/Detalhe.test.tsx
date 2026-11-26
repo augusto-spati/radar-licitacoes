@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import {cleanup, screen} from '@testing-library/react';
+import {cleanup, fireEvent, screen} from '@testing-library/react';
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import {edital, fonteFalsa, renderizar} from '../testes/apoio';
 import {Detalhe} from './Detalhe';
@@ -82,11 +82,25 @@ describe('Detalhe', () => {
     expect(screen.getByRole('link', {name: /Voltar/})).toBeTruthy();
   });
 
-  it('erro ao carregar oferece tentar de novo', async () => {
-    abrir(async () => {
-      throw new Error('A API respondeu 500');
-    });
+  it('erro ao carregar oferece tentar de novo, que repete a chamada', async () => {
+    const obter = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('A API respondeu 500'))
+      .mockResolvedValueOnce(edital());
+    abrir(obter);
     expect(await screen.findByText('Não foi possível carregar o edital')).toBeTruthy();
-    expect(screen.getByRole('button', {name: 'Tentar de novo'})).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', {name: 'Tentar de novo'}));
+
+    expect(await screen.findByText('Execução de rede de esgoto no bairro Centro')).toBeTruthy();
+    expect(obter).toHaveBeenCalledTimes(2);
+    expect(obter).toHaveBeenLastCalledWith(ID);
+    // O título visível some (a região viva do Astryx pode guardar o anúncio).
+    expect(screen.queryByRole('heading', {name: 'Não foi possível carregar o edital'})).toBeNull();
+  });
+
+  it('mostra o esqueleto enquanto carrega', () => {
+    abrir(() => new Promise(() => {}));
+    expect(screen.getByRole('status', {name: 'Carregando edital'})).toBeTruthy();
   });
 });

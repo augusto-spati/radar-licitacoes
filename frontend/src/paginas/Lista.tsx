@@ -1,13 +1,12 @@
 import {useSearchParams} from 'react-router';
-import {Button} from '@astryxdesign/core/Button';
 import {EmptyState} from '@astryxdesign/core/EmptyState';
 import {Grid} from '@astryxdesign/core/Grid';
 import {Layout, LayoutContent, LayoutHeader} from '@astryxdesign/core/Layout';
-import {Skeleton} from '@astryxdesign/core/Skeleton';
 import {VStack} from '@astryxdesign/core/Stack';
 import {Heading} from '@astryxdesign/core/Text';
 import {AvisoDesatualizado} from '../componentes/AvisoDesatualizado';
 import {CartaoEdital} from '../componentes/CartaoEdital';
+import {Carregando, ErroAoCarregar} from '../componentes/EstadoCarga';
 import {FiltrosEditais} from '../componentes/FiltrosEditais';
 import type {Filtros} from '../dados/fonte';
 import {useFonte} from '../dados/FonteContext';
@@ -58,17 +57,13 @@ export function Lista() {
               onUfs={u => mudar('uf', u)}
             />
             {carga.estado === 'carregando' && (
-              <VStack gap={4} role="status" aria-label="Carregando editais">
-                {[0, 1, 2].map(i => (
-                  <Skeleton key={i} index={i} height={160} />
-                ))}
-              </VStack>
+              <Carregando rotulo="Carregando editais" alturas={[160, 160, 160]} />
             )}
             {carga.estado === 'erro' && (
-              <EmptyState
-                title="Não foi possível carregar os editais"
-                description="Verifique a conexão e tente de novo."
-                actions={<Button label="Tentar de novo" variant="primary" onClick={tentarDeNovo} />}
+              <ErroAoCarregar
+                titulo="Não foi possível carregar os editais"
+                descricao="Verifique a conexão e tente de novo."
+                onTentarDeNovo={tentarDeNovo}
               />
             )}
             {carga.estado === 'pronto' &&
