@@ -1,5 +1,6 @@
 import logging
-from datetime import datetime
+import re
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -38,6 +39,12 @@ P2 = _amostra("compesa-p2-ptbr-reduzida.js.txt")
 P1_SEM_IDIOMA = _amostra("compesa-p1-sem-idioma-reduzida.js.txt")
 # O servidor manda windows-1252 com header ISO-8859-1 (o travessão é o byte 0x96).
 LATIN1 = "text/html; charset=ISO-8859-1"
+# Relógio fixo: o corte de 12 meses fica em 26/11/2025 e cobre todas as linhas das amostras.
+AGORA = datetime(2026, 11, 26, 15, 0, tzinfo=UTC)
+
+
+def _fonte(agora: datetime = AGORA) -> FonteCompesa:
+    return FonteCompesa(relogio=lambda: agora)
 
 
 # --- literal JS ------------------------------------------------------------------------------
@@ -205,7 +212,7 @@ def _paginas() -> list[PaginaColetada]:
 
 
 def test_extrair_normaliza_e_deduplica() -> None:
-    normalizados = FonteCompesa().extrair(_paginas())
+    normalizados = _fonte().extrair(_paginas())
     # 13 + 11 linhas; a p1 tem uma linha repetida (o portal duplica linhas idênticas).
     assert len(normalizados) == 23
     por_id = {n["id_na_fonte"]: n for n in normalizados}
@@ -254,7 +261,7 @@ def test_extrair_normaliza_e_deduplica() -> None:
 )
 def test_mapa_de_situacoes(situacao: str, esperada: str) -> None:
     texto = P1.replace("'field817232':'Abertura',row:0}", f"'field817232':'{situacao}',row:0}}")
-    normalizado = FonteCompesa().extrair([PaginaColetada(URL_GRADE, "js", texto)])[0]
+    normalizado = _fonte().extrair([PaginaColetada(URL_GRADE, "js", texto)])[0]
     assert normalizado["situacao_original"] == situacao
     assert normalizado["situacao_normalizada"] == esperada
 
@@ -263,7 +270,7 @@ def test_situacoes_das_amostras_e_desconhecida_loga(caplog: pytest.LogCaptureFix
     # Nenhuma situação das amostras fica fora do mapa: a desconhecida é posta aqui, à vista.
     p1 = P1.replace("'field817232':'Abertura',row:0}", "'field817232':'Em Análise',row:0}")
     with caplog.at_level(logging.WARNING):
-        normalizados = FonteCompesa().extrair(
+        normalizados = _fonte().extrair(
             [PaginaColetada(URL_GRADE, "js", p1), PaginaColetada(URL_PAGINA, "js", P2)]
         )
     vistas = {(n["situacao_original"], n["situacao_normalizada"]) for n in normalizados}
@@ -290,7 +297,7 @@ def test_modalidade_desconhecida_loga_uma_vez_por_codigo(
     p1 = P1.replace("'field817074':'LC 213\\/2026 CEL\\-1'", "'field817074':'XYZ 213\\/2026'")
     p1 = p1.replace("'field817074':'LC 217\\/2026 CSL'", "'field817074':'XYZ 217\\/2026'")
     with caplog.at_level(logging.WARNING):
-        normalizados = FonteCompesa().extrair([PaginaColetada(URL_GRADE, "js", p1)])
+        normalizados = _fonte().extrair([PaginaColetada(URL_GRADE, "js", p1)])
     por_id = {n["id_na_fonte"]: n for n in normalizados}
     assert por_id["2026LC213CEL-1"]["modalidade_nome"] == "Compesa (XYZ)"
     assert por_id["2026LC217CSL"]["modalidade_nome"] == "Compesa (XYZ)"
@@ -302,7 +309,7 @@ def test_modalidade_desconhecida_loga_uma_vez_por_codigo(
 
 
 def test_minimo_nome_e_marcador() -> None:
-    fonte = FonteCompesa()
+    fonte = _fonte()
     assert fonte.nome == "compesa"
     assert fonte.minimo_registros == 50
     assert fonte.marcador_bloqueio == "<title>Request Rejected</title>"
@@ -351,9 +358,8 @@ def _sem_proxima(texto: str) -> str:
 
 
 def _deslocada(texto: str, inicio: int, fim: int) -> str:
-    return texto.replace("setGridPageIni(100)", f"setGridPageIni({inicio})").replace(
-        "setGridPageEnd(200)", f"setGridPageEnd({fim})"
-    )
+    texto = re.sub(r"setGridPageIni\(\d+\)", f"setGridPageIni({inicio})", texto)
+    return re.sub(r"setGridPageEnd\(\d+\)", f"setGridPageEnd({fim})", texto)
 
 
 def _roteiro(*paginas: httpx.Response) -> dict[str, list[httpx.Response]]:
@@ -370,7 +376,7 @@ def _roteiro(*paginas: httpx.Response) -> dict[str, list[httpx.Response]]:
 def test_coletar_sequencia_de_urls_ate_acabar_a_navegacao() -> None:
     cliente = _ClienteFalso(_roteiro(_js(P1), _como_servidor(_sem_proxima(P2))))
 
-    paginas = list(FonteCompesa().coletar(cliente))  # type: ignore[arg-type]
+    paginas = list(_fonte().coletar(cliente))  # type: ignore[arg-type]
 
     assert cliente.urls == [URL_FORM, URL_OPENFORM, URL_GRADE, URL_PROXIMA, URL_PAGINA]
     assert [p.url for p in paginas] == [URL_GRADE, URL_PAGINA]
@@ -384,7 +390,7 @@ def test_coletar_pede_pt_br_em_toda_requisicao() -> None:
     assert IDIOMA == {"Accept-Language": "pt-BR,pt;q=0.9"}
     cliente = _ClienteFalso(_roteiro(_js(P1), _como_servidor(_sem_proxima(P2))))
 
-    list(FonteCompesa().coletar(cliente))  # type: ignore[arg-type]
+    list(_fonte().coletar(cliente))  # type: ignore[arg-type]
 
     assert len(cliente.headers) == 5
     assert all(h == IDIOMA for h in cliente.headers)
@@ -394,7 +400,7 @@ def test_coletar_para_quando_a_pagina_nao_traz_chave_nova() -> None:
     repetida = _como_servidor(_deslocada(P2, 200, 300))
     cliente = _ClienteFalso(_roteiro(_js(P1), _como_servidor(P2), repetida))
 
-    paginas = list(FonteCompesa().coletar(cliente))  # type: ignore[arg-type]
+    paginas = list(_fonte().coletar(cliente))  # type: ignore[arg-type]
 
     assert cliente.urls == [
         URL_FORM,
@@ -412,13 +418,13 @@ def test_coletar_pagina_fora_de_ordem_falha_em_vez_de_truncar() -> None:
     # Sessão perdida: o refreshpage devolve a página 1 de novo (setGridPageIni(0)).
     cliente = _ClienteFalso(_roteiro(_js(P1), _js(P1)))
     with pytest.raises(ErroFonte, match=r"layout: página fora de ordem: início 0, esperado 100"):
-        list(FonteCompesa().coletar(cliente))  # type: ignore[arg-type]
+        list(_fonte().coletar(cliente))  # type: ignore[arg-type]
 
 
 def test_coletar_resposta_sem_data_falha() -> None:
     cliente = _ClienteFalso(_roteiro(_js("<html>erro</html>")))
     with pytest.raises(ErroFonte, match="layout"):
-        list(FonteCompesa().coletar(cliente))  # type: ignore[arg-type]
+        list(_fonte().coletar(cliente))  # type: ignore[arg-type]
 
 
 def test_coletar_trava_de_paginas(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -427,4 +433,55 @@ def test_coletar_trava_de_paginas(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(compesa, "MAX_PAGINAS", 2)
     cliente = _ClienteFalso(_roteiro(_js(P1), _como_servidor(P2)))
     with pytest.raises(ErroFonte, match="lista sem fim: mais de 2 páginas"):
-        list(FonteCompesa().coletar(cliente))  # type: ignore[arg-type]
+        list(_fonte().coletar(cliente))  # type: ignore[arg-type]
+
+
+# --- janela de 12 meses ----------------------------------------------------------------------
+
+# Corte em 15/07/2026: a p1 (24/11 a 13/07/2026) fica, a p2 (30/06/2026 para trás) sai inteira.
+DEPOIS = datetime(2027, 7, 15, 12, 0, tzinfo=UTC)
+
+
+def test_coletar_para_na_primeira_pagina_toda_antes_do_corte(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    cliente = _ClienteFalso(_roteiro(_js(P1), _como_servidor(P2)))
+
+    with caplog.at_level(logging.INFO):
+        paginas = list(_fonte(DEPOIS).coletar(cliente))  # type: ignore[arg-type]
+
+    assert [p.url for p in paginas] == [URL_GRADE]  # a p2, toda antiga, não é rendida
+    assert cliente.urls[-2:] == [URL_PROXIMA, URL_PAGINA]
+    corte = [r for r in caplog.records if r.message == "compesa_corte_por_data"]
+    assert [r.__dict__["pagina"] for r in corte] == [2]
+
+
+def test_extrair_descarta_linhas_antes_do_corte() -> None:
+    normalizados = _fonte(DEPOIS).extrair([PaginaColetada(URL_GRADE, "js", P1)])
+    ids = {n["id_na_fonte"] for n in normalizados}
+    assert "2026LC095CEL-2" not in ids  # 13/07/2026, antes do corte de 15/07/2026
+    assert "2026LC213CEL-1" in ids  # 24/11/2026
+    assert len(ids) == 11  # 12 chaves da p1 menos a antiga
+    assert all(n["data_abertura_proposta"] >= datetime(2026, 7, 15) for n in normalizados)
+
+
+def test_corte_usa_a_data_de_brasilia() -> None:
+    # 00:30 UTC de 16/07/2027 ainda é 15/07 em Brasília: o corte fica em 15/07/2026.
+    fonte = _fonte(datetime(2027, 7, 16, 0, 30, tzinfo=UTC))
+    assert fonte.corte().isoformat() == "2026-07-15"
+
+
+def test_pagina_seguinte_com_data_mais_nova_e_erro_de_ordem() -> None:
+    # A p2 servida primeiro e a p1 depois: a lista não está em ordem decrescente de data.
+    cliente = _ClienteFalso(
+        _roteiro(_como_servidor(_deslocada(P2, 0, 100)), _js(_deslocada(P1, 100, 200)))
+    )
+    with pytest.raises(ErroFonte, match="layout: lista fora de ordem por data"):
+        list(_fonte().coletar(cliente))  # type: ignore[arg-type]
+
+
+def test_data_sem_hora_e_debug(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.DEBUG):
+        parse_data("24/11/2026", "")
+    registro = next(r for r in caplog.records if r.message == "data_sem_hora")
+    assert registro.levelno == logging.DEBUG

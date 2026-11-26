@@ -24,20 +24,30 @@ Armadilhas vistas nas amostras (`tests/dados/fontes/compesa-p*-reduzida.js.txt`)
   então ISO-8859-1 é lido como windows-1252 (como fazem os navegadores);
 - o portal repete linhas idênticas (mesmo `lc_chave`); a última vence.
 
-Completude: a resposta não traz o total de registros. A coleta segue página a página enquanto
-a navegação deixa avançar (`enableNavigation(primeira, anterior, próxima, última)`) e a página
-traz algum `lc_chave` novo; uma página cujo `setGridPageIni` não é o fim da anterior (sessão
-perdida devolvendo a página 1, por exemplo) é erro, para não truncar a lista em silêncio.
-`MAX_PAGINAS` trava a paginação sem fim.
+Janela: a grade é o histórico inteiro (há aberturas de 2012), em ordem decrescente de
+abertura, bem mais de 5 000 linhas. O retrato cobre só os últimos 12 meses: `corte()` é a data de
+hoje em Brasília menos 365 dias. A paginação para na primeira página cuja abertura mais nova é
+anterior ao corte (log `compesa_corte_por_data`; essa página não é rendida), e `extrair` descarta
+as linhas anteriores ao corte que vieram na última página. Uma página seguinte com abertura mais
+nova que a da anterior quebra a premissa da ordem e é erro de layout. Como a reconciliação só
+enxerga o que o retrato lista, um edital da Compesa que saia da janela ainda `aberta` no banco é
+fechado por ela; é aceitável, porque um edital com abertura de mais de um ano já não está aberto.
+
+Completude: a resposta não traz o total de registros. Dentro da janela, a coleta segue página a
+página enquanto a navegação deixa avançar (`enableNavigation(primeira, anterior, próxima,
+última)`) e a página traz algum `lc_chave` novo; uma página cujo `setGridPageIni` não é o fim da
+anterior (sessão perdida devolvendo a página 1, por exemplo) é erro, para não truncar a lista em
+silêncio. `MAX_PAGINAS` é a última trava contra paginação sem fim.
 """
 
 import logging
 import re
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 from radar.coleta.retratos import ClienteEducado, ErroFonte, PaginaColetada
 
@@ -59,7 +69,9 @@ URL_PAGINA = (
     f"{BASE}/gridEdit.do?sys=SCL&action=gridEdit&param=refreshpage&formID=7&comID={GRADE}"
     "&gridComID=-1&gt=-1"
 )
-MAX_PAGINAS = 50  # 5 000 linhas; a lista real tem algumas centenas
+MAX_PAGINAS = 100  # última trava; a janela de 12 meses cabe em poucas páginas
+JANELA_DIAS = 365
+FUSO = ZoneInfo("America/Sao_Paulo")
 
 # Colunas visíveis da grade (chaves das linhas de `data_817140`).
 _COL_BOTAO = "field817094"  # ANEXOS: o gridButton com os campos ocultos
@@ -329,7 +341,7 @@ def parse_data(data: str | None, hora: str | None) -> datetime | None:
     elif achado.group(4):
         hh, mm = int(achado.group(4)), int(achado.group(5))
     else:
-        logger.warning("data_sem_hora", extra={"texto": data})
+        logger.debug("data_sem_hora", extra={"texto": data})  # comum: linha sem HORA
         hh = mm = 0
     try:
         return datetime(ano, mes, dia, hh, mm)
@@ -485,8 +497,21 @@ def ler_grade(texto: str) -> Grade:
     )
 
 
+def _agora_real() -> datetime:
+    return datetime.now(UTC)
+
+
+def _mais_nova(grade: Grade) -> datetime | None:
+    datas = [linha.abertura for linha in grade.linhas if linha.abertura is not None]
+    return max(datas) if datas else None
+
+
+def _antiga(linha: LinhaCompesa, corte: date) -> bool:
+    return linha.abertura is not None and linha.abertura.date() < corte
+
+
 class FonteCompesa:
-    """Licitações da Compesa (PE), em retrato: a grade pública inteira, todas as situações."""
+    """Licitações da Compesa (PE), em retrato: a grade pública dos últimos 12 meses."""
 
     nome = "compesa"
     # A página 1 sozinha tem 98 lc_chave distintos e a lista passa de 200 linhas (amostras de
@@ -495,7 +520,16 @@ class FonteCompesa:
     # A página de bloqueio do WAF vista no estudo (POST rejeitado).
     marcador_bloqueio: str | None = "<title>Request Rejected</title>"
 
+    def __init__(self, relogio: Callable[[], datetime] | None = None) -> None:
+        self._relogio = relogio or _agora_real
+
+    def corte(self) -> date:
+        """Primeiro dia da janela: hoje em Brasília menos `JANELA_DIAS`."""
+        return self._relogio().astimezone(FUSO).date() - timedelta(days=JANELA_DIAS)
+
     def coletar(self, cliente: ClienteEducado) -> Iterator[PaginaColetada]:
+        corte = self.corte()
+        anterior: datetime | None = None  # abertura mais nova da página anterior
         cliente.get(URL_FORM, headers=IDIOMA)  # cookie de sessão (JSESSIONID e os do WAF)
         cliente.get(URL_OPENFORM, headers=IDIOMA)
         vistos: set[str] = set()
@@ -511,6 +545,17 @@ class FonteCompesa:
                 raise ErroFonte(
                     f"layout: página fora de ordem: início {grade.inicio}, esperado {esperado}"
                 )
+            mais_nova = _mais_nova(grade)
+            if mais_nova is not None:
+                if anterior is not None and mais_nova > anterior:
+                    raise ErroFonte("layout: lista fora de ordem por data")
+                if mais_nova.date() < corte:
+                    logger.info(
+                        "compesa_corte_por_data",
+                        extra={"pagina": pagina + 1, "corte": corte.isoformat()},
+                    )
+                    return
+                anterior = mais_nova
             chaves = {linha.chave for linha in grade.linhas}
             if pagina and not chaves - vistos:
                 logger.info("compesa_fim_sem_chave_nova", extra={"pagina": pagina + 1})
@@ -523,10 +568,12 @@ class FonteCompesa:
         raise ErroFonte(f"lista sem fim: mais de {MAX_PAGINAS} páginas")
 
     def extrair(self, paginas: list[PaginaColetada]) -> list[dict[str, Any]]:
+        corte = self.corte()
         linhas: dict[str, LinhaCompesa] = {}  # a última linha com a chave vence
         for pagina in paginas:
             for linha in ler_grade(pagina.texto).linhas:
-                linhas[linha.chave] = linha
+                if not _antiga(linha, corte):  # a janela é exata: fora dela não entra
+                    linhas[linha.chave] = linha
         desconhecidas: set[str] = set()
         modalidades_vistas: set[str] = set()  # um log por código desconhecido por retrato
         normalizados = []

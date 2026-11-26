@@ -47,3 +47,6 @@ Riscos:
 - Termos não localizados; anexos podem exigir cadastro (fora do escopo).
 - Volume e aderência: a concessão reduz demanda em comercial e perdas (ver compesa.md); o portal serve a Compesa, não às concessionárias.
 - Parecer: vale implementar (baixo custo) como fonte primária da Compesa.
+
+## 7. Janela do retrato (26/11/2026, rodada ao vivo)
+A grade é o histórico inteiro, com aberturas desde 2012, em ordem decrescente de abertura (p1 ≈ nov/2026, p2 ≈ jun/2026). São bem mais de 5 000 linhas, e a primeira rodada estourou `MAX_PAGINAS` (50). Por isso o retrato da Compesa cobre só os últimos 12 meses: hoje em Brasília menos 365 dias. A coleta para na primeira página cuja abertura mais nova está antes do corte, e essa página não é gravada. As linhas anteriores ao corte que vierem na última página são descartadas na extração. Uma página seguinte com abertura mais nova que a anterior é erro de layout, porque quebra a premissa da ordem. Efeito na reconciliação: ela só enxerga o que a janela lista, então um edital da Compesa que saia da janela ainda `aberta` no banco é fechado. É aceitável, porque com abertura de mais de um ano ele já não está aberto.
