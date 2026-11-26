@@ -75,6 +75,13 @@ def planejar_janelas(
     return criadas
 
 
+def ultima_atualizacao(sessao: Session) -> datetime | None:
+    """Quando a última janela foi concluída (tz-aware), ou None se nenhuma foi."""
+    return sessao.scalar(
+        select(func.max(ColetaJanela.concluida_em)).where(ColetaJanela.status == "concluida")
+    )
+
+
 def coletar_pendentes(
     sessao: Session,
     cliente: ClientePNCP,

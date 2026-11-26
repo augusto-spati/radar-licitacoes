@@ -37,6 +37,14 @@ class EditalResumo:
     linhas: list[str]
 
 
+@dataclass(frozen=True)
+class EditalDetalhe(EditalResumo):
+    orgao_cnpj: str
+    situacao_nome: str
+    data_publicacao: datetime
+    data_abertura_proposta: datetime | None
+
+
 def carregar_criterios(caminho: Path) -> Criterios:
     with caminho.open("rb") as arquivo:
         dados = tomllib.load(arquivo)
@@ -58,25 +66,43 @@ def _casa_termos(termos: list[str]) -> ColumnElement[bool]:
     return Edital.busca.op("@@")(consulta)
 
 
+_COLUNAS_RESUMO: list[Any] = [
+    Edital.numero_controle_pncp,
+    Edital.objeto,
+    Edital.orgao_nome,
+    Edital.uf,
+    Edital.municipio,
+    Edital.modalidade_id,
+    Edital.valor_estimado,
+    Edital.data_encerramento_proposta,
+    Edital.link_origem,
+]
+
+
+def _casamentos(criterios: Criterios) -> list[ColumnElement[bool]]:
+    return [_casa_termos(termos) for termos in criterios.linhas.values()]
+
+
+def _rotulos(casamentos: list[ColumnElement[bool]]) -> list[Any]:
+    """Uma coluna booleana `linha_<i>` por linha de serviço: o edital casa com ela?"""
+    return [c.label(f"linha_{i}") for i, c in enumerate(casamentos)]
+
+
+def _campos_resumo(linha: Any, criterios: Criterios) -> dict[str, Any]:
+    campos = {coluna.key: linha._mapping[coluna.key] for coluna in _COLUNAS_RESUMO}
+    campos["linhas"] = [
+        nome for i, nome in enumerate(criterios.linhas) if linha._mapping[f"linha_{i}"]
+    ]
+    return campos
+
+
 def _montar_consulta(
     criterios: Criterios, agora: datetime, somente_abertos: bool, limite: int
 ) -> Select[tuple[Any, ...]]:
-    casamentos = [_casa_termos(termos) for termos in criterios.linhas.values()]
+    casamentos = _casamentos(criterios)
     # Só as colunas do EditalResumo: `bruto` e `busca` são pesados e não são lidos aqui.
-    colunas: list[Any] = [
-        Edital.numero_controle_pncp,
-        Edital.objeto,
-        Edital.orgao_nome,
-        Edital.uf,
-        Edital.municipio,
-        Edital.modalidade_id,
-        Edital.valor_estimado,
-        Edital.data_encerramento_proposta,
-        Edital.link_origem,
-        *(c.label(f"linha_{i}") for i, c in enumerate(casamentos)),
-    ]
     consulta = (
-        select(*colunas)
+        select(*_COLUNAS_RESUMO, *_rotulos(casamentos))
         .where(or_(*casamentos) if casamentos else false())
         .where(Edital.uf.in_(criterios.ufs))
         .where(Edital.modalidade_id.in_(criterios.modalidades))
@@ -98,22 +124,32 @@ def filtrar(
     somente_abertos: bool = True,
     limite: int = 200,
 ) -> list[EditalResumo]:
-    nomes = list(criterios.linhas)
-    resultado: list[EditalResumo] = []
-    for linha in sessao.execute(_montar_consulta(criterios, agora, somente_abertos, limite)):
-        bateram: tuple[bool, ...] = tuple(linha[9:])
-        resultado.append(
-            EditalResumo(
-                numero_controle_pncp=linha.numero_controle_pncp,
-                objeto=linha.objeto,
-                orgao_nome=linha.orgao_nome,
-                uf=linha.uf,
-                municipio=linha.municipio,
-                modalidade_id=linha.modalidade_id,
-                valor_estimado=linha.valor_estimado,
-                data_encerramento_proposta=linha.data_encerramento_proposta,
-                link_origem=linha.link_origem,
-                linhas=[nome for nome, bateu in zip(nomes, bateram, strict=True) if bateu],
-            )
-        )
-    return resultado
+    linhas = sessao.execute(_montar_consulta(criterios, agora, somente_abertos, limite))
+    return [EditalResumo(**_campos_resumo(linha, criterios)) for linha in linhas]
+
+
+def obter_edital(
+    sessao: Session, numero_controle_pncp: str, criterios: Criterios
+) -> EditalDetalhe | None:
+    """Um edital pelo número, com as linhas que casam (mesma regra de `filtrar`).
+
+    Não aplica UF, modalidade nem prazo: quem pede um edital pelo número o recebe.
+    """
+    consulta = select(
+        *_COLUNAS_RESUMO,
+        Edital.orgao_cnpj,
+        Edital.situacao_nome,
+        Edital.data_publicacao,
+        Edital.data_abertura_proposta,
+        *_rotulos(_casamentos(criterios)),
+    ).where(Edital.numero_controle_pncp == numero_controle_pncp)
+    linha = sessao.execute(consulta).first()
+    if linha is None:
+        return None
+    return EditalDetalhe(
+        **_campos_resumo(linha, criterios),
+        orgao_cnpj=linha.orgao_cnpj,
+        situacao_nome=linha.situacao_nome,
+        data_publicacao=linha.data_publicacao,
+        data_abertura_proposta=linha.data_abertura_proposta,
+    )

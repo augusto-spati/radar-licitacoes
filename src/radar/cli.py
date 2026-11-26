@@ -7,9 +7,11 @@ from typing import Annotated
 from zoneinfo import ZoneInfo
 
 import typer
+import uvicorn
 from sqlalchemy.orm import Session
 
 from radar import __version__
+from radar.api.app import criar_app
 from radar.coleta import (
     ClientePNCP,
     coletar_pendentes,
@@ -215,3 +217,13 @@ def filtrar(
     for edital in editais:
         typer.echo(_linha(edital))
     typer.echo(f"{len(editais)} editais")
+
+
+@app.command()
+def api(
+    porta: Annotated[int, typer.Option(min=1, max=65535, help="Porta local da API.")] = 8000,
+    config: OpcaoConfig = ARQUIVO_CONFIG,
+) -> None:
+    """Sobe a API JSON local (só leitura) em 127.0.0.1."""
+    configurar_logs()
+    uvicorn.run(criar_app(config_filtro=config), host="127.0.0.1", port=porta)

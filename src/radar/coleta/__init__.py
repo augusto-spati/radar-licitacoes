@@ -8,6 +8,7 @@ from radar.coleta.janelas import (
     ler_paginas_nao_processadas,
     marcar_processada,
     planejar_janelas,
+    ultima_atualizacao,
 )
 from radar.coleta.pncp import ClientePNCP, ErroPNCP, criar_http
 
@@ -22,4 +23,5 @@ __all__ = [
     "ler_paginas_nao_processadas",
     "marcar_processada",
     "planejar_janelas",
+    "ultima_atualizacao",
 ]
