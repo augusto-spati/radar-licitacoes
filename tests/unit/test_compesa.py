@@ -200,7 +200,7 @@ def test_extrair_normaliza_e_deduplica() -> None:
     assert primeiro["orgao_cnpj"] is None  # não vem nos dados
     assert primeiro["uf"] == "PE"
     assert primeiro["municipio"] is None
-    assert primeiro["modalidade_nome"] == "LC"
+    assert primeiro["modalidade_nome"] == "Licitação"
     assert primeiro["situacao_original"] == "Abertura"
     assert primeiro["situacao_normalizada"] == "aberta"
     assert primeiro["valor_estimado"] == Decimal("2856395.49")
@@ -215,7 +215,8 @@ def test_extrair_normaliza_e_deduplica() -> None:
 
     # a data da p2 segue o estilo da página de onde veio
     assert por_id["2026LC067CPL"]["data_abertura_proposta"] == datetime(2026, 4, 9, 14, 0)
-    assert por_id["2026ECR001CEL-1"]["modalidade_nome"] == "ECR"
+    assert por_id["2026ECR001CEL-1"]["modalidade_nome"] == "Credenciamento"
+    assert por_id["2026MI001CEL-2"]["modalidade_nome"] == "Compesa (MI)"  # não confirmado
 
 
 @pytest.mark.parametrize(
@@ -228,6 +229,7 @@ def test_extrair_normaliza_e_deduplica() -> None:
         ("Fracassada", "encerrada"),
         ("Deserta", "encerrada"),
         ("Revogada", "encerrada"),
+        ("Anulada", "encerrada"),
         ("Suspensa", "outra"),
     ],
 )
@@ -239,8 +241,12 @@ def test_mapa_de_situacoes(situacao: str, esperada: str) -> None:
 
 
 def test_situacoes_das_amostras_e_desconhecida_loga(caplog: pytest.LogCaptureFixture) -> None:
+    # Nenhuma situação das amostras fica fora do mapa: a desconhecida é posta aqui, à vista.
+    p1 = P1.replace("'field817232':'Abertura',row:0}", "'field817232':'Em Análise',row:0}")
     with caplog.at_level(logging.WARNING):
-        normalizados = FonteCompesa().extrair(_paginas())
+        normalizados = FonteCompesa().extrair(
+            [PaginaColetada(URL_GRADE, "js", p1), PaginaColetada(URL_PAGINA, "js", P2)]
+        )
     vistas = {(n["situacao_original"], n["situacao_normalizada"]) for n in normalizados}
     assert vistas == {
         ("Abertura", "aberta"),
@@ -251,10 +257,45 @@ def test_situacoes_das_amostras_e_desconhecida_loga(caplog: pytest.LogCaptureFix
         ("Homologação", "encerrada"),
         ("Revogada", "encerrada"),
         ("Suspensa", "outra"),
-        ("Anulada", "outra"),  # só na p2, fora do mapa
+        ("Anulada", "encerrada"),  # só na p2
+        ("Em Análise", "outra"),
     }
     desconhecidas = [r for r in caplog.records if r.message == "situacao_desconhecida"]
-    assert [r.__dict__["situacao"] for r in desconhecidas] == ["Anulada"]
+    assert [r.__dict__["situacao"] for r in desconhecidas] == ["Em Análise"]
+
+
+def test_modalidade_desconhecida_loga_uma_vez_por_codigo(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Duas linhas com o código inventado "XYZ" (o MI de verdade também é desconhecido).
+    p1 = P1.replace("'field817074':'LC 213\\/2026 CEL\\-1'", "'field817074':'XYZ 213\\/2026'")
+    p1 = p1.replace("'field817074':'LC 217\\/2026 CSL'", "'field817074':'XYZ 217\\/2026'")
+    with caplog.at_level(logging.WARNING):
+        normalizados = FonteCompesa().extrair([PaginaColetada(URL_GRADE, "js", p1)])
+    por_id = {n["id_na_fonte"]: n for n in normalizados}
+    assert por_id["2026LC213CEL-1"]["modalidade_nome"] == "Compesa (XYZ)"
+    assert por_id["2026LC217CSL"]["modalidade_nome"] == "Compesa (XYZ)"
+    assert por_id["2026LC216CEL-2"]["modalidade_nome"] == "Licitação"  # conhecida
+    codigos = [
+        r.__dict__["codigo"] for r in caplog.records if r.message == "modalidade_desconhecida"
+    ]
+    assert sorted(codigos) == ["MI", "XYZ"]
+
+
+def test_muitas_datas_impossiveis_no_estilo_da_pagina_e_erro() -> None:
+    # A p2 (MM/dd) lida como se fosse dd/MM: 6 das 11 datas ficam impossíveis (dia > 12 no mês).
+    with pytest.raises(ErroFonte, match="layout: estilo de data inconsistente"):
+        ler_grade(P2, "br")
+
+
+def test_uma_data_impossivel_abaixo_do_limite_so_loga(caplog: pytest.LogCaptureFixture) -> None:
+    # 1 de 13 datas trocadas (< 20%): a linha é lida no outro estilo, com log.
+    p1 = P1.replace("'field817072':'24\\/11\\/2026'", "'field817072':'11\\/24\\/2026'", 1)
+    assert p1 != P1
+    with caplog.at_level(logging.WARNING):
+        grade = ler_grade(p1, "br")
+    assert grade.linhas[0].abertura == datetime(2026, 11, 24, 13, 0)
+    assert "data_formato_inconsistente" in caplog.messages
 
 
 def test_minimo_nome_e_marcador() -> None:
@@ -355,8 +396,8 @@ def test_coletar_para_quando_a_pagina_nao_traz_chave_nova() -> None:
 
 
 def test_coletar_pagina_fora_de_ordem_falha_em_vez_de_truncar() -> None:
-    # Sessão perdida: o refreshpage devolve a página 1 de novo (setGridPageIni(0)).
-    cliente = _ClienteFalso(_roteiro(_js(P1), _js(P1)))
+    # Sessão perdida: o refreshpage volta ao começo da lista (setGridPageIni(0)).
+    cliente = _ClienteFalso(_roteiro(_js(P1), _js(_deslocada(P2, 0, 100), "cp1252")))
     with pytest.raises(ErroFonte, match=r"layout: página fora de ordem: início 0, esperado 100"):
         list(FonteCompesa().coletar(cliente))  # type: ignore[arg-type]
 

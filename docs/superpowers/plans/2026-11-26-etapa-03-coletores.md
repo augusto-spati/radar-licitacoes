@@ -28,7 +28,7 @@
   |---|---|---|---|---|
   | PNCP (`situacao_id`) | 1 | — | 2, 3 | 4 |
   | Sanepar | Abertura | Julgamento | ao sair de um retrato completo | — |
-  | Compesa | Abertura | Habilitação | Homologação, Contrato, Fracassada, Deserta, Revogada | Suspensa e qualquer valor desconhecido (log `situacao_desconhecida`) |
+  | Compesa | Abertura | Habilitação | Homologação, Contrato, Fracassada, Deserta, Revogada, Anulada | Suspensa e qualquer valor desconhecido (log `situacao_desconhecida`) |
 
 - **Aberto** = `situacao_normalizada = 'aberta' AND data_encerramento_proposta > agora` (horário de Brasília). Prazo nulo nunca conta como aberto.
 - **Prazo:**

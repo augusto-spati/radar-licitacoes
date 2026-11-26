@@ -16,7 +16,8 @@ Armadilhas vistas nas amostras (`tests/dados/fontes/compesa-p*-reduzida.js.txt`)
 - data: `dd/MM/yyyy` na página 1 (refresh) e `MM/dd/yyyy` nas seguintes (refreshpage), apesar
   de a coluna declarar `dd/MM/yyyy` nas duas. O estilo vem da URL da página (`estilo_da_url`),
   que fica gravada com a página bruta. Uma data impossível no estilo da página (mês 13) é lida
-  no outro e loga `data_formato_inconsistente`;
+  no outro e loga `data_formato_inconsistente`; mais de 20% de datas impossíveis numa página
+  é erro de layout (o estilo mudou), em vez de trocar dia e mês em silêncio;
 - custo estimado: `2856395,49` na página 1 e `223078.49` nas seguintes (o mesmo troca-troca de
   locale), então o separador decimal também segue o estilo da página;
 - encoding: o header diz ISO-8859-1, mas o corpo é windows-1252 (o travessão vem como 0x96),
@@ -78,8 +79,19 @@ _SITUACAO: dict[str, str] = {
     "fracassada": "encerrada",
     "deserta": "encerrada",
     "revogada": "encerrada",
+    "anulada": "encerrada",  # vista na p2 (LC 070/2026 CSL): cancelada é encerrada
     "suspensa": "outra",
 }
+
+# Prefixo do número da licitação → nome legível. Só o que tem fonte:
+# - LC: o aviso publicado "LICITAÇÃO.COMPESA Nº 207/2026 CPL" (alertalicitacao.com.br,
+#   CEPE-PE-0-382922) é o "LC 207/2026 CPL" da grade (amostra p1 completa de 26/11/2026);
+# - ECR: o próprio objeto da linha "ECR 001/2026 CEL-1" diz "Ref: ECR 001/2026 - CREDENCIAMENTO"
+#   (amostra p2).
+# MI ("MI 001/2026 CEL-2", consultoria financiada pela AFD) não foi confirmado: cai no fallback
+# `Compesa (MI)` com log `modalidade_desconhecida`.
+MODALIDADES_COMPESA: dict[str, str] = {"LC": "Licitação", "ECR": "Credenciamento"}
+FRACAO_DATAS_IMPOSSIVEIS = 0.2  # acima disso, o estilo de data da página está errado
 
 # --- literal JavaScript ----------------------------------------------------------------------
 
@@ -295,6 +307,23 @@ _DATA = re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4})(?:\s+(\d{1,2}):(\d{2}))?")
 _HORA = re.compile(r"(\d{1,2}):(\d{2})")
 
 
+def _dia_mes(a: int, b: int, estilo: Estilo) -> tuple[int, int]:
+    return (a, b) if estilo == "br" else (b, a)
+
+
+def data_impossivel(data: str | None, estilo: Estilo) -> bool:
+    """A data existe no texto mas não é uma data válida no estilo da página (ex.: mês 13)."""
+    achado = _DATA.search(data or "")
+    if not achado:
+        return False
+    dia, mes = _dia_mes(int(achado.group(1)), int(achado.group(2)), estilo)
+    try:
+        datetime(int(achado.group(3)), mes, dia)
+    except ValueError:
+        return True
+    return False
+
+
 def parse_data(data: str | None, hora: str | None, estilo: Estilo) -> datetime | None:
     """Data da coluna ABERTURA mais a HORA, no estilo da página (`br` = dd/MM, `us` = MM/dd)."""
     achado = _DATA.search(data or "")
@@ -311,7 +340,7 @@ def parse_data(data: str | None, hora: str | None, estilo: Estilo) -> datetime |
     else:
         logger.warning("data_sem_hora", extra={"texto": data})
         hh = mm = 0
-    dia, mes = (a, b) if estilo == "br" else (b, a)
+    dia, mes = _dia_mes(a, b, estilo)
     try:
         return datetime(ano, mes, dia, hh, mm)
     except ValueError:
@@ -450,6 +479,15 @@ def ler_grade(texto: str, estilo: Estilo) -> Grade:
     navegacao = _NAVEGACAO.findall(texto)
     # Sem a chamada de navegação não dá para saber: segue, e o fim vem pela falta de chave nova.
     tem_proxima = navegacao[-1][2] == "true" if navegacao else True
+    # Uma data impossível solta é lida no outro estilo (com log); muitas são sinal de que o
+    # estilo da página mudou, e trocar dia e mês em silêncio daria datas erradas.
+    datas = [bruta.get(_COL_ABERTURA) for bruta in linhas if isinstance(bruta, dict)]
+    impossiveis = sum(data_impossivel(d, estilo) for d in datas if isinstance(d, str))
+    if datas and impossiveis > FRACAO_DATAS_IMPOSSIVEIS * len(datas):
+        raise ErroFonte(
+            f"layout: estilo de data inconsistente ({impossiveis} de {len(datas)} impossíveis "
+            f"em {estilo})"
+        )
     return Grade(
         inicio=int(inicio.group(1)) if inicio else None,
         fim=int(fim.group(1)) if fim else None,
@@ -502,6 +540,7 @@ class FonteCompesa:
             for linha in ler_grade(pagina.texto, estilo).linhas:
                 linhas[linha.chave] = (linha, estilo)
         desconhecidas: set[str] = set()
+        modalidades_vistas: set[str] = set()  # um log por código desconhecido por retrato
         normalizados = []
         for linha, estilo in linhas.values():
             situacao = _SITUACAO.get(linha.situacao.casefold())
@@ -513,11 +552,22 @@ class FonteCompesa:
                         "situacao_desconhecida",
                         extra={"fonte": self.nome, "situacao": linha.situacao},
                     )
-            normalizados.append(_normalizar(linha, estilo, situacao))
+            codigo = linha.numero.split(" ", 1)[0]
+            modalidade = MODALIDADES_COMPESA.get(codigo)
+            if modalidade is None:
+                modalidade = f"Compesa ({codigo})"
+                if codigo not in modalidades_vistas:
+                    modalidades_vistas.add(codigo)
+                    logger.warning(
+                        "modalidade_desconhecida", extra={"fonte": self.nome, "codigo": codigo}
+                    )
+            normalizados.append(_normalizar(linha, estilo, situacao, modalidade))
         return normalizados
 
 
-def _normalizar(linha: LinhaCompesa, estilo: Estilo, situacao: str) -> dict[str, Any]:
+def _normalizar(
+    linha: LinhaCompesa, estilo: Estilo, situacao: str, modalidade: str
+) -> dict[str, Any]:
     return {
         "fonte": "compesa",
         "id_na_fonte": linha.chave,
@@ -526,8 +576,7 @@ def _normalizar(linha: LinhaCompesa, estilo: Estilo, situacao: str) -> dict[str,
         "orgao_cnpj": None,  # não vem nos dados da grade
         "uf": "PE",
         "municipio": linha.municipio,
-        # Prefixo do número ("LC 213/2026 CEL-1" → "LC"; também há "MI" e "ECR").
-        "modalidade_nome": linha.numero.split(" ", 1)[0],
+        "modalidade_nome": modalidade,  # do prefixo do número, por MODALIDADES_COMPESA
         "situacao_original": linha.situacao,
         "situacao_normalizada": situacao,
         "valor_estimado": linha.custo,
