@@ -61,15 +61,15 @@ def test_handler_status(modulo: ModuleType, monkeypatch: pytest.MonkeyPatch) -> 
 def test_handler_id_com_barra(
     modulo: ModuleType, monkeypatch: pytest.MonkeyPatch, raw_path: str
 ) -> None:
-    recebidos: list[str] = []
+    recebidos: list[tuple[str, str]] = []
 
-    def falso(sessao: object, numero: str, criterios: object) -> None:
-        recebidos.append(numero)
+    def falso(sessao: object, fonte: str, id_na_fonte: str, criterios: object) -> None:
+        recebidos.append((fonte, id_na_fonte))
 
     monkeypatch.setattr("radar.api.app.obter_edital", falso)
     resposta = modulo.handler(_evento(raw_path), None)
     assert resposta["statusCode"] == 404  # chegou na rota de detalhe (id inexistente)
-    assert recebidos == ["sanepar~OE-345/26"]
+    assert recebidos == [("sanepar", "OE-345/26")]
 
 
 def test_app_criado_uma_vez(modulo: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:

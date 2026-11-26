@@ -28,7 +28,7 @@ def test_insere_registro_real(sessao: Session, registro: dict[str, Any]) -> None
     resultado = registrar(sessao, [registro])
 
     assert (resultado.inseridos, resultado.atualizados) == (1, 0)
-    edital = sessao.get(Edital, CHAVE)
+    edital = sessao.get(Edital, ("pncp", CHAVE))
     assert edital is not None
     assert edital.uf == "MA"
     assert edital.orgao_nome == "SECRETARIA DE ESTADO DE ADMINISTRACAO PENITENCIARIA - SEAP"
@@ -56,7 +56,7 @@ def test_versao_mais_nova_vence_e_mais_velha_nao(sessao: Session, registro: dict
     resultado = registrar(sessao, [nova])
     assert (resultado.atualizados, resultado.inseridos, resultado.ignorados) == (1, 0, 0)
     sessao.expire_all()
-    assert sessao.get(Edital, CHAVE).objeto == "OBJETO NOVO"  # type: ignore[union-attr]
+    assert sessao.get(Edital, ("pncp", CHAVE)).objeto == "OBJETO NOVO"  # type: ignore[union-attr]
 
     velha = copy.deepcopy(registro)
     velha["objetoCompra"] = "OBJETO VELHO"
@@ -64,7 +64,7 @@ def test_versao_mais_nova_vence_e_mais_velha_nao(sessao: Session, registro: dict
     resultado = registrar(sessao, [velha])
     assert (resultado.ignorados, resultado.atualizados) == (1, 0)
     sessao.expire_all()
-    assert sessao.get(Edital, CHAVE).objeto == "OBJETO NOVO"  # type: ignore[union-attr]
+    assert sessao.get(Edital, ("pncp", CHAVE)).objeto == "OBJETO NOVO"  # type: ignore[union-attr]
 
 
 def test_campos_nulos_sao_aceitos(sessao: Session, registro: dict[str, Any]) -> None:
@@ -75,7 +75,7 @@ def test_campos_nulos_sao_aceitos(sessao: Session, registro: dict[str, Any]) -> 
     resultado = registrar(sessao, [registro])
 
     assert resultado.inseridos == 1
-    edital = sessao.get(Edital, CHAVE)
+    edital = sessao.get(Edital, ("pncp", CHAVE))
     assert edital is not None
     assert edital.data_encerramento_proposta is None
     assert edital.valor_estimado is None
@@ -90,7 +90,7 @@ def test_cai_para_data_atualizacao_se_global_faltar(
 
     registrar(sessao, [registro])
 
-    edital = sessao.get(Edital, CHAVE)
+    edital = sessao.get(Edital, ("pncp", CHAVE))
     assert edital is not None
     assert edital.data_atualizacao.isoformat() == registro["dataAtualizacao"]
 
@@ -135,4 +135,4 @@ def test_duplicado_no_mesmo_lote_fica_com_o_mais_novo(
     resultado = registrar(sessao, [nova, velha])
 
     assert (resultado.inseridos, resultado.ignorados) == (1, 1)
-    assert sessao.get(Edital, CHAVE).objeto == "NOVO"  # type: ignore[union-attr]
+    assert sessao.get(Edital, ("pncp", CHAVE)).objeto == "NOVO"  # type: ignore[union-attr]

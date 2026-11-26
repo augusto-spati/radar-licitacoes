@@ -50,7 +50,8 @@ export const fonteApi: Fonte = {
   listar: f => lerJson(`/api/editais${consulta(f)}`),
   status: () => lerJson('/api/status'),
   async obter(id) {
-    // O id tem "/" (a rota é {numero:path}): codifica cada trecho, mantém a barra.
+    // O id público é `<fonte>~<id>` e o id tem "/" (a rota é {id_publico:path}):
+    // codifica cada trecho e mantém a barra.
     const caminho = `/api/editais/${id.split('/').map(encodeURIComponent).join('/')}`;
     const resposta = await buscar(caminho);
     if (resposta.status === 404) return null;

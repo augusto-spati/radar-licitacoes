@@ -24,3 +24,5 @@ terraform.tfvars
 *.auto.tfvars
 .terraform/
 crash.log
+.env.local
+.env.*.local

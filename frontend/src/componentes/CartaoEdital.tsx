@@ -1,8 +1,9 @@
 import {ClickableCard} from '@astryxdesign/core/ClickableCard';
 import {HStack, VStack} from '@astryxdesign/core/Stack';
 import {Text} from '@astryxdesign/core/Text';
-import {formatarPrazo, formatarValor, localidade, nomeModalidade} from '../dados/formatos';
+import {formatarPrazo, formatarValor, localidade} from '../dados/formatos';
 import type {EditalResumo} from '../dados/tipos';
+import {SeloFonte} from './SeloFonte';
 import {TokensLinhas} from './TokensLinhas';
 
 type Props = {edital: EditalResumo; href: string; agora: Date};
@@ -21,7 +22,7 @@ export function CartaoEdital({edital, href, agora}: Props) {
             {localidade(edital.municipio, edital.uf)}
           </Text>
           <Text type="supporting" color="secondary">
-            {nomeModalidade(edital.modalidade_id)}
+            {edital.modalidade_nome}
           </Text>
         </HStack>
         <Text type="body" maxLines={3} hasTruncateTooltip={false}>
@@ -31,6 +32,7 @@ export function CartaoEdital({edital, href, agora}: Props) {
           <Text type="body" weight="semibold">
             {formatarValor(edital.valor_estimado)}
           </Text>
+          <SeloFonte fonte={edital.fonte} />
           {edital.linhas.length > 0 && <TokensLinhas linhas={edital.linhas} />}
         </HStack>
       </VStack>

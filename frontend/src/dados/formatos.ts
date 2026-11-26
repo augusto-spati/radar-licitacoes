@@ -1,4 +1,4 @@
-import type {Linha, UF} from './tipos';
+import type {FonteEdital, Linha, UF} from './tipos';
 
 // Datas da API sem fuso (ex.: "2026-11-27T08:00:00") são horário de Brasília.
 // O Brasil não tem horário de verão desde 2019, então Brasília é UTC-3 fixo.
@@ -38,15 +38,10 @@ export function formatarDataHora(iso: string | null): string {
 /** "HH:MM" no relógio de Brasília. */
 export const formatarHora = (iso: string): string => horaMinuto(paredeBrasilia(instante(iso)));
 
-export function formatarCnpj(cnpj: string): string {
+export function formatarCnpj(cnpj: string | null): string {
+  if (cnpj === null) return '—';
   const m = /^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/.exec(cnpj);
   return m === null ? cnpj : `${m[1]}.${m[2]}.${m[3]}/${m[4]}-${m[5]}`;
-}
-
-/** Página do edital no PNCP, a partir do número de controle "<cnpj>-1-<seq>/<ano>". */
-export function linkPncp(numeroControle: string): string | null {
-  const m = /^(\d{14})-\d+-(\d+)\/(\d{4})$/.exec(numeroControle);
-  return m === null ? null : `https://pncp.gov.br/app/editais/${m[1]}/${m[3]}/${Number(m[2])}`;
 }
 
 /** Só endereço http(s) vira link; vazio ou outro esquema (javascript:, ftp:...) dá nulo. */
@@ -73,15 +68,6 @@ export function formatarValor(v: string | null): string {
     .format(n)
     .replace(/\u00a0/g, ' ');
 }
-
-const MODALIDADES: Record<number, string> = {
-  4: 'Concorrência eletrônica',
-  5: 'Concorrência presencial',
-  6: 'Pregão eletrônico',
-  7: 'Pregão presencial',
-};
-
-export const nomeModalidade = (id: number): string => MODALIDADES[id] ?? `Modalidade ${id}`;
 
 const LIMITE_DESATUALIZADO_MS = 36 * 60 * 60 * 1000;
 
@@ -112,4 +98,17 @@ export const nomeLinha = (linha: string): string => (ehLinha(linha) ? LINHAS[lin
 
 export function localidade(municipio: string | null, uf: string | null): string {
   return municipio === null && uf === null ? '—' : `${municipio ?? '—'}/${uf ?? '—'}`;
+}
+
+/** Nome de tela de cada fonte; o tipo vem do enum gerado: fonte nova na API faz o tsc falhar aqui. */
+export const NOMES_FONTE: Record<FonteEdital, string> = {
+  pncp: 'PNCP',
+  sanepar: 'Sanepar',
+  compesa: 'Compesa',
+};
+
+/** O id da fonte dentro do id público `<fonte>~<id>` (só o primeiro "~" separa). */
+export function idNaFonte(idPublico: string): string {
+  const posicao = idPublico.indexOf('~');
+  return posicao < 0 ? idPublico : idPublico.slice(posicao + 1);
 }
