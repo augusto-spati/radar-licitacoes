@@ -11,7 +11,7 @@ import {rotas} from './rotas';
 type PropsDoLink = Omit<ComponentProps<typeof Link>, 'to'> & {href?: string};
 
 // Os links do Astryx recebem `href`; o Link do roteador quer `to`.
-function LinkDoRoteador({href = '/', ...resto}: PropsDoLink) {
+export function LinkDoRoteador({href = '/', ...resto}: PropsDoLink) {
   return <Link to={href} {...resto} />;
 }
 

@@ -1,5 +1,16 @@
 import {describe, expect, it} from 'vitest';
-import {estaDesatualizado, formatarPrazo, formatarValor, nomeModalidade} from './formatos';
+import {
+  estaDesatualizado,
+  formatarCnpj,
+  formatarDataHora,
+  formatarHora,
+  formatarPrazo,
+  formatarValor,
+  linkPncp,
+  localidade,
+  nomeLinha,
+  nomeModalidade,
+} from './formatos';
 
 // 26/11/2026 12:00 em Brasília.
 const agora = new Date('2026-11-26T12:00:00-03:00');
@@ -28,14 +39,17 @@ describe('formatarPrazo', () => {
   it('hoje mostra a hora', () => {
     expect(formatarPrazo('2026-11-26T14:30:00', agora)).toBe('encerra hoje · 14:30');
   });
+  it('amanhã diz "amanhã", não "1 dias"', () => {
+    expect(formatarPrazo('2026-11-27T08:00:00', agora)).toBe('encerra amanhã · 27/11');
+  });
   it('dias futuros contam por dia de calendário em Brasília', () => {
-    expect(formatarPrazo('2026-11-27T08:00:00', agora)).toBe('encerra em 1 dias · 27/11');
+    expect(formatarPrazo('2026-11-28T08:00:00', agora)).toBe('encerra em 2 dias · 28/11');
     expect(formatarPrazo('2026-12-10T08:00:00', agora)).toBe('encerra em 14 dias · 10/12');
   });
   it('perto da meia-noite de Brasília o dia não escorrega por UTC', () => {
     // 23:30 em Brasília de 26/11 já é 27/11 em UTC.
     const tarde = new Date('2026-11-26T23:30:00-03:00');
-    expect(formatarPrazo('2026-11-27T08:00:00', tarde)).toBe('encerra em 1 dias · 27/11');
+    expect(formatarPrazo('2026-11-27T08:00:00', tarde)).toBe('encerra amanhã · 27/11');
     expect(formatarPrazo('2026-11-26T23:59:00', tarde)).toBe('encerra hoje · 23:59');
   });
   it('já encerrado mostra a data', () => {
@@ -64,5 +78,58 @@ describe('estaDesatualizado', () => {
     expect(estaDesatualizado('2026-11-25T00:00:00-03:00', agora)).toBe(false); // 36 h exatas
     expect(estaDesatualizado('2026-11-24T23:59:00-03:00', agora)).toBe(true);
     expect(estaDesatualizado('2026-11-26T11:00:00-03:00', agora)).toBe(false);
+  });
+});
+
+describe('formatarDataHora', () => {
+  it('mostra dd/mm/aaaa HH:MM no relógio de Brasília', () => {
+    expect(formatarDataHora('2026-11-25T10:16:40')).toBe('25/11/2026 10:16');
+    expect(formatarDataHora('2026-11-26T01:30:00Z')).toBe('25/11/2026 22:30');
+  });
+  it('nulo vira travessão', () => {
+    expect(formatarDataHora(null)).toBe('—');
+  });
+});
+
+describe('formatarHora', () => {
+  it('mostra HH:MM em Brasília, com ou sem fuso no texto', () => {
+    expect(formatarHora('2026-11-26T13:09:37.476379-03:00')).toBe('13:09');
+    expect(formatarHora('2026-11-26T16:05:00Z')).toBe('13:05');
+  });
+});
+
+describe('formatarCnpj', () => {
+  it('aplica a máscara de 14 dígitos', () => {
+    expect(formatarCnpj('13127340000120')).toBe('13.127.340/0001-20');
+  });
+  it('fora do formato devolve como veio', () => {
+    expect(formatarCnpj('123')).toBe('123');
+  });
+});
+
+describe('linkPncp', () => {
+  it('monta o link do edital no PNCP a partir do número de controle', () => {
+    expect(linkPncp('13127340000120-1-000036/2025')).toBe(
+      'https://pncp.gov.br/app/editais/13127340000120/2025/36',
+    );
+  });
+  it('número fora do formato não gera link', () => {
+    expect(linkPncp('qualquer-coisa')).toBeNull();
+  });
+});
+
+describe('localidade', () => {
+  it('junta município e UF; o que faltar vira travessão', () => {
+    expect(localidade('Holambra', 'SP')).toBe('Holambra/SP');
+    expect(localidade(null, 'SP')).toBe('—/SP');
+    expect(localidade(null, null)).toBe('—');
+  });
+});
+
+describe('nomeLinha', () => {
+  it('dá o nome de tela das linhas de serviço', () => {
+    expect(nomeLinha('redes')).toBe('Redes');
+    expect(nomeLinha('consultoria')).toBe('Consultoria');
+    expect(nomeLinha('outra')).toBe('outra');
   });
 });
