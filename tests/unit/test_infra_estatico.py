@@ -96,3 +96,12 @@ def test_login_fechado_e_sem_diferenciar_maiusculas() -> None:
         "login diferencia maiusculas"
     )
     assert "lower(e)" in auth and "lower(var.email_remetente)" in auth, "e-mails sem lower()"
+
+
+def test_fila_tem_dlq_e_alarmes() -> None:
+    fila = (RAIZ / "infra" / "prod" / "fila.tf").read_text(encoding="utf-8")
+    assert "maxReceiveCount     = 5" in fila
+    assert "visibility_timeout_seconds = 720" in fila
+    assert 'function_response_types = ["ReportBatchItemFailures"]' in fila
+    assert "maximum_concurrency = 2" in fila
+    assert len(re.findall(r'resource\s+"aws_cloudwatch_metric_alarm"', fila)) == 3
