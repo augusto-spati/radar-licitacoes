@@ -2,6 +2,7 @@
 
 import copy
 import json
+import logging
 import uuid
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
@@ -292,6 +293,59 @@ def test_edital_que_volta_a_lista_reabre(sessao: Session) -> None:
 
     assert resultado.atualizados == 1
     assert _edital(sessao, "sanepar", "OE-345/26").situacao_normalizada == "aberta"
+
+
+def test_registrar_normalizados_loga_so_os_alterados(
+    sessao: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    registrar_normalizados(sessao, [_normalizado(id_na_fonte="OE-1/26")])
+    registrar_normalizados(sessao, [_normalizado(id_na_fonte="OE-2/26")])
+    anexo_novo = [{"nome": "Retificacao.pdf", "id": "a2"}]
+
+    with caplog.at_level(logging.INFO, logger="radar.editais.registro"):
+        registrar_normalizados(
+            sessao,
+            [
+                _normalizado(id_na_fonte="OE-1/26", anexos=anexo_novo),  # mudou
+                _normalizado(id_na_fonte="OE-2/26"),  # igual
+                _normalizado(id_na_fonte="OE-3/26"),  # novo
+            ],
+        )
+
+    alterados = [r for r in caplog.records if r.getMessage() == "edital_alterado"]
+    assert [(r.__dict__["fonte"], r.__dict__["id_na_fonte"]) for r in alterados] == [
+        ("sanepar", "OE-1/26")
+    ]
+
+
+def test_reconciliar_loga_cada_edital_que_saiu(
+    sessao: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    registrar_normalizados(
+        sessao, [_normalizado(id_na_fonte=i) for i in ("OE-1/26", "OE-2/26", "OE-3/26")]
+    )
+
+    with caplog.at_level(logging.INFO, logger="radar.editais.registro"):
+        marcados = reconciliar_retrato(sessao, "sanepar", {"OE-3/26"}, AGORA)
+
+    saiu = [r for r in caplog.records if r.getMessage() == "edital_saiu_da_lista"]
+    assert marcados == 2
+    assert sorted((r.__dict__["fonte"], r.__dict__["id_na_fonte"]) for r in saiu) == [
+        ("sanepar", "OE-1/26"),
+        ("sanepar", "OE-2/26"),
+    ]
+
+
+def test_reconciliar_usa_o_rotulo_da_fonte(sessao: Session) -> None:
+    registrar_normalizados(sessao, [_normalizado(fonte="compesa", id_na_fonte="2026LC1")])
+
+    reconciliar_retrato(sessao, "compesa", set(), AGORA, rotulo="fora da janela")
+
+    edital = _edital(sessao, "compesa", "2026LC1")
+    assert (edital.situacao_normalizada, edital.situacao_original) == (
+        "encerrada",
+        "fora da janela",
+    )
 
 
 def test_reconciliar_recusa_pncp(sessao: Session) -> None:

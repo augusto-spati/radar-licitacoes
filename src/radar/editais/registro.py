@@ -228,16 +228,19 @@ def _validar_pncp(
 type _CondicaoUpsert = Callable[[Any], ColumnElement[bool]]
 
 
+type _Chave = tuple[str, str]
+
+
 def _upsert(
     sessao: Session, linhas: list[dict[str, Any]], atualizar_se: _CondicaoUpsert
-) -> tuple[int, set[tuple[str, str]]]:
-    """Upsert por (fonte, id_na_fonte), em lotes. Devolve os inseridos e as chaves gravadas.
+) -> tuple[set[_Chave], set[_Chave]]:
+    """Upsert por (fonte, id_na_fonte), em lotes. Devolve as chaves inseridas e as atualizadas.
 
     `atualizar_se(excluded)` é o WHERE do ON CONFLICT: a linha existente só é sobrescrita
     quando ele é verdadeiro. A diferença entre o total e os gravados são os ignorados.
     """
-    inseridos = 0
-    gravadas: set[tuple[str, str]] = set()
+    inseridas: set[_Chave] = set()
+    atualizadas: set[_Chave] = set()
     for inicio in range(0, len(linhas), _LOTE):
         insercao = insert(Edital).values(linhas[inicio : inicio + _LOTE])
         colunas_novas: dict[str, ColumnClause[Any]] = {
@@ -255,17 +258,16 @@ def _upsert(
             literal_column("(xmax = 0)", Boolean).label("inserido"),
         )
         for fonte, id_na_fonte, inserido in sessao.execute(comando):
-            gravadas.add((fonte, id_na_fonte))
-            inseridos += int(inserido)
-    return inseridos, gravadas
+            (inseridas if inserido else atualizadas).add((fonte, id_na_fonte))
+    return inseridas, atualizadas
 
 
 def _contar(
-    resultado: ResultadoRegistro, total: int, inseridos: int, gravadas: set[tuple[str, str]]
+    resultado: ResultadoRegistro, total: int, inseridas: set[_Chave], atualizadas: set[_Chave]
 ) -> None:
-    resultado.inseridos = inseridos
-    resultado.atualizados = len(gravadas) - inseridos
-    resultado.ignorados += total - len(gravadas)
+    resultado.inseridos = len(inseridas)
+    resultado.atualizados = len(atualizadas)
+    resultado.ignorados += total - len(inseridas) - len(atualizadas)
 
 
 def registrar(sessao: Session, registros: list[dict[str, Any]]) -> ResultadoRegistro:
@@ -275,18 +277,19 @@ def registrar(sessao: Session, registros: list[dict[str, Any]]) -> ResultadoRegi
     if not validos:
         return resultado
     linhas = [parsed.para_linha(bruto) for parsed, bruto in validos.values()]
-    inseridos, gravadas = _upsert(
+    inseridas, atualizadas = _upsert(
         sessao, linhas, lambda novo: Edital.data_atualizacao < novo.data_atualizacao
     )
-    _contar(resultado, len(linhas), inseridos, gravadas)
+    _contar(resultado, len(linhas), inseridas, atualizadas)
     return resultado
 
 
 def registrar_normalizados(sessao: Session, registros: list[dict[str, Any]]) -> ResultadoRegistro:
     """Grava editais já normalizados (fontes de retrato). Sem commit.
 
-    Atualiza só quando o hash do conteúdo muda; `visto_em` é renovado em todos os válidos.
-    No mesmo lote, a última ocorrência de uma chave vence (as anteriores contam como ignoradas).
+    Atualiza só quando o hash do conteúdo muda, com um log `edital_alterado` por edital
+    (inserido ou igual não loga); `visto_em` é renovado em todos os válidos. No mesmo lote, a
+    última ocorrência de uma chave vence (as anteriores contam como ignoradas).
     """
     resultado = ResultadoRegistro()
     vencedores: dict[tuple[str, str], EditalNormalizado] = {}
@@ -310,12 +313,14 @@ def registrar_normalizados(sessao: Session, registros: list[dict[str, Any]]) -> 
         e.para_linha() | {"visto_em": visto_em, "data_atualizacao": mudou_em}
         for e in vencedores.values()
     ]
-    inseridos, gravadas = _upsert(
+    inseridas, atualizadas = _upsert(
         sessao, linhas, lambda novo: Edital.hash_conteudo.is_distinct_from(novo.hash_conteudo)
     )
-    _contar(resultado, len(linhas), inseridos, gravadas)
+    _contar(resultado, len(linhas), inseridas, atualizadas)
+    for fonte, id_na_fonte in sorted(atualizadas):
+        logger.info("edital_alterado", extra={"fonte": fonte, "id_na_fonte": id_na_fonte})
 
-    sem_mudanca = set(vencedores) - gravadas
+    sem_mudanca = set(vencedores) - inseridas - atualizadas
     if sem_mudanca:
         sessao.execute(
             update(Edital)
@@ -325,11 +330,18 @@ def registrar_normalizados(sessao: Session, registros: list[dict[str, Any]]) -> 
     return resultado
 
 
-def reconciliar_retrato(sessao: Session, fonte: str, vistos: set[str], quando: datetime) -> int:
+def reconciliar_retrato(
+    sessao: Session,
+    fonte: str,
+    vistos: set[str],
+    quando: datetime,
+    rotulo: str = "saiu da lista",
+) -> int:
     """Encerra os editais abertos ou em julgamento da fonte que saíram de um retrato completo.
 
-    Só deve ser chamada depois de um retrato bem-sucedido. O hash é zerado para que o edital,
-    se voltar à lista igual ao que era, seja regravado e reaberto. Sem commit.
+    Só deve ser chamada depois de um retrato bem-sucedido. `rotulo` vira a situação original
+    (a Compesa usa "fora da janela"). Loga `edital_saiu_da_lista` por edital. O hash é zerado
+    para que o edital, se voltar à lista igual ao que era, seja regravado e reaberto. Sem commit.
     """
     if fonte == Fonte.pncp:
         raise ValueError("o pncp é coletado por janelas, não por retrato")
@@ -342,9 +354,16 @@ def reconciliar_retrato(sessao: Session, fonte: str, vistos: set[str], quando: d
         )
         .values(
             situacao_normalizada="encerrada",
-            situacao_original="saiu da lista",
+            situacao_original=rotulo,
             hash_conteudo=None,
             data_atualizacao=_brasilia_sem_fuso(quando),
         )
+        .returning(Edital.id_na_fonte)
     )
-    return sessao.execute(comando).rowcount  # type: ignore[attr-defined, no-any-return]
+    encerrados = sorted(sessao.scalars(comando))
+    for id_na_fonte in encerrados:
+        logger.info(
+            "edital_saiu_da_lista",
+            extra={"fonte": fonte, "id_na_fonte": id_na_fonte, "rotulo": rotulo},
+        )
+    return len(encerrados)
