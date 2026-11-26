@@ -101,9 +101,11 @@ data "aws_iam_policy_document" "deploy" {
   # https://docs.aws.amazon.com/lambda/latest/dg/images-create.html#gettingstarted-images-permissions
   # Get/SetRepositoryPolicy so seriam necessarios para o Lambda criar a politica do repo;
   # ela e criada abaixo pelo Terraform (aws_ecr_repository_policy.api_lambda), entao nao sao concedidos.
+  # O docker push consulta o manifesto antes de enviar (HEAD/GET manifests), o que exige
+  # BatchGetImage tambem no repositorio do coletor.
   statement {
     actions   = ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"]
-    resources = [aws_ecr_repository.api.arn]
+    resources = [aws_ecr_repository.api.arn, aws_ecr_repository.coletor.arn]
   }
 
   statement {
