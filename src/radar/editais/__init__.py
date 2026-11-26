@@ -6,6 +6,7 @@ from radar.editais.filtro import (
     EditalResumo,
     carregar_criterios,
     filtrar,
+    listar_abertos,
     obter_edital,
 )
 from radar.editais.registro import ResultadoRegistro, registrar
@@ -17,6 +18,7 @@ __all__ = [
     "ResultadoRegistro",
     "carregar_criterios",
     "filtrar",
+    "listar_abertos",
     "obter_edital",
     "registrar",
 ]

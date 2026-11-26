@@ -128,6 +128,21 @@ def filtrar(
     return [EditalResumo(**_campos_resumo(linha, criterios)) for linha in linhas]
 
 
+_COLUNAS_DETALHE: list[Any] = [
+    Edital.orgao_cnpj,
+    Edital.situacao_nome,
+    Edital.data_publicacao,
+    Edital.data_abertura_proposta,
+]
+
+
+def _detalhe(linha: Any, criterios: Criterios) -> EditalDetalhe:
+    return EditalDetalhe(
+        **_campos_resumo(linha, criterios),
+        **{coluna.key: linha._mapping[coluna.key] for coluna in _COLUNAS_DETALHE},
+    )
+
+
 def obter_edital(
     sessao: Session, numero_controle_pncp: str, criterios: Criterios
 ) -> EditalDetalhe | None:
@@ -135,21 +150,27 @@ def obter_edital(
 
     Não aplica UF, modalidade nem prazo: quem pede um edital pelo número o recebe.
     """
-    consulta = select(
-        *_COLUNAS_RESUMO,
-        Edital.orgao_cnpj,
-        Edital.situacao_nome,
-        Edital.data_publicacao,
-        Edital.data_abertura_proposta,
-        *_rotulos(_casamentos(criterios)),
-    ).where(Edital.numero_controle_pncp == numero_controle_pncp)
-    linha = sessao.execute(consulta).first()
-    if linha is None:
-        return None
-    return EditalDetalhe(
-        **_campos_resumo(linha, criterios),
-        orgao_cnpj=linha.orgao_cnpj,
-        situacao_nome=linha.situacao_nome,
-        data_publicacao=linha.data_publicacao,
-        data_abertura_proposta=linha.data_abertura_proposta,
+    consulta = select(*_COLUNAS_RESUMO, *_COLUNAS_DETALHE, *_rotulos(_casamentos(criterios))).where(
+        Edital.numero_controle_pncp == numero_controle_pncp
     )
+    linha = sessao.execute(consulta).first()
+    return None if linha is None else _detalhe(linha, criterios)
+
+
+def listar_abertos(
+    sessao: Session, criterios: Criterios, agora: datetime, limite: int
+) -> list[EditalDetalhe]:
+    """Editais abertos em qualquer linha (só UF e modalidade dos critérios), por prazo.
+
+    `linhas` vem preenchida quando o edital casa com alguma linha; fica vazia se não.
+    """
+    agora_brasilia = agora.astimezone(FUSO).replace(tzinfo=None)
+    consulta = (
+        select(*_COLUNAS_RESUMO, *_COLUNAS_DETALHE, *_rotulos(_casamentos(criterios)))
+        .where(Edital.uf.in_(criterios.ufs))
+        .where(Edital.modalidade_id.in_(criterios.modalidades))
+        .where(Edital.data_encerramento_proposta > agora_brasilia, Edital.situacao_id == 1)
+        .order_by(Edital.data_encerramento_proposta.asc())
+        .limit(limite)
+    )
+    return [_detalhe(linha, criterios) for linha in sessao.execute(consulta)]

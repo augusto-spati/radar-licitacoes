@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
-from radar.editais import Criterios, carregar_criterios, filtrar, registrar
+from radar.editais import Criterios, carregar_criterios, filtrar, listar_abertos, registrar
 
 RAIZ = Path(__file__).resolve().parent.parent.parent
 AMOSTRA: dict[str, Any] = json.loads(
@@ -85,3 +85,22 @@ def test_carregar_criterios() -> None:
 
     assert len(criterios.linhas) == 4
     assert len(criterios.ufs) == 4
+
+
+def test_listar_abertos_ignora_texto_e_respeita_uf_prazo_e_limite(sessao: Session) -> None:
+    registrar(
+        sessao,
+        [
+            _registro("tarde/2026", "Compra de canetas", encerramento="2026-12-20T10:00:00"),
+            _registro("cedo/2026", "Conserto de vazamento", encerramento="2026-12-01T10:00:00"),
+            _registro("velho/2026", "Compra de papel", encerramento="2026-11-20T10:00:00"),
+            _registro("ba/2026", "Compra de lapis", "BA", encerramento="2026-12-02T10:00:00"),
+        ],
+    )
+
+    resultado = listar_abertos(sessao, CRITERIOS, AGORA, limite=10)
+
+    assert [r.numero_controle_pncp for r in resultado] == ["cedo/2026", "tarde/2026"]
+    assert resultado[0].linhas == ["perdas"]
+    assert resultado[1].linhas == []
+    assert len(listar_abertos(sessao, CRITERIOS, AGORA, limite=1)) == 1
