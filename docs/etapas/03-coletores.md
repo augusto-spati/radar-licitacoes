@@ -1,6 +1,54 @@
-# Etapa 3: coletores Sanepar e Compesa (rascunho)
+# Etapa 3: coletores Sanepar e Compesa
 
-> Rascunho. As seções de retrato, cortesia e perguntas de entrevista entram nas próximas tarefas.
+Até aqui o radar lia só o PNCP. Esta etapa traz as licitações publicadas nos portais próprios da Sanepar (Obras e Engenharia) e da Compesa para o mesmo banco, o mesmo filtro, a mesma API e a mesma tela. Para isso o modelo passa a ser **um edital, várias fontes**.
+
+## O que foi feito
+
+- **Modelo multi-fonte.** A chave do `edital` passa a ser `(fonte, id_na_fonte)`. A situação vira um valor normalizado: `aberta`, `em_julgamento`, `encerrada` ou `outra`.
+- **Motor de retratos.** A coleta lê a lista inteira da fonte uma vez por dia. O cliente educado pausa 3 s entre requisições, se identifica pelo User-Agent e para no primeiro 403 ou 429. Cada fonte tem um mínimo de registros, a reconciliação encerra os editais que saíram da lista, cada fonte tem sua trava e a retenção de páginas brutas é limitada.
+- **Sanepar.** Lê o HTML da lista e do detalhe. A situação pedida na URL vale como a situação do edital. Uma página de detalhe com erro cai para os dados da linha da lista.
+- **Compesa.** Lê a grade em JavaScript sem executá-la. Pede `Accept-Language: pt-BR` e cobre só os últimos 12 meses.
+- **Front.** O cartão ganhou o selo da fonte, e o id público passou a ser `fonte~id`.
+
+## Números da rodada real
+
+| Fonte | Editais | Abertos | Casam com o filtro | Tempo |
+|---|---|---|---|---|
+| PNCP | 38.382 | — | 24 | (carga de 30 dias, etapa 1) |
+| Sanepar | 92 | 57 | 15, sendo 4 de pesquisa ou detecção de vazamentos | cerca de 14 min (detalhes a 8 s cada) |
+| Compesa | 283 (últimos 12 meses) | 11 abertos e 49 em julgamento | 0 | 37 s |
+
+A segunda rodada seguida deu **0 editais alterados** nas duas fontes. Isso mostra que o hash não acusa mudança quando nada mudou. Na primeira rodada, os 2 alterados da Sanepar eram anexos novos de verdade no site.
+
+## O que a rodada real ensinou (e os testes não pegaram)
+
+1. **O formato da data da Compesa segue o idioma pedido, não a página.** A pesquisa baixou a página 1 com um navegador, que pede pt-BR, e a página 2 com `curl`, que não pede idioma. Daí veio o modelo errado de "página 1 em dd/MM e as seguintes em MM/dd". A trava de datas impossíveis (mais de 20% numa página) falhou alto, em vez de gravar dia e mês trocados. A correção foi pedir sempre pt-BR.
+2. **A lista da Compesa é o histórico inteiro**, desde 2012, em ordem decrescente. O limite de 50 páginas disparou, e a correção foi a janela de 12 meses.
+3. **Uma lista vazia pode ser layout quebrado.** A revisão final achou um caso que passava por todas as travas: "Abertura" vazia na Sanepar com "Julgamento" cheio. Isso encerraria todos os editais abertos da fonte. Agora "Abertura" vazia é falha.
+
+## Perguntas de entrevista
+
+Responda com suas palavras, citando o arquivo ou o comportamento. A etapa só fecha quando estiverem respondidas.
+
+1. Como você trocou a chave primária de uma tabela com 38 mil linhas, e por que a consulta ficou mais lenta logo depois da migração mesmo com os índices no lugar?
+
+   Resposta:
+
+2. Qual a diferença entre coletar por janela de datas (PNCP) e por retrato (Sanepar, Compesa)? Quando cada uma faz sentido?
+
+   Resposta:
+
+3. A Sanepar não informa quando um edital é retificado. Como o radar detecta a mudança, e como você provou que isso não gera alterações falsas?
+
+   Resposta:
+
+4. O que significa "cortesia com a fonte" no código, e o que o coletor faz quando o site devolve 403 ou 429?
+
+   Resposta:
+
+5. Por que um retrato com zero resultados, ou com "Abertura" vazia, conta como falha e não como "não há editais"? O que aconteceria se contasse como sucesso?
+
+   Resposta:
 
 ## Migração da chave
 
