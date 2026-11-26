@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -15,6 +16,10 @@ class Config(BaseSettings):
     config_filtro: Path = RAIZ_REPOSITORIO / "config" / "filtro.toml"
     # Serverless + Neon: sem pool no processo (o pooler do Neon cuida das conexões).
     db_nullpool: bool = False
+    # Fila das mensagens da outbox: local (consome no processo) ou SQS.
+    fila: Literal["local", "sqs"] = "local"
+    fila_url: str | None = None
+    fila_falhas_url: str | None = None
 
 
 def obter_config() -> Config:
