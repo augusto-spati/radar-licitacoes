@@ -14,8 +14,8 @@ test('abre um edital filtrado e o Voltar mantém o filtro', async ({page}) => {
   const rotulo = (await primeiro.getAttribute('aria-label')) ?? '';
   const edital = exemplo.editais.find(e => `Abrir edital: ${e.objeto}` === rotulo);
   expect(edital, 'o cartão veio da fixture').toBeDefined();
-  // O cartão inteiro é o alvo do toque; o link fica sob o conteúdo, então toca-se no prazo.
-  await page.getByText(/^encerra em/).first().click();
+  // O link fica sob o conteúdo do cartão: toca-se no prazo do próprio cartão escolhido.
+  await primeiro.locator('xpath=..').getByText(/^encerra/).click();
 
   await expect(page).toHaveURL(/#\/edital\//);
   await expect(page.getByRole('heading', {level: 1, name: edital?.orgao_nome})).toBeVisible();

@@ -1,6 +1,13 @@
 import {expect, test} from '@playwright/test';
 import {congelarRelogio} from './relogio';
 
+// Orçamento absoluto, não proporcional: em duas execuções seguidas no container
+// Linux a diferença medida foi de 0 pixel (fonte e renderização são fixas lá),
+// então 20 pixels cobrem só ruído residual de antisserrilhamento. Um item de menu
+// a mais (como "Ajuda") muda centenas de pixels e reprova; uma razão de 1% numa
+// barra de ~1280x50 deixaria passar ~640.
+const ORCAMENTO_PIXELS = 20;
+
 test.beforeEach(async ({page}) => {
   await congelarRelogio(page);
   await page.goto('/');
@@ -14,11 +21,17 @@ test.beforeEach(async ({page}) => {
 test('shell: cabeçalho e navegação', async ({page}) => {
   await expect(page.getByRole('banner')).toHaveScreenshot('shell.png', {
     mask: [page.getByText(/^atualizado às /)],
-    // O recorte é só a barra (~60 px de altura): 1% dos pixels absorve o
-    // antisserrilhamento da fonte entre execuções, mas um item de menu a mais
-    // ou uma marca trocada mexe em bem mais que isso.
-    maxDiffPixelRatio: 0.01,
+    maxDiffPixels: ORCAMENTO_PIXELS,
   });
+});
+
+// No celular o menu mora na gaveta: abre pelo botão e confere o painel de navegação.
+test('shell: gaveta de navegação no celular', async ({page}, info) => {
+  test.skip(info.project.name !== 'celular', 'a gaveta só existe no celular');
+  await page.getByRole('button', {name: 'Abrir navegação'}).click();
+  const gaveta = page.getByRole('dialog');
+  await expect(gaveta).toBeVisible();
+  await expect(gaveta).toHaveScreenshot('gaveta.png', {maxDiffPixels: ORCAMENTO_PIXELS});
 });
 
 test('nenhum elemento passa da largura da tela', async ({page}, info) => {
