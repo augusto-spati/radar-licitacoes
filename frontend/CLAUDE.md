@@ -26,7 +26,7 @@ Antes de criar um componente: `astryx search`, depois `src/componentes/`; compon
 
 ### Arquivos de guarda e o trailer `Contrato-Front: aprovado`
 
-Estes arquivos fazem o contrato valer e só mudam com aprovação explícita do Augusto: `eslint.config.*`, `.jscpd.json`, `package.json`, `vite.config.*`, `vitest.config.*`, `tsconfig*.json`, `playwright.config.ts`, `.gitignore` (da raiz e do front), este `CLAUDE.md`, `src/rotas.test.ts`, `src/dependencias.test.ts`, `src/componentes.test.ts`, `src/eslint-contrato.test.ts`, `src/componentes/Shell.tsx`, `e2e/` (inclusive os screenshots), `scripts/`, `.github/workflows/ci.yml` e `.github/CODEOWNERS` (lista em `scripts/contrato-guardado.mjs`).
+Estes arquivos fazem o contrato valer e só mudam com aprovação explícita do Augusto: `eslint.config.*`, `.jscpd.json`, `package.json`, `package-lock.json`, `index.html`, `vite.config.*`, `vitest.config.*`, `tsconfig*.json`, `playwright.config.ts`, `.gitignore` (da raiz e do front), este `CLAUDE.md`, `src/rotas.test.ts`, `src/dependencias.test.ts`, `src/componentes.test.ts`, `src/eslint-contrato.test.ts`, `src/componentes/Shell.tsx`, `e2e/` (inclusive os screenshots), `scripts/`, `.github/workflows/ci.yml`, `.github/workflows/guarda-base.yml` e `.github/CODEOWNERS` (lista em `scripts/contrato-guardado.mjs`).
 
 O job `contrato-guardado` do CI reprova o push ou o PR em que algum deles mudou sem que pelo menos um commit do intervalo tenha, no bloco final da mensagem, o trailer:
 
@@ -35,6 +35,8 @@ Contrato-Front: aprovado
 ```
 
 O job roda o `scripts/contrato-guardado.mjs` da base do intervalo (`git show <base>:...`), não o do commit testado: editar a guarda no próprio commit não a contorna, e a lista de arquivos guardados é a da base. A guarda pressupõe o fluxo por PR, obrigatório na `main` (PR exigido, checks qualidade/front/contrato-guardado/e2e, `enforce_admins`); push direto à `main` sem esse fluxo a esvazia.
+
+Workflow da base (`.github/workflows/guarda-base.yml`, job `guarda-base`): roda por `pull_request_target`, ou seja, a definição vem da branch base e um PR não consegue editá-la. Ele faz checkout da base, busca `refs/pull/N/head` só como dados e roda o script da base com git; não executa código do PR. Isso garante que um PR não desliga a guarda editando o próprio `ci.yml` ou o script. Limites honestos: (1) o workflow só passa a valer depois de existir na `main`; até lá o job `contrato-guardado` do `ci.yml` continua sendo o check, e ele roda a definição da cabeça do PR, então edições do `ci.yml` são visíveis mas não bloqueadas por ele; (2) depois do merge o dono troca o check obrigatório da `main` de `contrato-guardado` para `guarda-base`, e um PR posterior remove o job antigo; (3) em push direto (sem PR) só o job do `ci.yml` roda, por isso o PR é obrigatório.
 
 Agente nenhum põe esse trailer por conta própria: só quando o Augusto pediu a mudança no contrato. Se a mudança não foi pedida, desfaça-a.
 

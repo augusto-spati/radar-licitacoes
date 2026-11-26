@@ -3,6 +3,8 @@
 /frontend/eslint.config.*               @augusto-spati
 /frontend/.jscpd.json                   @augusto-spati
 /frontend/package.json                  @augusto-spati
+/frontend/package-lock.json             @augusto-spati
+/frontend/index.html                    @augusto-spati
 /frontend/vite.config.*                 @augusto-spati
 /frontend/vitest.config.*                @augusto-spati
 /frontend/tsconfig*.json                @augusto-spati
@@ -18,4 +20,5 @@
 /frontend/e2e/                          @augusto-spati
 /frontend/scripts/                      @augusto-spati
 /.github/workflows/ci.yml               @augusto-spati
+/.github/workflows/guarda-base.yml       @augusto-spati
 /.github/CODEOWNERS                     @augusto-spati

@@ -22,6 +22,9 @@ describe('contrato-guardado: o que é guardado', () => {
     'frontend/scripts/verificar-contrato.mjs',
     'frontend/scripts/contrato-guardado.mjs',
     'frontend/package.json',
+    'frontend/package-lock.json',
+    'frontend/index.html',
+    '.github/workflows/guarda-base.yml',
     '.github/workflows/ci.yml',
     '.github/CODEOWNERS',
     'frontend/tsconfig.json',
@@ -130,7 +133,14 @@ describe('contrato-guardado: quem decide é a base', () => {
           stdio: ['ignore', 'pipe', 'pipe'],
           env: {...process.env, EVENTO: 'push', ANTES: base},
         });
-      expect(() => rodar(daBase)).toThrow();
+      let falha;
+      try {
+        rodar(daBase);
+      } catch (e) {
+        falha = e;
+      }
+      expect(falha?.status).toBe(1);
+      expect(String(falha?.stderr)).toContain('Contrato-Front: aprovado');
       expect(rodar(alvo)).toContain('sempre aprova'); // a adulterada passaria
     } finally {
       rmSync(tmp, {recursive: true, force: true});
@@ -171,6 +181,22 @@ describe('contrato-guardado: intervalo', () => {
       base: 'p1',
       topo: 'h1',
     });
+  });
+});
+
+describe('contrato-guardado: workflow da base', () => {
+  const raiz = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+  const yml = readFileSync(path.join(raiz, '.github', 'workflows', 'guarda-base.yml'), 'utf8');
+
+  it('roda por pull_request_target, só lê o repositório e não executa código do PR', () => {
+    expect(yml).toContain('pull_request_target:');
+    expect(yml).toContain('guarda-base:');
+    expect(yml).toContain('contents: read');
+    expect(yml).toContain('ref: ${{ github.event.pull_request.base.sha }}');
+    expect(yml).toContain('node frontend/scripts/contrato-guardado.mjs');
+    for (const proibido of ['npm ', 'npx ', 'pull_request.head.ref', 'ref: ${{ github.event.pull_request.head']) {
+      expect(yml).not.toContain(proibido);
+    }
   });
 });
 

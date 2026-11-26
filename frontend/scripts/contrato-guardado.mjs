@@ -20,6 +20,8 @@ export const GUARDADOS = [
   'frontend/eslint.config.*',
   'frontend/.jscpd.json',
   'frontend/package.json',
+  'frontend/package-lock.json',
+  'frontend/index.html',
   'frontend/vite.config.*',
   'frontend/vitest.config.*',
   'frontend/tsconfig*.json',
@@ -35,6 +37,7 @@ export const GUARDADOS = [
   'frontend/e2e/',
   'frontend/scripts/',
   '.github/workflows/ci.yml',
+  '.github/workflows/guarda-base.yml',
   '.github/CODEOWNERS',
 ];
 
