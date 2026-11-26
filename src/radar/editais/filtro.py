@@ -62,7 +62,19 @@ def _montar_consulta(
     criterios: Criterios, agora: datetime, somente_abertos: bool, limite: int
 ) -> Select[tuple[Any, ...]]:
     casamentos = [_casa_termos(termos) for termos in criterios.linhas.values()]
-    colunas: list[Any] = [Edital, *(c.label(f"linha_{i}") for i, c in enumerate(casamentos))]
+    # Só as colunas do EditalResumo: `bruto` e `busca` são pesados e não são lidos aqui.
+    colunas: list[Any] = [
+        Edital.numero_controle_pncp,
+        Edital.objeto,
+        Edital.orgao_nome,
+        Edital.uf,
+        Edital.municipio,
+        Edital.modalidade_id,
+        Edital.valor_estimado,
+        Edital.data_encerramento_proposta,
+        Edital.link_origem,
+        *(c.label(f"linha_{i}") for i, c in enumerate(casamentos)),
+    ]
     consulta = (
         select(*colunas)
         .where(or_(*casamentos) if casamentos else false())
@@ -89,19 +101,18 @@ def filtrar(
     nomes = list(criterios.linhas)
     resultado: list[EditalResumo] = []
     for linha in sessao.execute(_montar_consulta(criterios, agora, somente_abertos, limite)):
-        edital: Edital = linha[0]
-        bateram: tuple[bool, ...] = tuple(linha[1:])
+        bateram: tuple[bool, ...] = tuple(linha[9:])
         resultado.append(
             EditalResumo(
-                numero_controle_pncp=edital.numero_controle_pncp,
-                objeto=edital.objeto,
-                orgao_nome=edital.orgao_nome,
-                uf=edital.uf,
-                municipio=edital.municipio,
-                modalidade_id=edital.modalidade_id,
-                valor_estimado=edital.valor_estimado,
-                data_encerramento_proposta=edital.data_encerramento_proposta,
-                link_origem=edital.link_origem,
+                numero_controle_pncp=linha.numero_controle_pncp,
+                objeto=linha.objeto,
+                orgao_nome=linha.orgao_nome,
+                uf=linha.uf,
+                municipio=linha.municipio,
+                modalidade_id=linha.modalidade_id,
+                valor_estimado=linha.valor_estimado,
+                data_encerramento_proposta=linha.data_encerramento_proposta,
+                link_origem=linha.link_origem,
                 linhas=[nome for nome, bateu in zip(nomes, bateram, strict=True) if bateu],
             )
         )

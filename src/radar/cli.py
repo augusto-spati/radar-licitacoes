@@ -49,17 +49,26 @@ def _criar_cliente() -> ClientePNCP:
     return ClientePNCP(criar_http())
 
 
-def _processar(sessao: Session, cliente: ClientePNCP) -> None:
+def _processar(sessao: Session, cliente: ClientePNCP) -> int:
+    """Coleta e processa; devolve quantas janelas e páginas falharam nesta execução."""
     resumo = coletar_pendentes(sessao, cliente, _agora())
     typer.echo(
         f"coleta: {resumo.concluidas} concluídas, {resumo.falhas} falhas, "
         f"{resumo.divididas} divididas, {resumo.registros} registros"
     )
     paginas = inseridos = atualizados = ignorados = invalidos = 0
-    while lote := ler_paginas_nao_processadas(sessao):
+    falhas_pagina: set[int] = set()
+    # Fronteira coleta -> editais: é aqui que a fila do Tema 2 entra.
+    while lote := ler_paginas_nao_processadas(sessao, excluir=falhas_pagina):
         for pagina_id, registros in lote:
-            resultado = registrar(sessao, registros)
-            marcar_processada(sessao, pagina_id)  # commita o registro junto da marca
+            try:
+                resultado = registrar(sessao, registros)
+                marcar_processada(sessao, pagina_id)  # commita o registro junto da marca
+            except Exception:  # Ctrl+C (BaseException) continua parando o processo
+                sessao.rollback()
+                logger.exception("pagina_erro_processamento", extra={"pagina_id": pagina_id})
+                falhas_pagina.add(pagina_id)
+                continue
             paginas += 1
             inseridos += resultado.inseridos
             atualizados += resultado.atualizados
@@ -79,6 +88,18 @@ def _processar(sessao: Session, cliente: ClientePNCP) -> None:
         f"processamento: {paginas} páginas, {inseridos} inseridos, {atualizados} atualizados, "
         f"{ignorados} ignorados, {invalidos} inválidos"
     )
+    falhas = resumo.falhas + len(falhas_pagina)
+    typer.echo(
+        f"resultado: {resumo.falhas} janelas e {len(falhas_pagina)} páginas com falha"
+        if falhas
+        else "resultado: sem falhas"
+    )
+    return falhas
+
+
+def _encerrar(falhas: int) -> None:
+    if falhas:
+        raise typer.Exit(code=1)
 
 
 @app.command()
@@ -102,7 +123,8 @@ def carga_inicial(
             criterios.modalidades,
         )  # fmt: skip
         typer.echo(f"janelas novas: {novas}")
-        _processar(sessao, _criar_cliente())
+        falhas = _processar(sessao, _criar_cliente())
+    _encerrar(falhas)
 
 
 @app.command()
@@ -119,7 +141,8 @@ def atualizar(
             sessao, "atualizacao", hoje - timedelta(days=lookback), hoje, criterios.modalidades
         )
         typer.echo(f"janelas novas: {novas}")
-        _processar(sessao, _criar_cliente())
+        falhas = _processar(sessao, _criar_cliente())
+    _encerrar(falhas)
 
 
 @app.command()
@@ -127,16 +150,25 @@ def processar() -> None:
     """Coleta as janelas pendentes e registra os editais das páginas ainda não processadas."""
     configurar_logs()
     with _criar_sessao() as sessao:
-        _processar(sessao, _criar_cliente())
+        falhas = _processar(sessao, _criar_cliente())
+    _encerrar(falhas)
 
 
 @app.command()
 def auditar(
     endpoint: Annotated[str, typer.Option(help="publicacao ou atualizacao.")] = "publicacao",
-    dias: Annotated[int, typer.Option(min=1, help="Janela auditada, em dias.")] = 30,
+    dias: Annotated[
+        int | None,
+        typer.Option(min=1, help="Janela auditada, em dias (padrão: 30; atualizacao: 10)."),
+    ] = None,
     config: OpcaoConfig = ARQUIVO_CONFIG,
 ) -> None:
     """Confere se todos os dias e modalidades esperados foram coletados."""
+    if endpoint not in ("publicacao", "atualizacao"):
+        typer.echo(f"endpoint inválido: {endpoint!r}; use publicacao ou atualizacao", err=True)
+        raise typer.Exit(code=2)
+    if dias is None:
+        dias = 10 if endpoint == "atualizacao" else 30
     configurar_logs()
     criterios = carregar_criterios(config)
     hoje = _agora().date()

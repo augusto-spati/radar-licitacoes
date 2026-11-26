@@ -138,3 +138,65 @@ def test_filtrar_imprime_edital_aberto(fabrica: sessionmaker[Session], config_fi
     assert "perdas" in resultado.output
     assert "Leitura de hidr" in resultado.output
     assert "ponte" not in resultado.output
+
+
+def test_processar_isola_pagina_com_erro_e_sai_com_1(
+    fabrica: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with fabrica() as sessao:
+        sessao.add(
+            ColetaJanela(
+                endpoint="publicacao", data_ini=HOJE, data_fim=HOJE, modalidade=6,
+                status="concluida", paginas=3, registros=3,
+            )
+        )  # fmt: skip
+        sessao.flush()
+        janela_id = sessao.scalars(select(ColetaJanela.id)).one()
+        for numero in (1, 2, 3):
+            sessao.add(
+                PaginaBruta(
+                    janela_id=janela_id,
+                    numero_pagina=numero,
+                    conteudo={"data": [_registro(f"{numero}/2026")]},
+                    coletada_em=AGORA,
+                )
+            )
+        sessao.commit()
+    original = cli.registrar
+
+    def registrar_com_erro(sessao: Session, registros: list[dict[str, Any]]) -> Any:
+        if registros[0]["numeroControlePNCP"] == "2/2026":
+            raise RuntimeError("boom")
+        return original(sessao, registros)
+
+    monkeypatch.setattr(cli, "registrar", registrar_com_erro)
+    monkeypatch.setattr(cli, "_criar_cliente", lambda: como_cliente(ClienteFalso({})))
+
+    resultado = runner.invoke(cli.app, ["processar"])
+
+    assert resultado.exit_code == 1, resultado.output
+    with fabrica() as sessao:
+        pendentes = sessao.scalars(
+            select(PaginaBruta.numero_pagina).where(PaginaBruta.processada_em.is_(None))
+        ).all()
+    assert pendentes == [2]
+    assert _contar(fabrica, Edital) == 2
+
+
+def test_auditar_rejeita_endpoint_invalido(
+    fabrica: sessionmaker[Session], config_filtro: Path
+) -> None:
+    resultado = runner.invoke(
+        cli.app, ["auditar", "--endpoint", "xpto", "--config", str(config_filtro)]
+    )
+    assert resultado.exit_code == 2
+
+
+def test_auditar_atualizacao_usa_10_dias_por_padrao(
+    fabrica: sessionmaker[Session], config_filtro: Path
+) -> None:
+    resultado = runner.invoke(
+        cli.app, ["auditar", "--endpoint", "atualizacao", "--config", str(config_filtro)]
+    )
+    assert resultado.exit_code == 1
+    assert "esperadas: 22" in resultado.output  # 11 dias (hoje e 10 antes) x 2 modalidades
