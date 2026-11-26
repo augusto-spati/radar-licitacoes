@@ -21,6 +21,8 @@ from radar.coleta.retratos import (
     criar_http_educado,
     executar_retrato,
     ids_do_retrato,
+    marcar_retrato_falha,
+    trava_fonte,
     ultimo_retrato,
 )
 
@@ -43,7 +45,9 @@ __all__ = [
     "ids_do_retrato",
     "ler_paginas_nao_processadas",
     "marcar_processada",
+    "marcar_retrato_falha",
     "planejar_janelas",
+    "trava_fonte",
     "ultima_atualizacao",
     "ultimo_retrato",
 ]

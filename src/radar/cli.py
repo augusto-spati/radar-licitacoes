@@ -23,7 +23,9 @@ from radar.coleta import (
     ids_do_retrato,
     ler_paginas_nao_processadas,
     marcar_processada,
+    marcar_retrato_falha,
     planejar_janelas,
+    trava_fonte,
     ultimo_retrato,
 )
 from radar.coleta import (
@@ -92,31 +94,42 @@ def _escolher_fontes(opcao: str | None, disponiveis: list[str]) -> list[str]:
 
 def _rodar_retrato(sessao: Session, fonte: FonteRetrato) -> int:
     """Retrato de uma fonte; devolve 1 se falhou. Falha de uma fonte não para as outras."""
+    retrato_id: int | None = None
     try:
-        with _criar_cliente_retrato(fonte) as cliente:
-            resumo = executar_retrato(sessao, fonte, cliente, _agora())
-        if resumo.status == "ocupado":
-            typer.echo(f"retrato {fonte.nome}: já em andamento noutro processo")
-            return 0
-        if resumo.status != "concluido":
-            typer.echo(f"retrato {fonte.nome}: falha: {resumo.erro}")
-            return 1
-        # Fronteira coleta -> editais: gravar e reconciliar numa transação só.
-        vistos = ids_do_retrato(resumo)
-        resultado = registrar_normalizados(sessao, resumo.normalizados)
-        if vistos:
-            encerrados = reconciliar_retrato(sessao, fonte.nome, vistos, _agora())
-        else:
-            # Defesa extra: com `vistos` vazio a reconciliação encerraria a fonte inteira.
-            logger.warning(
-                "reconciliacao_ignorada",
-                extra={"fonte": fonte.nome, "retrato_id": resumo.retrato_id},
-            )
-            encerrados = 0
-        sessao.commit()
-    except Exception:  # Ctrl+C (BaseException) continua parando o processo
+        # O lock da fonte cobre o retrato e o registro: o ciclo inteiro não se sobrepõe.
+        with trava_fonte(sessao, fonte.nome) as obtida:
+            if not obtida:
+                logger.warning("retrato_em_andamento_noutro_processo", extra={"fonte": fonte.nome})
+                typer.echo(f"retrato {fonte.nome}: já em andamento noutro processo")
+                return 0
+            with _criar_cliente_retrato(fonte) as cliente:
+                resumo = executar_retrato(sessao, fonte, cliente, _agora(), trava_mantida=True)
+            retrato_id = resumo.retrato_id
+            if resumo.status != "concluido":
+                typer.echo(f"retrato {fonte.nome}: falha: {resumo.erro}")
+                return 1
+            # Fronteira coleta -> editais: gravar e reconciliar numa transação só.
+            vistos = ids_do_retrato(resumo)
+            resultado = registrar_normalizados(sessao, resumo.normalizados)
+            if vistos:
+                encerrados = reconciliar_retrato(sessao, fonte.nome, vistos, _agora())
+            else:
+                # Defesa extra: com `vistos` vazio a reconciliação encerraria a fonte inteira.
+                logger.warning(
+                    "reconciliacao_ignorada", extra={"fonte": fonte.nome, "retrato_id": retrato_id}
+                )
+                encerrados = 0
+            sessao.commit()
+    except Exception as erro:  # Ctrl+C (BaseException) continua parando o processo
         sessao.rollback()
         logger.exception("retrato_erro_registro", extra={"fonte": fonte.nome})
+        if retrato_id is not None:
+            # O retrato concluiu, mas os editais não foram gravados: para a auditoria, falhou.
+            try:
+                marcar_retrato_falha(sessao, retrato_id, f"registro: {erro!r}")
+            except Exception:
+                sessao.rollback()
+                logger.exception("retrato_erro_marcar_falha", extra={"retrato_id": retrato_id})
         typer.echo(f"retrato {fonte.nome}: erro inesperado (veja o log)")
         return 1
     logger.info(

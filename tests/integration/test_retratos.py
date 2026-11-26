@@ -241,6 +241,37 @@ def test_retrato_encolheu_loga(sessao: Session, caplog: pytest.LogCaptureFixture
     assert "retrato_encolheu" in [r.getMessage() for r in caplog.records]
 
 
+def test_retrato_encolheu_ignora_retrato_em_falha_como_base(
+    sessao: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    # concluido (10) -> falha (0 registros) -> concluido (4): a base é o 10, não o da falha.
+    fonte = FonteFalsa("sanepar", paginas=1)
+    ids = [f"OE-{n}/26" for n in range(10)]
+    executar_retrato(sessao, fonte, _cliente(_rotas("sanepar", _lista(*ids))), AGORA)
+    falha = executar_retrato(sessao, fonte, _cliente(_rotas("sanepar", httpx.Response(403))), AGORA)
+    assert falha.status == "falha"
+
+    with caplog.at_level(logging.WARNING):
+        resumo = executar_retrato(
+            sessao, fonte, _cliente(_rotas("sanepar", _lista(*ids[:4]))), AGORA
+        )
+
+    assert resumo.status == "concluido"
+    encolheu = [r for r in caplog.records if r.getMessage() == "retrato_encolheu"]
+    assert [getattr(r, "anterior", None) for r in encolheu] == [10]
+
+
+def test_minimo_conta_ids_distintos(sessao: Session) -> None:
+    # Seletor de id quebrado: três linhas, um id só.
+    fonte = FonteFalsa("sanepar", paginas=1, minimo_registros=2)
+    cliente = _cliente(_rotas("sanepar", _lista("OE-1/26", "OE-1/26", "OE-1/26")))
+
+    resumo = executar_retrato(sessao, fonte, cliente, AGORA)
+
+    assert resumo.status == "falha"
+    assert resumo.erro == "abaixo do minimo: 1 < 2"
+
+
 def test_retrato_ocupado_por_outro_processo_nao_roda(sessao: Session, engine: Engine) -> None:
     chamadas: list[str] = []
     fonte = FonteFalsa("sanepar", paginas=1)
@@ -340,6 +371,10 @@ def _pagina(**campos: Any) -> PaginaBruta:
         pytest.param(
             lambda j, r: _pagina(retrato_id=r, formato="xml", conteudo_texto="<a/>"),
             id="formato-desconhecido",
+        ),
+        pytest.param(
+            lambda j, r: _pagina(janela_id=j, formato="html", conteudo_texto="<a/>"),
+            id="janela-nao-json",
         ),
     ],
 )
@@ -463,7 +498,8 @@ def test_pagina_com_erro_e_falha_e_nao_reconcilia(
 ) -> None:
     # Review Focus 2: a página do meio dá erro; nada é gravado nem encerrado.
     _ja_abertos(fabrica, "sanepar", "OE-1/26", "OE-9/26")
-    rotas = _rotas("sanepar", _lista("OE-1/26"), httpx.Response(503), _lista("OE-3/26"))
+    # OE-5 é novo e já foi lido na página 1: não pode ser gravado.
+    rotas = _rotas("sanepar", _lista("OE-5/26"), httpx.Response(503), _lista("OE-3/26"))
     _registrar_fontes(monkeypatch, [FonteFalsa("sanepar", 3)], rotas)
 
     resultado = _atualizar(config_filtro, "sanepar")
@@ -530,6 +566,38 @@ def test_erro_inesperado_no_registro_e_isolado(
     assert resultado.exit_code == 1
     assert _situacoes(fabrica, "sanepar") == {"OE-9/26": "aberta"}
     assert _situacoes(fabrica, "compesa") == {"2026LC1": "aberta"}
+    with fabrica() as sessao:
+        sanepar = ultimo_retrato(sessao, "sanepar")
+        compesa = ultimo_retrato(sessao, "compesa")
+    assert sanepar is not None and sanepar.status == "falha"
+    assert sanepar.erro == "registro: RuntimeError('boom')"
+    assert compesa is not None and compesa.status == "concluido"
+
+
+def test_segunda_rodada_durante_o_registro_e_ocupado(
+    fabrica: sessionmaker[Session], config_filtro: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # O lock da fonte vale até o fim do registro, não só durante a leitura das páginas.
+    fonte = FonteFalsa("sanepar", 1)
+    _registrar_fontes(monkeypatch, [fonte], _rotas("sanepar", _lista("OE-1/26")))
+    original = cli.registrar_normalizados
+    concorrentes: list[str] = []
+
+    def registrar_com_concorrente(sessao: Session, registros: list[dict[str, Any]]) -> Any:
+        with fabrica() as outra:
+            cliente = _cliente(_rotas("sanepar", _lista("OE-2/26")))
+            concorrentes.append(executar_retrato(outra, fonte, cliente, AGORA).status)
+        return original(sessao, registros)
+
+    monkeypatch.setattr(cli, "registrar_normalizados", registrar_com_concorrente)
+
+    resultado = _atualizar(config_filtro, "sanepar")
+
+    assert resultado.exit_code == 0, resultado.output
+    assert concorrentes == ["ocupado"]
+    assert _situacoes(fabrica, "sanepar") == {"OE-1/26": "aberta"}
+    with fabrica() as sessao:
+        assert len(_retratos(sessao, "sanepar")) == 1
 
 
 def test_fontes_desconhecida_sai_com_2(

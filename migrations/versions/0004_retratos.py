@@ -58,6 +58,10 @@ def upgrade() -> None:
     op.create_check_constraint(
         "ck_pagina_bruta_formato", "pagina_bruta", "formato IN ('json', 'html', 'js')"
     )
+    # Página de janela é sempre JSON do PNCP.
+    op.create_check_constraint(
+        "ck_pagina_bruta_janela_json", "pagina_bruta", "janela_id IS NULL OR formato = 'json'"
+    )
     op.create_check_constraint(
         "ck_pagina_bruta_conteudo",
         "pagina_bruta",
@@ -70,6 +74,7 @@ def downgrade() -> None:
     # O esquema 0003 só conhece páginas de janela: as de retrato são apagadas.
     op.execute("DELETE FROM pagina_bruta WHERE retrato_id IS NOT NULL")
     op.drop_constraint("ck_pagina_bruta_conteudo", "pagina_bruta", type_="check")
+    op.drop_constraint("ck_pagina_bruta_janela_json", "pagina_bruta", type_="check")
     op.drop_constraint("ck_pagina_bruta_formato", "pagina_bruta", type_="check")
     op.drop_constraint("ck_pagina_bruta_origem", "pagina_bruta", type_="check")
     op.drop_constraint("uq_pagina_bruta_retrato_numero", "pagina_bruta", type_="unique")

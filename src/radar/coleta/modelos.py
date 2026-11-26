@@ -72,6 +72,9 @@ class PaginaBruta(Base):
         ),
         CheckConstraint("formato IN ('json', 'html', 'js')", name="ck_pagina_bruta_formato"),
         CheckConstraint(
+            "janela_id IS NULL OR formato = 'json'", name="ck_pagina_bruta_janela_json"
+        ),
+        CheckConstraint(
             "(formato = 'json' AND conteudo IS NOT NULL)"
             " OR (formato IN ('html', 'js') AND conteudo_texto IS NOT NULL)",
             name="ck_pagina_bruta_conteudo",

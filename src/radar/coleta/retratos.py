@@ -8,7 +8,8 @@ Qualquer página em falha, ou menos registros que o mínimo da fonte, deixa o re
 Um único retrato por fonte de cada vez: um advisory lock por fonte (chave dupla
 `CHAVE_RETRATOS`, `chave_da_fonte(nome)`), separado do lock do coletor do PNCP. Assim uma
 rodada agendada e uma manual não se sobrepõem na mesma fonte, mas fontes diferentes (e o
-PNCP) não se bloqueiam.
+PNCP) não se bloqueiam. A cli segura o lock (`trava_fonte`) durante o retrato e o registro
+dos editais, então o ciclo inteiro da fonte é exclusivo.
 """
 
 import json
@@ -179,7 +180,8 @@ def ultimo_retrato(sessao: Session, fonte: str) -> InfoRetrato | None:
 
 
 @contextmanager
-def _trava(sessao: Session, fonte: str) -> Iterator[bool]:
+def trava_fonte(sessao: Session, fonte: str) -> Iterator[bool]:
+    """Advisory lock da fonte; rende True se obtido. Não espera: False = outro processo."""
     bind = sessao.get_bind()
     # Conexão dedicada: o lock é da conexão, e a sessão devolve a dela ao pool a cada commit.
     conexao = bind.connect() if isinstance(bind, Engine) else bind
@@ -202,14 +204,19 @@ def executar_retrato(
     cliente: ClienteEducado,
     agora: datetime,
     relogio: Callable[[], datetime] | None = None,
+    trava_mantida: bool = False,
 ) -> ResumoRetrato:
     """Lê a lista inteira da fonte e devolve o resumo. Não grava editais (isso é da cli).
 
+    Com `trava_mantida=True` quem chama já segura `trava_fonte` (a cli segura durante o
+    retrato e o registro, para que o ciclo inteiro da fonte não se sobreponha).
     `agora` é o carimbo `iniciado_em` (o que a auditoria compara); `concluido_em` e
     `coletada_em` usam o relógio real (`relogio`, injetável nos testes).
     """
     relogio = relogio or _agora_real
-    with _trava(sessao, fonte.nome) as obtida:
+    if trava_mantida:
+        return _executar(sessao, fonte, cliente, agora, relogio)
+    with trava_fonte(sessao, fonte.nome) as obtida:
         if not obtida:
             logger.warning("retrato_em_andamento_noutro_processo", extra={"fonte": fonte.nome})
             return ResumoRetrato(retrato_id=None, status="ocupado")
@@ -259,9 +266,26 @@ def _executar(
         return _falhar(sessao, retrato, repr(erro), inicio)
 
     registros = len(normalizados)
-    if registros < fonte.minimo_registros:
+    ids_listados = {
+        str(n["id_na_fonte"]) for n in normalizados if n.get("id_na_fonte") not in (None, "")
+    }
+    # O mínimo vale para os ids distintos: pega também um seletor de id quebrado (todas as
+    # linhas sem id, ou com o mesmo id), não só uma lista vazia.
+    if len(ids_listados) < fonte.minimo_registros:
+        logger.warning(
+            "retrato_abaixo_do_minimo",
+            extra={
+                **dados,
+                "registros": registros,
+                "ids_listados": len(ids_listados),
+                "minimo": fonte.minimo_registros,
+            },
+        )
         return _falhar(
-            sessao, retrato, f"abaixo do minimo: {registros} < {fonte.minimo_registros}", inicio
+            sessao,
+            retrato,
+            f"abaixo do minimo: {len(ids_listados)} < {fonte.minimo_registros}",
+            inicio,
         )
     if anterior is not None and registros < anterior * FRACAO_ENCOLHEU:
         logger.warning(
@@ -291,10 +315,18 @@ def _executar(
         status="concluido",
         registros=registros,
         normalizados=normalizados,
-        ids_listados={
-            str(n["id_na_fonte"]) for n in normalizados if n.get("id_na_fonte") not in (None, "")
-        },
+        ids_listados=ids_listados,
     )
+
+
+def marcar_retrato_falha(sessao: Session, retrato_id: int, erro: str) -> None:
+    """Rebaixa um retrato para `falha` (o registro dos editais falhou depois). Com commit."""
+    sessao.execute(
+        update(ColetaRetrato)
+        .where(ColetaRetrato.id == retrato_id)
+        .values(status="falha", erro=erro[:LIMITE_ERRO])
+    )
+    sessao.commit()
 
 
 def _gravar_pagina(
