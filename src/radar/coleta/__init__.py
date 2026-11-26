@@ -25,6 +25,7 @@ from radar.coleta.retratos import (
     trava_fonte,
     ultimo_retrato,
 )
+from radar.coleta.sanepar import FonteSanepar
 
 __all__ = [
     "Auditoria",
@@ -33,6 +34,7 @@ __all__ = [
     "ErroFonte",
     "ErroPNCP",
     "FonteRetrato",
+    "FonteSanepar",
     "InfoRetrato",
     "PaginaColetada",
     "ResumoColeta",

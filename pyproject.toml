@@ -15,6 +15,7 @@ dependencies = [
     "typer>=0.12",
     "fastapi>=0.165.0",
     "uvicorn>=0.54.0",
+    "selectolax>=1.0.2",
 ]
 
 [project.scripts]
@@ -77,6 +78,7 @@ source_modules = ["radar.api", "radar.cli"]
 forbidden_modules = [
     "radar.coleta.janelas",
     "radar.coleta.pncp",
+    "radar.coleta.sanepar",
     "radar.coleta.modelos",
     "radar.editais.filtro",
     "radar.editais.registro",

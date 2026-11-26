@@ -708,9 +708,10 @@ def test_auditar_sai_com_1_quando_fonte_nunca_rodou(
 
 
 def test_auditar_sem_fontes_de_retrato_nao_muda(
-    fabrica: sessionmaker[Session], config_filtro: Path
+    fabrica: sessionmaker[Session], config_filtro: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _cobrir_pncp(fabrica)
+    monkeypatch.setattr(cli, "_fontes_retrato", lambda: [])
 
     resultado = _auditar(config_filtro)
 

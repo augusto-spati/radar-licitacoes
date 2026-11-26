@@ -16,6 +16,7 @@ from radar.coleta import (
     ClienteEducado,
     ClientePNCP,
     FonteRetrato,
+    FonteSanepar,
     coletar_pendentes,
     criar_http,
     criar_http_educado,
@@ -68,8 +69,8 @@ def _criar_cliente() -> ClientePNCP:
 
 
 def _fontes_retrato() -> list[FonteRetrato]:
-    """Fontes lidas por retrato, na ordem em que rodam (Sanepar e Compesa entram aqui)."""
-    return []
+    """Fontes lidas por retrato, na ordem em que rodam (a Compesa entra aqui)."""
+    return [FonteSanepar()]
 
 
 def _criar_cliente_retrato(fonte: FonteRetrato) -> ClienteEducado:
