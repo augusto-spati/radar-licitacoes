@@ -1,0 +1,17 @@
+{
+  "threshold": 0,
+  "minTokens": 50,
+  "path": ["."],
+  "format": ["typescript", "tsx", "javascript", "jsx"],
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/playwright-report/**",
+    "**/test-results/**",
+    "**/e2e/__screenshots__/**",
+    "**/src/dados/api.d.ts",
+    "**/*.json"
+  ],
+  "reporters": ["console"],
+  "gitignore": true
+}

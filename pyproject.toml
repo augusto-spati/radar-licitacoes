@@ -1,0 +1,91 @@
+[project]
+name = "radar-licitacoes"
+version = "0.1.0"
+description = "Radar de licitações: coleta editais do PNCP e filtra por serviço e UF"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.2",
+    "alembic>=1.13",
+    "httpx>=0.27",
+    "tenacity>=9.0",
+    "pydantic>=2.8",
+    "pydantic-settings>=2.4",
+    "typer>=0.12",
+    "fastapi>=0.165.0",
+    "uvicorn>=0.54.0",
+]
+
+[project.scripts]
+radar = "radar.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "testcontainers[postgres]>=4.8",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "import-linter>=2.0",
+    "httpx2>=2.16.2",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/radar"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-m 'not rede'"
+markers = ["rede: acessa a rede real (PNCP); fora do CI"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+strict = true
+mypy_path = "src"
+packages = ["radar"]
+
+[tool.importlinter]
+root_package = "radar"
+
+[[tool.importlinter.contracts]]
+name = "Módulos de domínio são independentes entre si"
+type = "independence"
+modules = ["radar.coleta", "radar.editais", "radar.analise"]
+
+[[tool.importlinter.contracts]]
+name = "Nenhum módulo importa a porta de entrada"
+type = "forbidden"
+source_modules = ["radar.coleta", "radar.editais", "radar.analise", "radar.comum"]
+forbidden_modules = ["radar.cli", "radar.api"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "api e cli importam só a raiz dos pacotes de domínio"
+type = "forbidden"
+source_modules = ["radar.api", "radar.cli"]
+forbidden_modules = [
+    "radar.coleta.janelas",
+    "radar.coleta.pncp",
+    "radar.coleta.modelos",
+    "radar.editais.filtro",
+    "radar.editais.registro",
+    "radar.editais.modelos",
+]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "comum não importa nenhum módulo"
+type = "forbidden"
+source_modules = ["radar.comum"]
+forbidden_modules = ["radar.coleta", "radar.editais", "radar.analise"]

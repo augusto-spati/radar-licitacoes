@@ -1,0 +1,53 @@
+{
+  "amparoLegal": {
+    "codigo": 1,
+    "descricao": "pregão: modalidade de licitação obrigatória para aquisição de bens e serviços comuns",
+    "nome": "Lei 14.133/2021, Art. 28, I"
+  },
+  "anoCompra": 2025,
+  "dataAberturaProposta": "2026-11-26T08:00:00",
+  "dataAtualizacao": "2026-11-26T07:00:51",
+  "dataAtualizacaoGlobal": "2026-11-26T07:00:52",
+  "dataEncerramentoProposta": "2026-12-11T10:00:00",
+  "dataInclusao": "2025-09-15T07:31:12",
+  "dataPublicacaoPncp": "2025-09-15T07:31:12",
+  "emendaParlamentar": null,
+  "fontesOrcamentarias": [],
+  "informacaoComplementar": "Tendo em vista os obstáculos durante a inserção dos itens no catálogo de materiais e serviços do Sistema SIASGNET/COMPRASNET, as especificações constantes no termo de referência prevalecerão sobre as informações incluídas no referido Sistema, sendo de imprescindível observância para a elaboração das propostas de preços. Para as respostas de esclarecimentos e impugnações deste edital acesse o link: https://cnetmobile.estaleiro.serpro.gov.br/comprasnet-web/public/landing?destino=quadro-informativo&compra=92698205900342025",
+  "justificativaPresencial": null,
+  "linkProcessoEletronico": null,
+  "linkSistemaOrigem": "https://cnetmobile.estaleiro.serpro.gov.br/comprasnet-web/public/landing?destino=acompanhamento-compra&compra=92698205900342025",
+  "modalidadeId": 6,
+  "modalidadeNome": "Pregão - Eletrônico",
+  "modoDisputaId": 3,
+  "modoDisputaNome": "Aberto-Fechado",
+  "numeroCompra": "90034",
+  "numeroControlePNCP": "13127340000120-1-000036/2025",
+  "objetoCompra": "Contratação de empresa para prestação de serviços de locação de ônibus convencional, com motorista e combustível inclusos, destinado ao transporte dos servidores lotados na Unidade de Brejo/MA",
+  "orgaoEntidade": {
+    "cnpj": "13127340000120",
+    "esferaId": "E",
+    "poderId": "E",
+    "razaoSocial": " SECRETARIA DE ESTADO DE ADMINISTRACAO PENITENCIARIA - SEAP"
+  },
+  "orgaoSubRogado": null,
+  "processo": "2024.560101.24229",
+  "sequencialCompra": 36,
+  "situacaoCompraId": 1,
+  "situacaoCompraNome": "Divulgada no PNCP",
+  "srp": false,
+  "tipoInstrumentoConvocatorioCodigo": 1,
+  "tipoInstrumentoConvocatorioNome": "Edital",
+  "unidadeOrgao": {
+    "codigoIbge": "2111300",
+    "codigoUnidade": "926982",
+    "municipioNome": "São Luís",
+    "nomeUnidade": "SEC  ESTADO DE ADM PENITENCIÁRIA DO MARANHÃO",
+    "ufNome": "Maranhão",
+    "ufSigla": "MA"
+  },
+  "unidadeSubRogada": null,
+  "usuarioNome": "Compras.gov.br",
+  "valorTotalEstimado": 1369661.52,
+  "valorTotalHomologado": null
+}

@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  qualidade:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy src
+      - run: uv run lint-imports
+      - run: uv run pytest -v
+
+  front:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run duplicacao
+      - run: npm run contrato:verificar
+      # O api.d.ts commitado tem de ser o gerado do openapi.json commitado.
+      - run: npm run contrato && git diff --exit-code src/dados/api.d.ts
+      - run: npx tsc --noEmit
+      - run: npm test
+      - run: npm run build
+
+  contrato-guardado:
+    # Arquivos que guardam o contrato do front só mudam com o trailer
+    # "Contrato-Front: aprovado" em algum commit do intervalo (push ou PR).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Guarda do contrato do front
+        env:
+          EVENTO: ${{ github.event_name }}
+          BASE_PR: ${{ github.event.pull_request.base.sha }}
+          CABECA_PR: ${{ github.event.pull_request.head.sha }}
+          ANTES: ${{ github.event.before }}
+          BRANCH_PADRAO: ${{ github.event.repository.default_branch }}
+        run: node frontend/scripts/contrato-guardado.mjs
+
+  e2e:
+    # Os screenshots de referência são do Linux: o Playwright roda no container
+    # oficial, com a mesma versão do pacote @playwright/test (1.65.1).
+    runs-on: ubuntu-latest
+    container: mcr.microsoft.com/playwright:v1.65.1-noble
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
