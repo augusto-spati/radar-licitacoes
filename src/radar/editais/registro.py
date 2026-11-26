@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
@@ -16,15 +16,13 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.expression import ColumnClause
 
-from radar.editais.modelos import Edital, Fonte
+from radar.editais.modelos import Edital, Fonte, Situacao
 
 logger = logging.getLogger(__name__)
 
 FUSO = ZoneInfo("America/Sao_Paulo")
 # Linhas por comando: ~22 colunas x 1000 fica bem abaixo do limite de 65535 parâmetros.
 _LOTE = 1000
-
-Situacao = Literal["aberta", "em_julgamento", "encerrada", "outra"]
 
 # PNCP: 1 Divulgada, 2 Revogada, 3 Anulada, 4 Suspensa. Código desconhecido vira "outra".
 _SITUACAO_PNCP: dict[int, Situacao] = {1: "aberta", 2: "encerrada", 3: "encerrada", 4: "outra"}

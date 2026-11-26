@@ -24,13 +24,14 @@ const endereco = () => screen.getByRole('status', {name: 'endereço'}).textConte
 describe('Lista', () => {
   it('lista_mostra_cartoes_ordenados', async () => {
     const primeiro = edital({
-      numero_controle_pncp: '13127340000120-1-000036/2025',
       objeto: 'Rede de esgoto',
       data_encerramento_proposta: '2026-11-27T08:00:00',
       linhas: ['redes', 'perdas'],
     });
     const segundo = edital({
-      numero_controle_pncp: '46189726000115-1-000075/2026',
+      fonte: 'compesa',
+      id_publico: 'compesa~2026LC213CEL-1',
+      modalidade_nome: 'Pregão - Eletrônico',
       objeto: 'Controle de perdas',
       municipio: null,
       uf: null,
@@ -50,13 +51,17 @@ describe('Lista', () => {
     expect(a.getAttribute('aria-label')).toContain('Rede de esgoto');
     expect(b.getAttribute('aria-label')).toContain('Controle de perdas');
     // O id tem barra: vai num segmento só, codificado.
-    expect(a.getAttribute('href')).toBe('/edital/13127340000120-1-000036%2F2025');
+    expect(a.getAttribute('href')).toBe('/edital/pncp~13127340000120-1-000036%2F2025');
+    expect(b.getAttribute('href')).toBe('/edital/compesa~2026LC213CEL-1');
 
     expect(screen.getByText('encerra amanhã · 27/11')).toBeTruthy();
     expect(screen.getByText('encerra em 14 dias · 10/12')).toBeTruthy();
     expect(screen.getByText('Holambra/SP')).toBeTruthy();
-    expect(screen.getByText('Concorrência eletrônica')).toBeTruthy();
-    expect(screen.getByText('Pregão eletrônico')).toBeTruthy();
+    expect(screen.getByText('Concorrência - Eletrônica')).toBeTruthy();
+    expect(screen.getByText('Pregão - Eletrônico')).toBeTruthy();
+    // O selo diz de que fonte é cada edital.
+    expect(within(a.parentElement as HTMLElement).getByText('PNCP')).toBeTruthy();
+    expect(within(b.parentElement as HTMLElement).getByText('Compesa')).toBeTruthy();
     expect(screen.getByText('R$ 845 mil')).toBeTruthy();
     // Tokens das linhas dentro do cartão (os filtros também dizem Redes/Perdas).
     const cartaoA = within(a.parentElement as HTMLElement);
@@ -74,7 +79,7 @@ describe('Lista', () => {
     await screen.findByText('Execução de rede de esgoto no bairro Centro');
     expect(listar).toHaveBeenLastCalledWith({linha: 'redes', ufs: ['SP', 'PR']});
     expect(cartoes()[0].getAttribute('href')).toBe(
-      '/edital/13127340000120-1-000036%2F2025?linha=redes&uf=SP&uf=PR',
+      '/edital/pncp~13127340000120-1-000036%2F2025?linha=redes&uf=SP&uf=PR',
     );
   });
 

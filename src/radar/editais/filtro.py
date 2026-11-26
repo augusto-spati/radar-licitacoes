@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import ColumnElement, Select, and_, false, func, or_, select
 from sqlalchemy.orm import Session
 
-from radar.editais.modelos import Edital, Fonte
+from radar.editais.modelos import Edital, Fonte, Situacao
 
 FUSO = ZoneInfo("America/Sao_Paulo")
 
@@ -63,6 +63,7 @@ class EditalResumo:
 class EditalDetalhe(EditalResumo):
     orgao_cnpj: str | None
     situacao_nome: str
+    situacao_normalizada: Situacao
     data_publicacao: datetime | None
     data_abertura_proposta: datetime | None
 
@@ -165,6 +166,7 @@ def filtrar(
 _COLUNAS_DETALHE: list[Any] = [
     Edital.orgao_cnpj,
     Edital.situacao_original.label("situacao_nome"),
+    Edital.situacao_normalizada,
     Edital.data_publicacao,
     Edital.data_abertura_proposta,
 ]

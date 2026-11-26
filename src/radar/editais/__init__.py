@@ -11,7 +11,7 @@ from radar.editais.filtro import (
     obter_edital,
     separar_id_publico,
 )
-from radar.editais.modelos import Fonte
+from radar.editais.modelos import Fonte, Situacao
 from radar.editais.registro import (
     ResultadoRegistro,
     reconciliar_retrato,
@@ -25,6 +25,7 @@ __all__ = [
     "EditalResumo",
     "Fonte",
     "ResultadoRegistro",
+    "Situacao",
     "carregar_criterios",
     "filtrar",
     "id_publico",

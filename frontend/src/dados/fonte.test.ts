@@ -1,7 +1,8 @@
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import {ErroFonte, fonteApi} from './fonteApi';
 import {criarFonteExemplo} from './fonteExemplo';
-import type {Linha} from './tipos';
+import {edital} from '../testes/apoio';
+import type {EditalDetalhe, Linha} from './tipos';
 
 const agora = new Date('2026-11-26T12:00:00-03:00');
 const fonteExemplo = criarFonteExemplo(() => agora);
@@ -42,11 +43,50 @@ describe('fonteExemplo', () => {
     const lista = await fonteExemplo.listar({});
     expect(lista.atualizado_em).toBe((await fonteExemplo.status()).atualizado_em);
   });
-  it('obter acha pelo número (com barra) e devolve null se não existe', async () => {
+  it('obter acha pelo id público (com barra) e devolve null se não existe', async () => {
     const {editais} = await fonteExemplo.listar({});
-    const id = editais[0].numero_controle_pncp;
-    expect((await fonteExemplo.obter(id))?.numero_controle_pncp).toBe(id);
-    expect(await fonteExemplo.obter('0-0-0/0000')).toBeNull();
+    const id = editais[0].id_publico;
+    expect((await fonteExemplo.obter(id))?.id_publico).toBe(id);
+    expect(await fonteExemplo.obter('pncp~0-0-0/0000')).toBeNull();
+  });
+});
+
+describe('fonteExemplo com as três fontes', () => {
+  const pronto = (fonte: EditalDetalhe['fonte'], id: string, parcial: Partial<EditalDetalhe> = {}) =>
+    edital({
+      fonte,
+      id_publico: `${fonte}~${id}`,
+      data_encerramento_proposta: '2026-12-10T08:00:00',
+      ...parcial,
+    });
+  const dados = {
+    atualizado_em: null,
+    editais: [
+      pronto('pncp', '1-1-1/2026'),
+      pronto('sanepar', 'OE-345/26'),
+      pronto('compesa', '2026LC213CEL-1'),
+      pronto('sanepar', 'OE-1/26', {situacao_normalizada: 'encerrada'}),
+      pronto('compesa', 'JULG-1', {situacao_normalizada: 'em_julgamento'}),
+      pronto('sanepar', 'OE-2/26', {data_encerramento_proposta: '2026-11-01T08:00:00'}),
+      pronto('compesa', 'SEM-PRAZO', {data_encerramento_proposta: null}),
+    ],
+  };
+  const fonte = criarFonteExemplo(() => agora, dados);
+
+  it('aberto = situação aberta e prazo futuro, nas três fontes', async () => {
+    const {editais} = await fonte.listar({});
+    expect(editais.map(e => e.id_publico)).toEqual([
+      'pncp~1-1-1/2026',
+      'sanepar~OE-345/26',
+      'compesa~2026LC213CEL-1',
+    ]);
+  });
+  it('com "todos" traz também os que não estão abertos', async () => {
+    expect((await fonte.listar({todos: true})).editais).toHaveLength(7);
+  });
+  it('obter acha o edital da Sanepar pelo id público', async () => {
+    expect((await fonte.obter('sanepar~OE-345/26'))?.fonte).toBe('sanepar');
+    expect(await fonte.obter('OE-345/26')).toBeNull();
   });
 });
 
@@ -62,12 +102,17 @@ describe('fonteApi', () => {
 
   it('obter com 404 devolve null', async () => {
     simular(resposta({detail: 'edital não encontrado'}, 404));
-    expect(await fonteApi.obter('1-1-1/2025')).toBeNull();
+    expect(await fonteApi.obter('pncp~1-1-1/2025')).toBeNull();
   });
   it('obter mantém a barra do id como separador de caminho', async () => {
-    const mock = simular(resposta({numero_controle_pncp: '13127340000120-1-000036/2025'}));
-    await fonteApi.obter('13127340000120-1-000036/2025');
-    expect(mock).toHaveBeenCalledWith('/api/editais/13127340000120-1-000036/2025');
+    const mock = simular(resposta(edital()));
+    await fonteApi.obter('pncp~13127340000120-1-000036/2025');
+    expect(mock).toHaveBeenCalledWith('/api/editais/pncp~13127340000120-1-000036/2025');
+  });
+  it('obter da Sanepar monta fonte~id com a barra preservada', async () => {
+    const mock = simular(resposta(edital()));
+    await fonteApi.obter('sanepar~OE-345/26');
+    expect(mock).toHaveBeenCalledWith('/api/editais/sanepar~OE-345/26');
   });
   it('obter codifica caracteres especiais dentro de cada trecho', async () => {
     const mock = simular(resposta({}));
@@ -76,7 +121,7 @@ describe('fonteApi', () => {
   });
   it('outros status viram ErroFonte com o status', async () => {
     simular(resposta({detail: 'x'}, 500));
-    const erro = await fonteApi.obter('1-1-1/2025').catch((e: unknown) => e);
+    const erro = await fonteApi.obter('pncp~1-1-1/2025').catch((e: unknown) => e);
     expect(erro).toBeInstanceOf(ErroFonte);
     expect((erro as ErroFonte).status).toBe(500);
   });

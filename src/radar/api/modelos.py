@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
 
-from radar.editais import EditalDetalhe, EditalResumo, Fonte
+from radar.editais import EditalDetalhe, EditalResumo, Fonte, Situacao
 
 FUSO = ZoneInfo("America/Sao_Paulo")
 
@@ -29,6 +29,7 @@ class EditalResumoOut(BaseModel):
 class EditalDetalheOut(EditalResumoOut):
     orgao_cnpj: str | None
     situacao_nome: str
+    situacao_normalizada: Situacao
     data_publicacao: str | None
     data_abertura_proposta: str | None
 
@@ -104,6 +105,7 @@ def detalhe_out(edital: EditalDetalhe) -> EditalDetalheOut:
         **resumo_out(edital).model_dump(),
         orgao_cnpj=edital.orgao_cnpj,
         situacao_nome=edital.situacao_nome,
+        situacao_normalizada=edital.situacao_normalizada,
         data_publicacao=_iso(edital.data_publicacao),
         data_abertura_proposta=_iso(edital.data_abertura_proposta),
     )

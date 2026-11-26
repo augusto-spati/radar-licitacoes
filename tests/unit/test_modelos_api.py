@@ -28,6 +28,7 @@ def _edital(
         linhas=["perdas"],
         orgao_cnpj="13127340000120",
         situacao_nome="Divulgada no PNCP",
+        situacao_normalizada="aberta",
         data_publicacao=datetime(2026, 11, 20, 10, 16),
         data_abertura_proposta=None,
     )
@@ -76,6 +77,10 @@ def test_resumo_traz_fonte_e_id_publico() -> None:
     saida = resumo_out(_edital(None, fonte="sanepar", id_na_fonte="OE-345/26"))
 
     assert (saida.fonte, saida.id_publico) == ("sanepar", "sanepar~OE-345/26")
+
+
+def test_detalhe_traz_situacao_normalizada() -> None:
+    assert detalhe_out(_edital(None)).situacao_normalizada == "aberta"
 
 
 @pytest.mark.parametrize(

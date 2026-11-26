@@ -181,6 +181,7 @@ def test_detalhe_com_barra_no_id(cliente: TestClient, sessao: Session) -> None:
     assert set(corpo["linhas"]) == {"perdas"}
     assert corpo["orgao_cnpj"]
     assert corpo["situacao_nome"]
+    assert corpo["situacao_normalizada"] == "aberta"
     assert corpo["data_publicacao"]
     assert "data_abertura_proposta" in corpo
 

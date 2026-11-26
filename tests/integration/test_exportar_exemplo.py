@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-import pytest
 from sqlalchemy.orm import Session
 
 from radar.api.exemplo import exportar_exemplo
@@ -30,9 +29,6 @@ def _registro(numero: str, objeto: str, encerramento: str) -> dict[str, Any]:
     return registro
 
 
-@pytest.mark.xfail(
-    strict=True, reason="exemplo.json é regerado no formato multi-fonte na Task 2 da etapa 3"
-)
 def test_exemplo_valida_contra_modelos() -> None:
     caminho = RAIZ / "frontend" / "src" / "dados" / "exemplo.json"
     dados = json.loads(caminho.read_text(encoding="utf-8"))

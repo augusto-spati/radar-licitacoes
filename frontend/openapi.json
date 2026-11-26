@@ -110,6 +110,16 @@
             "title": "Situacao Nome",
             "type": "string"
           },
+          "situacao_normalizada": {
+            "enum": [
+              "aberta",
+              "em_julgamento",
+              "encerrada",
+              "outra"
+            ],
+            "title": "Situacao Normalizada",
+            "type": "string"
+          },
           "uf": {
             "anyOf": [
               {
@@ -148,6 +158,7 @@
           "linhas",
           "orgao_cnpj",
           "situacao_nome",
+          "situacao_normalizada",
           "data_publicacao",
           "data_abertura_proposta"
         ],

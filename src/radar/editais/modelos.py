@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal, get_args
 
 from sqlalchemy import CHAR, CheckConstraint, Computed, DateTime, Index, Integer, Numeric, Text
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
@@ -18,7 +18,8 @@ class Fonte(StrEnum):
     compesa = "compesa"
 
 
-SITUACOES = ("aberta", "em_julgamento", "encerrada", "outra")
+Situacao = Literal["aberta", "em_julgamento", "encerrada", "outra"]
+SITUACOES = get_args(Situacao)
 
 
 def _lista_sql(valores: list[str] | tuple[str, ...]) -> str:
