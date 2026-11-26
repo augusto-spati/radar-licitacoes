@@ -24,7 +24,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal, Protocol, cast
 
 import httpx
-from sqlalchemy import Engine, delete, desc, func, select, update
+from sqlalchemy import Engine, delete, desc, func, literal, select, tuple_, update
 from sqlalchemy.orm import Session
 
 from radar.coleta.modelos import ColetaRetrato, PaginaBruta
@@ -347,6 +347,54 @@ def _reconstruir(pagina: PaginaBruta) -> PaginaColetada:
     else:
         texto = pagina.conteudo_texto or ""
     return PaginaColetada(url=pagina.url or "", formato=formato, texto=texto)
+
+
+@dataclass(frozen=True)
+class EstadoRetrato:
+    id: int
+    fonte: str
+    status: str
+    iniciado_em: datetime
+    processado_em: datetime | None
+
+
+def estado_retrato(sessao: Session, retrato_id: int) -> EstadoRetrato | None:
+    """O que o consumidor precisa saber do retrato (None se o id não existe)."""
+    retrato = sessao.get(ColetaRetrato, retrato_id, populate_existing=True)
+    if retrato is None:
+        return None
+    return EstadoRetrato(
+        id=retrato.id,
+        fonte=retrato.fonte,
+        status=retrato.status,
+        iniciado_em=retrato.iniciado_em,
+        processado_em=retrato.processado_em,
+    )
+
+
+def ha_retrato_mais_novo_processado(sessao: Session, retrato: EstadoRetrato) -> bool:
+    """Existe retrato da mesma fonte, mais novo e já processado? Mesma ordem de `limpar_brutos`."""
+    mais_novo = sessao.scalar(
+        select(ColetaRetrato.id)
+        .where(
+            ColetaRetrato.fonte == retrato.fonte,
+            ColetaRetrato.processado_em.is_not(None),
+            tuple_(ColetaRetrato.iniciado_em, ColetaRetrato.id)
+            > tuple_(literal(retrato.iniciado_em), literal(retrato.id)),
+        )
+        .limit(1)
+    )
+    return mais_novo is not None
+
+
+def marcar_retrato_processado(sessao: Session, retrato_id: int, quando: datetime) -> None:
+    """`processado_em` no retrato e `processada_em` nas páginas dele. Sem commit."""
+    sessao.execute(
+        update(ColetaRetrato).where(ColetaRetrato.id == retrato_id).values(processado_em=quando)
+    )
+    sessao.execute(
+        update(PaginaBruta).where(PaginaBruta.retrato_id == retrato_id).values(processada_em=quando)
+    )
 
 
 def marcar_retrato_falha(sessao: Session, retrato_id: int, erro: str) -> None:

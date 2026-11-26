@@ -4,6 +4,7 @@ from radar.comum.fila import Fila, FilaSQS, Mensagem, ResultadoEnvio, de_corpo, 
 from radar.comum.logs import configurar_logs
 from radar.comum.outbox import Outbox, TipoMensagem, enfileirar
 from radar.comum.relay import ResumoPublicacao, limpar_outbox, publicar_outbox
+from radar.comum.segredos import garantir_url_do_banco
 
 __all__ = [
     "Base",
@@ -20,6 +21,7 @@ __all__ = [
     "de_corpo",
     "enfileirar",
     "fabrica_sessao",
+    "garantir_url_do_banco",
     "limpar_outbox",
     "obter_config",
     "para_corpo",

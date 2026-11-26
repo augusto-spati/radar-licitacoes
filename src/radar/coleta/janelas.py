@@ -163,6 +163,31 @@ def ler_paginas_nao_processadas(
     return [(pagina_id, (conteudo or {}).get("data") or []) for pagina_id, conteudo in linhas]
 
 
+@dataclass(frozen=True)
+class PaginaPNCP:
+    processada: bool
+    registros: list[dict[str, Any]]
+
+
+def ler_pagina_para_processar(sessao: Session, pagina_id: int) -> PaginaPNCP | None:
+    """A página do PNCP, travada (`FOR UPDATE`) até o commit; None se não existe.
+
+    A trava serializa duas entregas da mesma mensagem: a segunda espera a primeira commitar
+    e então vê `processada`.
+    """
+    linha = sessao.execute(
+        select(PaginaBruta.processada_em, PaginaBruta.conteudo)
+        .where(PaginaBruta.id == pagina_id, PaginaBruta.janela_id.is_not(None))
+        .with_for_update()
+    ).first()
+    if linha is None:
+        return None
+    processada_em, conteudo = linha
+    return PaginaPNCP(
+        processada=processada_em is not None, registros=(conteudo or {}).get("data") or []
+    )
+
+
 def marcar_processada(sessao: Session, pagina_id: int) -> None:
     sessao.execute(
         update(PaginaBruta)

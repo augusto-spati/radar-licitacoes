@@ -15,9 +15,7 @@ from radar.api.app import criar_app
 from radar.coleta import (
     ClienteEducado,
     ClientePNCP,
-    FonteCompesa,
     FonteRetrato,
-    FonteSanepar,
     coletar_pendentes,
     criar_http,
     criar_http_educado,
@@ -44,6 +42,7 @@ from radar.editais import (
     registrar_normalizados,
 )
 from radar.editais import filtrar as filtrar_editais
+from radar.processador import FRACAO_INVALIDOS, fontes_retrato
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +50,6 @@ app = typer.Typer(help="Radar de licitações.", no_args_is_help=True)
 
 FUSO = ZoneInfo("America/Sao_Paulo")
 IDADE_MAXIMA_RETRATO = timedelta(hours=36)
-# Acima disto, os inválidos não são editais esquisitos: é o parser lendo errado. O retrato falha.
-FRACAO_INVALIDOS = 0.2
 # Padrão de RADAR_CONFIG_FILTRO (config/filtro.toml da raiz, sem depender do cwd).
 ARQUIVO_CONFIG = obter_config().config_filtro
 
@@ -71,11 +68,6 @@ def _criar_sessao() -> Session:
 
 def _criar_cliente() -> ClientePNCP:
     return ClientePNCP(criar_http())
-
-
-def _fontes_retrato() -> list[FonteRetrato]:
-    """Fontes lidas por retrato, na ordem em que rodam."""
-    return [FonteSanepar(), FonteCompesa()]
 
 
 def _criar_cliente_retrato(fonte: FonteRetrato) -> ClienteEducado:
@@ -297,7 +289,7 @@ def atualizar(
     ] = None,
 ) -> None:
     """Atualiza o PNCP (janelas do recuo até hoje) e lê o retrato das outras fontes."""
-    retratos = {fonte.nome: fonte for fonte in _fontes_retrato()}
+    retratos = fontes_retrato()
     escolhidas = _escolher_fontes(fontes, ["pncp", *retratos])
     configurar_logs()
     criterios = carregar_criterios(config)
@@ -344,7 +336,7 @@ def auditar(
     agora = _agora()
     with _criar_sessao() as sessao:
         auditoria = auditar_cobertura(sessao, endpoint, inicio, fim, criterios.modalidades)
-        retratos = [(f.nome, ultimo_retrato(sessao, f.nome)) for f in _fontes_retrato()]
+        retratos = [(f.nome, ultimo_retrato(sessao, f.nome)) for f in fontes_retrato().values()]
     typer.echo(f"esperadas: {auditoria.esperadas}")
     typer.echo(f"concluidas: {auditoria.concluidas}")
     typer.echo(f"faltando: {len(auditoria.faltando)}")

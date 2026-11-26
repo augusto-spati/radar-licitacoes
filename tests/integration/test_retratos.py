@@ -672,7 +672,7 @@ def _registrar_fontes(
     monkeypatch: pytest.MonkeyPatch, fontes: list[FonteFalsa], rotas: Rota
 ) -> list[str]:
     chamadas: list[str] = []
-    monkeypatch.setattr(cli, "_fontes_retrato", lambda: fontes)
+    monkeypatch.setattr(cli, "fontes_retrato", lambda: {f.nome: f for f in fontes})
     monkeypatch.setattr(cli, "_criar_cliente_retrato", lambda _fonte: _cliente(rotas, chamadas))
     return chamadas
 
@@ -1032,7 +1032,7 @@ def test_auditar_sem_fontes_de_retrato_nao_muda(
     fabrica: sessionmaker[Session], config_filtro: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _cobrir_pncp(fabrica)
-    monkeypatch.setattr(cli, "_fontes_retrato", lambda: [])
+    monkeypatch.setattr(cli, "fontes_retrato", lambda: {})
 
     resultado = _auditar(config_filtro)
 
@@ -1045,7 +1045,7 @@ def test_cli_registra_a_sanepar_real_e_atualizar_grava_com_a_fonte(
 ) -> None:
     from radar.coleta.sanepar import ler_lista
 
-    assert [f.nome for f in cli._fontes_retrato()] == ["sanepar", "compesa"]
+    assert list(cli.fontes_retrato()) == ["sanepar", "compesa"]
 
     dados = Path(__file__).resolve().parent.parent / "dados" / "fontes"
 
