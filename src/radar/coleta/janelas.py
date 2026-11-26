@@ -6,11 +6,12 @@ Invariante central: uma janela que falha fica com status "falha" (e o erro), nun
 
 import logging
 import time
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import DateTime, and_, cast, delete, func, or_, select, update
+from sqlalchemy import DateTime, Engine, and_, cast, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -20,6 +21,12 @@ from radar.coleta.pncp import ClientePNCP, ErroPNCP
 logger = logging.getLogger(__name__)
 
 FUSO = "America/Sao_Paulo"  # as datas do PNCP são em horário de Brasília
+CHAVE_COLETOR = 7_240_001  # chave do advisory lock que garante um único coletor por vez
+LIMITE_ERRO = 500
+
+
+def _agora_real() -> datetime:
+    return datetime.now(UTC)
 
 
 @dataclass
@@ -68,13 +75,41 @@ def planejar_janelas(
     return criadas
 
 
-def coletar_pendentes(sessao: Session, cliente: ClientePNCP, agora: datetime) -> ResumoColeta:
+def coletar_pendentes(
+    sessao: Session,
+    cliente: ClientePNCP,
+    agora: datetime,
+    relogio: Callable[[], datetime] | None = None,
+) -> ResumoColeta:
     """Coleta todas as janelas elegíveis e devolve o resumo.
 
-    `agora` é um instante com fuso, usado em todos os carimbos da execução.
+    `agora` é o instante de referência da execução (regra de elegibilidade das janelas de
+    atualização, que é por data); os carimbos iniciada_em, concluida_em e coletada_em usam
+    o relógio real (`relogio`, injetável nos testes).
     """
-    # Premissa: há um único coletor por vez; janela em_andamento só pode ser sobra de uma
-    # execução interrompida. Controle de concorrência fica para o Tema 2.
+    relogio = relogio or _agora_real
+    bind = sessao.get_bind()
+    # Conexão dedicada: o lock pertence à conexão do banco, e a sessão devolve a dela ao
+    # pool a cada commit.
+    conexao = bind.connect() if isinstance(bind, Engine) else bind
+    try:
+        if not conexao.scalar(select(func.pg_try_advisory_lock(CHAVE_COLETOR))):
+            logger.warning("coleta_em_andamento_noutro_processo")
+            return ResumoColeta()
+        try:
+            return _coletar_todas(sessao, cliente, relogio)
+        finally:
+            conexao.scalar(select(func.pg_advisory_unlock(CHAVE_COLETOR)))
+    finally:
+        if conexao is not bind:
+            conexao.close()
+
+
+def _coletar_todas(
+    sessao: Session, cliente: ClientePNCP, relogio: Callable[[], datetime]
+) -> ResumoColeta:
+    # Um único coletor por vez, garantido pelo advisory lock em coletar_pendentes; por isso
+    # uma janela em_andamento só pode ser sobra de uma execução interrompida.
     sessao.execute(
         update(ColetaJanela).where(ColetaJanela.status == "em_andamento").values(status="pendente")
     )
@@ -87,19 +122,35 @@ def coletar_pendentes(sessao: Session, cliente: ClientePNCP, agora: datetime) ->
         if janela is None:
             return resumo
         tentadas.add(janela.id)
-        _coletar_janela(sessao, cliente, janela, agora, resumo)
+        janela_id = janela.id
+        dados = _dados_log(janela, time.monotonic())
+        try:
+            _coletar_janela(sessao, cliente, janela, relogio, resumo)
+        except Exception as erro:  # Ctrl+C (BaseException) continua parando o processo
+            sessao.rollback()
+            logger.exception("janela_erro_inesperado", extra=dados)
+            sessao.execute(
+                update(ColetaJanela)
+                .where(ColetaJanela.id == janela_id)
+                .values(status="falha", erro=repr(erro)[:LIMITE_ERRO])
+            )
+            sessao.commit()
+            resumo.falhas += 1
 
 
 def ler_paginas_nao_processadas(
-    sessao: Session, limite: int = 100
+    sessao: Session, limite: int = 100, excluir: Collection[int] = ()
 ) -> list[tuple[int, list[dict[str, Any]]]]:
-    """Pares (pagina_id, registros) das páginas ainda não processadas, em ordem de id."""
-    linhas = sessao.execute(
-        select(PaginaBruta.id, PaginaBruta.conteudo)
-        .where(PaginaBruta.processada_em.is_(None))
-        .order_by(PaginaBruta.id)
-        .limit(limite)
-    ).all()
+    """Pares (pagina_id, registros) das páginas ainda não processadas, em ordem de id.
+
+    `excluir` são ids a pular (páginas que falharam nesta execução).
+    """
+    consulta = select(PaginaBruta.id, PaginaBruta.conteudo).where(
+        PaginaBruta.processada_em.is_(None)
+    )
+    if excluir:
+        consulta = consulta.where(PaginaBruta.id.not_in(excluir))
+    linhas = sessao.execute(consulta.order_by(PaginaBruta.id).limit(limite)).all()
     return [(pagina_id, conteudo.get("data") or []) for pagina_id, conteudo in linhas]
 
 
@@ -185,25 +236,38 @@ def _dados_log(janela: ColetaJanela, inicio: float) -> dict[str, Any]:
     }
 
 
+def _falhar(
+    sessao: Session, janela: ColetaJanela, erro: str, inicio: float, resumo: ResumoColeta
+) -> None:
+    # As páginas já gravadas ficam; a janela volta na próxima execução.
+    janela.status = "falha"
+    janela.erro = erro
+    sessao.commit()
+    resumo.falhas += 1
+    logger.warning("janela_falhou", extra={**_dados_log(janela, inicio), "erro": erro})
+
+
 def _coletar_janela(
     sessao: Session,
     cliente: ClientePNCP,
     janela: ColetaJanela,
-    agora: datetime,
+    relogio: Callable[[], datetime],
     resumo: ResumoColeta,
 ) -> None:
     inicio = time.monotonic()
     janela.status = "em_andamento"
     janela.tentativas += 1
     janela.erro = None
-    janela.iniciada_em = agora
+    janela.iniciada_em = relogio()
     sessao.commit()
     logger.info("janela_iniciada", extra=_dados_log(janela, inicio))
 
     numero = 1
-    total = 1
+    total = 1  # o total vale o da página 1; as seguintes só o confirmam
+    esperados: int | None = None
     paginas = 0
     registros = 0
+    vistos: set[str] = set()
     while numero <= total:
         try:
             pagina = cliente.buscar(
@@ -214,27 +278,41 @@ def _coletar_janela(
                 _dividir(sessao, janela, str(erro), inicio)
                 resumo.divididas += 1
             else:
-                # As páginas já gravadas ficam; a janela volta na próxima execução.
-                janela.status = "falha"
-                janela.erro = str(erro)
-                sessao.commit()
-                resumo.falhas += 1
-                logger.warning(
-                    "janela_falhou", extra={**_dados_log(janela, inicio), "erro": str(erro)}
-                )
+                _falhar(sessao, janela, str(erro), inicio, resumo)
             return
-        total = pagina.total_paginas
+        if numero == 1:
+            total = pagina.total_paginas
+            bruto_total = pagina.bruto.get("totalRegistros")
+            esperados = bruto_total if isinstance(bruto_total, int) else None
+        elif pagina.total_paginas != total:
+            _falhar(
+                sessao,
+                janela,
+                f"pagina {numero} inconsistente: total_paginas={pagina.total_paginas}, "
+                f"esperado {total}",
+                inicio,
+                resumo,
+            )
+            return
         if total > 0:
             # total_paginas == 0 é dia sem registros: nada a guardar, paginas=0.
-            _gravar_pagina(sessao, janela, numero, pagina.bruto, agora)
+            _gravar_pagina(sessao, janela, numero, pagina.bruto, relogio())
             paginas += 1
             registros += len(pagina.registros)
+            vistos.update(
+                str(r["numeroControlePNCP"]) for r in pagina.registros if "numeroControlePNCP" in r
+            )
         numero += 1
+
+    if esperados is not None and len(vistos) < esperados:
+        mensagem = f"incompleta: {len(vistos)} de {esperados} registros"
+        _falhar(sessao, janela, mensagem, inicio, resumo)
+        return
 
     janela.status = "concluida"
     janela.paginas = paginas
     janela.registros = registros
-    janela.concluida_em = agora
+    janela.concluida_em = relogio()
     sessao.commit()
     resumo.concluidas += 1
     resumo.registros += registros

@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Any
 
 from radar.coleta import ClientePNCP
 from radar.coleta.pncp import Pagina
@@ -6,14 +7,12 @@ from radar.coleta.pncp import Pagina
 Chave = tuple[str, date, date, int, int]
 
 
-def pagina(numero: int, total: int, n: int = 2) -> Pagina:
+def pagina(numero: int, total: int, n: int = 2, total_registros: int | None = None) -> Pagina:
     registros = [{"numeroControlePNCP": f"{numero}-{i}"} for i in range(n)]
-    return Pagina(
-        registros=registros,
-        total_paginas=total,
-        numero_pagina=numero,
-        bruto={"data": registros, "totalPaginas": total, "numeroPagina": numero},
-    )
+    bruto: dict[str, Any] = {"data": registros, "totalPaginas": total, "numeroPagina": numero}
+    if total_registros is not None:
+        bruto["totalRegistros"] = total_registros
+    return Pagina(registros=registros, total_paginas=total, numero_pagina=numero, bruto=bruto)
 
 
 VAZIA = Pagina(registros=[], total_paginas=0, numero_pagina=1, bruto={})

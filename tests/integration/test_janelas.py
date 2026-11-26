@@ -2,7 +2,7 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from fakes import VAZIA, Chave, ClienteFalso, como_cliente, pagina
-from sqlalchemy import func, select
+from sqlalchemy import Engine, func, select, text
 from sqlalchemy.orm import Session
 
 from radar.coleta import (
@@ -13,6 +13,7 @@ from radar.coleta import (
     marcar_processada,
     planejar_janelas,
 )
+from radar.coleta.janelas import CHAVE_COLETOR, ResumoColeta
 from radar.coleta.modelos import ColetaJanela, PaginaBruta
 
 BRT = ZoneInfo("America/Sao_Paulo")
@@ -53,7 +54,8 @@ def test_coleta_tres_paginas(sessao: Session) -> None:
     resumo = coletar_pendentes(sessao, como_cliente(falso), AGORA)
     j = sessao.scalars(select(ColetaJanela)).one()
     assert (j.status, j.paginas, j.registros, j.tentativas) == ("concluida", 3, 6, 1)
-    assert j.concluida_em == AGORA
+    assert j.concluida_em is not None
+    assert j.iniciada_em is not None
     assert contar(sessao, PaginaBruta) == 3
     assert (resumo.concluidas, resumo.falhas, resumo.divididas, resumo.registros) == (1, 0, 0, 6)
 
@@ -139,7 +141,7 @@ def test_atualizacao_do_dia_corrente_recoleta(sessao: Session) -> None:
     )
     falso = ClienteFalso({("atualizacao", hoje, hoje, 6, 1): pagina(1, 1)})
     amanha = datetime(2026, 11, 11, 10, 0, tzinfo=BRT)
-    resumo = coletar_pendentes(sessao, como_cliente(falso), amanha)
+    resumo = coletar_pendentes(sessao, como_cliente(falso), amanha, relogio=lambda: amanha)
     assert falso.chamadas == [("atualizacao", hoje, hoje, 6, 1)]
     assert resumo.concluidas == 1
     sessao.refresh(corrente)
@@ -193,3 +195,81 @@ def test_auditoria_considera_janela_multidia(sessao: Session) -> None:
     assert aud.esperadas == 4
     assert aud.concluidas == 3
     assert aud.faltando == [(date(2026, 11, 4), 6)]
+
+
+def _chave(n: int, d: date = D1) -> Chave:
+    return ("publicacao", d, d, 6, n)
+
+
+def _unica(sessao: Session) -> ColetaJanela:
+    return sessao.scalars(select(ColetaJanela)).one()
+
+
+def test_pagina_posterior_vazia_marca_falha(sessao: Session) -> None:
+    planejar_janelas(sessao, "publicacao", D1, D1, [6])
+    falso = ClienteFalso({_chave(1): pagina(1, 3), _chave(2): VAZIA})
+    resumo = coletar_pendentes(sessao, como_cliente(falso), AGORA)
+    j = _unica(sessao)
+    assert j.status == "falha"
+    assert "pagina 2 inconsistente: total_paginas=0, esperado 3" in (j.erro or "")
+    assert contar(sessao, PaginaBruta) == 1
+    assert (resumo.concluidas, resumo.falhas) == (0, 1)
+
+
+def test_pagina_posterior_com_total_diferente_marca_falha(sessao: Session) -> None:
+    planejar_janelas(sessao, "publicacao", D1, D1, [6])
+    falso = ClienteFalso({_chave(1): pagina(1, 3), _chave(2): pagina(2, 2)})
+    coletar_pendentes(sessao, como_cliente(falso), AGORA)
+    j = _unica(sessao)
+    assert j.status == "falha"
+    assert "total_paginas=2, esperado 3" in (j.erro or "")
+
+
+def test_menos_registros_que_o_total_marca_falha(sessao: Session) -> None:
+    planejar_janelas(sessao, "publicacao", D1, D1, [6])
+    falso = ClienteFalso({_chave(n): pagina(n, 2, total_registros=5) for n in (1, 2)})
+    resumo = coletar_pendentes(sessao, como_cliente(falso), AGORA)
+    j = _unica(sessao)
+    assert (j.status, j.erro) == ("falha", "incompleta: 4 de 5 registros")
+    assert contar(sessao, PaginaBruta) == 2
+    assert resumo.falhas == 1
+
+
+def test_total_registros_batendo_conclui(sessao: Session) -> None:
+    planejar_janelas(sessao, "publicacao", D1, D1, [6])
+    falso = ClienteFalso({_chave(n): pagina(n, 3, total_registros=6) for n in (1, 2, 3)})
+    coletar_pendentes(sessao, como_cliente(falso), AGORA)
+    assert _unica(sessao).status == "concluida"
+
+
+def test_excecao_inesperada_marca_so_aquela_janela(sessao: Session) -> None:
+    d2 = date(2026, 11, 2)
+    planejar_janelas(sessao, "publicacao", D1, d2, [6])
+    falso = ClienteFalso({_chave(1): RuntimeError("boom"), _chave(1, d2): pagina(1, 1)})
+    resumo = coletar_pendentes(sessao, como_cliente(falso), AGORA)
+    janelas = sessao.scalars(select(ColetaJanela).order_by(ColetaJanela.data_ini)).all()
+    assert [j.status for j in janelas] == ["falha", "concluida"]
+    assert "RuntimeError('boom')" in (janelas[0].erro or "")
+    assert (resumo.concluidas, resumo.falhas) == (1, 1)
+
+
+def test_coletor_ja_ativo_noutro_processo_nao_coleta(sessao: Session, engine: Engine) -> None:
+    planejar_janelas(sessao, "publicacao", D1, D1, [6])
+    falso = ClienteFalso({_chave(1): pagina(1, 1)})
+    with engine.connect() as outra:
+        assert outra.scalar(text("select pg_try_advisory_lock(:k)"), {"k": CHAVE_COLETOR})
+        resumo = coletar_pendentes(sessao, como_cliente(falso), AGORA)
+        outra.scalar(text("select pg_advisory_unlock(:k)"), {"k": CHAVE_COLETOR})
+    assert falso.chamadas == []
+    assert resumo == ResumoColeta()
+    assert _unica(sessao).status == "pendente"
+    coletar_pendentes(sessao, como_cliente(falso), AGORA)  # lock liberado: coleta normal
+    assert _unica(sessao).status == "concluida"
+
+
+def test_excluir_pula_paginas_na_leitura(sessao: Session) -> None:
+    planejar_janelas(sessao, "publicacao", D1, D1, [6])
+    falso = ClienteFalso({_chave(n): pagina(n, 2) for n in (1, 2)})
+    coletar_pendentes(sessao, como_cliente(falso), AGORA)
+    ids = [p for p, _ in ler_paginas_nao_processadas(sessao)]
+    assert [p for p, _ in ler_paginas_nao_processadas(sessao, excluir=[ids[0]])] == [ids[1]]

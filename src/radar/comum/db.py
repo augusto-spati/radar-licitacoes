@@ -9,7 +9,7 @@ class Base(DeclarativeBase):
 
 
 def criar_engine(config: Config) -> Engine:
-    return create_engine(config.database_url, echo=config.log_sql)
+    return create_engine(config.database_url, echo=config.log_sql, pool_pre_ping=True)
 
 
 def fabrica_sessao(engine: Engine) -> sessionmaker[Session]:
