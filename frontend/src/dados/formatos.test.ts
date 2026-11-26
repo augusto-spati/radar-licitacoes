@@ -1,5 +1,10 @@
-import {describe, expect, it} from 'vitest';
+import {describe, expect, expectTypeOf, it} from 'vitest';
+import type {Linha, UF} from './tipos';
 import {
+  LINHAS,
+  UFS,
+  ehLinha,
+  ehUF,
   estaDesatualizado,
   formatarCnpj,
   formatarDataHora,
@@ -29,6 +34,16 @@ describe('formatarValor', () => {
   });
   it('nulo vira travessão', () => {
     expect(formatarValor(null)).toBe('—');
+  });
+  it('perto de 1 milhão não escreve "R$ 1.000 mil"', () => {
+    expect(formatarValor('999499')).toBe('R$ 999 mil');
+    expect(formatarValor('999500')).toBe('R$ 1,00 mi');
+    expect(formatarValor('999999.99')).toBe('R$ 1,00 mi');
+    expect(formatarValor('1000000')).toBe('R$ 1,00 mi');
+  });
+  it('texto que não é número vira travessão', () => {
+    expect(formatarValor('abc')).toBe('—');
+    expect(formatarValor('')).toBe('—');
   });
 });
 
@@ -131,5 +146,22 @@ describe('nomeLinha', () => {
     expect(nomeLinha('redes')).toBe('Redes');
     expect(nomeLinha('consultoria')).toBe('Consultoria');
     expect(nomeLinha('outra')).toBe('outra');
+  });
+});
+
+describe('linhas e UFs vêm do contrato da API (config/filtro.toml)', () => {
+  it('LINHAS tem exatamente as linhas do api.d.ts e UFS exatamente as UFs', () => {
+    // Checagem de tipo (tsc): linha ou UF a mais ou a menos não compila.
+    expectTypeOf<keyof typeof LINHAS>().toEqualTypeOf<Linha>();
+    expectTypeOf<(typeof UFS)[number]>().toEqualTypeOf<UF>();
+    expect(Object.keys(LINHAS)).toEqual(['redes', 'perdas', 'comercial', 'consultoria']);
+    expect(UFS).toEqual(['SP', 'PR', 'PE', 'MG']);
+  });
+  it('ehLinha e ehUF só aceitam valores do contrato', () => {
+    expect(ehLinha('redes')).toBe(true);
+    expect(ehLinha('inexistente')).toBe(false);
+    expect(ehLinha('toString')).toBe(false);
+    expect(ehUF('SP')).toBe(true);
+    expect(ehUF('BA')).toBe(false);
   });
 });

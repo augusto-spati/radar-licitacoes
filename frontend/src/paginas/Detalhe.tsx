@@ -18,6 +18,7 @@ import {
   formatarDataHora,
   formatarPrazo,
   formatarValor,
+  linkHttp,
   linkPncp,
   localidade,
   nomeModalidade,
@@ -45,7 +46,8 @@ function Voltar() {
 }
 
 function Cabecalho({edital}: {edital?: EditalDetalhe}) {
-  const origem = edital?.link_origem ?? null;
+  // A API já manda nulo no lugar de "" ou link sem http(s); o front confere de novo.
+  const origem = linkHttp(edital?.link_origem);
   const destino = origem ?? (edital ? linkPncp(edital.numero_controle_pncp) : null);
   return (
     <LayoutHeader hasDivider padding={4}>

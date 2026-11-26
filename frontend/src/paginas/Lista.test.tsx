@@ -78,6 +78,15 @@ describe('Lista', () => {
     );
   });
 
+  it('ignora linha e UF da URL que não estão no contrato da API', async () => {
+    // A API responderia 422; a lista mostra o que é válido em vez de dar erro.
+    const listar = vi.fn<Fonte['listar']>(async () => ({atualizado_em: recente, editais: [edital()]}));
+    renderizar(<Lista />, {fonte: fonteFalsa({listar}), endereco: '/?linha=inexistente&uf=BA&uf=SP'});
+
+    await screen.findByText('Execução de rede de esgoto no bairro Centro');
+    expect(listar).toHaveBeenLastCalledWith({ufs: ['SP']});
+  });
+
   it('trocar a linha atualiza a URL e recarrega', async () => {
     const listar = vi.fn<Fonte['listar']>(async () => ({atualizado_em: recente, editais: [edital()]}));
     renderizar(<Lista />, {fonte: fonteFalsa({listar}), endereco: '/?uf=SP'});

@@ -1,8 +1,8 @@
-import type {EditalDetalhe, Lista, Status} from './tipos';
+import type {EditalDetalhe, Linha, Lista, Status, UF} from './tipos';
 import {fonteApi} from './fonteApi';
 import {fonteExemplo} from './fonteExemplo';
 
-export type Filtros = {linha?: string; ufs?: string[]; todos?: boolean};
+export type Filtros = {linha?: Linha; ufs?: UF[]; todos?: boolean};
 
 export interface Fonte {
   listar(f: Filtros): Promise<Lista>;

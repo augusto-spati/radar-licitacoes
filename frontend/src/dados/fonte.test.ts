@@ -1,6 +1,7 @@
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import {ErroFonte, fonteApi} from './fonteApi';
 import {criarFonteExemplo} from './fonteExemplo';
+import type {Linha} from './tipos';
 
 const agora = new Date('2026-11-26T12:00:00-03:00');
 const fonteExemplo = criarFonteExemplo(() => agora);
@@ -19,7 +20,7 @@ describe('fonteExemplo', () => {
     const {editais} = await fonteExemplo.listar({linha: 'redes'});
     expect(editais.length).toBeGreaterThan(0);
     expect(editais.every(e => e.linhas.includes('redes'))).toBe(true);
-    expect((await fonteExemplo.listar({linha: 'inexistente'})).editais).toEqual([]);
+    expect((await fonteExemplo.listar({linha: 'inexistente' as Linha})).editais).toEqual([]);
   });
   it('sem "todos" só traz encerramento no futuro, em ordem crescente', async () => {
     const {editais} = await fonteExemplo.listar({});

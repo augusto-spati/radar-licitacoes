@@ -18,4 +18,13 @@ describe('selo do Shell', () => {
     renderizar(<Shell>conteúdo</Shell>, {fonte: fonteFalsa()});
     expect(await screen.findByText('sem atualização')).toBeTruthy();
   });
+
+  it('falha ao ler o status mostra travessão, não "sem atualização"', async () => {
+    const status = vi.fn(async () => {
+      throw new Error('A API respondeu 500');
+    });
+    renderizar(<Shell>conteúdo</Shell>, {fonte: fonteFalsa({status})});
+    expect(await screen.findByText('—')).toBeTruthy();
+    expect(screen.queryByText('sem atualização')).toBeNull();
+  });
 });

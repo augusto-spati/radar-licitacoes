@@ -76,6 +76,17 @@ describe('Detalhe', () => {
     expect(screen.getByRole('link', {name: /Voltar/}).getAttribute('href')).toBe('/');
   });
 
+  it.each(['', '   ', 'javascript:alert(1)', 'www.compras.gov.br/36'])(
+    'link de origem %j (vazio ou sem http) cai no PNCP',
+    async link => {
+      abrir(async () => edital({link_origem: link}));
+      await screen.findByText('Execução de rede de esgoto no bairro Centro');
+      expect(screen.queryByRole('link', {name: /Abrir no sistema de origem/})).toBeNull();
+      const pncp = screen.getByRole('link', {name: /Abrir no PNCP/});
+      expect(pncp.getAttribute('href')).toBe('https://pncp.gov.br/app/editais/13127340000120/2025/36');
+    },
+  );
+
   it('detalhe_inexistente_mostra_nao_encontrado', async () => {
     abrir(async () => null);
     expect(await screen.findByText('Edital não encontrado')).toBeTruthy();

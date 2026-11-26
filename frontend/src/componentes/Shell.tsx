@@ -5,20 +5,29 @@ import {Text} from '@astryxdesign/core/Text';
 import {TopNav, TopNavHeading, TopNavItem} from '@astryxdesign/core/TopNav';
 import {useFonte} from '../dados/FonteContext';
 import {formatarHora} from '../dados/formatos';
-import {useCarga} from '../dados/useCarga';
+import type {Status} from '../dados/tipos';
+import {type Carga, useCarga} from '../dados/useCarga';
 import {rotas} from '../rotas';
 
 type Props = {children: ReactNode};
 
 // Selo de atualização: lê o status da fonte uma vez, ao abrir o app.
+// Falha ao ler o status não é "sem atualização": mostra só o travessão.
+function textoDoSelo(carga: Carga<Status>): string | null {
+  if (carga.estado === 'carregando') return null;
+  if (carga.estado === 'erro') return '—';
+  const em = carga.dados.atualizado_em;
+  return em === null ? 'sem atualização' : `atualizado às ${formatarHora(em)}`;
+}
+
 function Selo() {
   const fonte = useFonte();
   const {carga} = useCarga(() => fonte.status(), 'status');
-  if (carga.estado === 'carregando') return null;
-  const em = carga.estado === 'pronto' ? carga.dados.atualizado_em : null;
+  const texto = textoDoSelo(carga);
+  if (texto === null) return null;
   return (
     <Text type="supporting" color="secondary">
-      {em === null ? 'sem atualização' : `atualizado às ${formatarHora(em)}`}
+      {texto}
     </Text>
   );
 }

@@ -10,6 +10,7 @@ import {Carregando, ErroAoCarregar} from '../componentes/EstadoCarga';
 import {FiltrosEditais} from '../componentes/FiltrosEditais';
 import type {Filtros} from '../dados/fonte';
 import {useFonte} from '../dados/FonteContext';
+import {ehLinha, ehUF} from '../dados/formatos';
 import {useCarga} from '../dados/useCarga';
 
 // Uma coluna no celular (390 px), mais colunas conforme a tela abre.
@@ -21,8 +22,10 @@ const COLUNAS = {minWidth: 280, max: 3} as const;
 export function Lista() {
   const fonte = useFonte();
   const [consulta, setConsulta] = useSearchParams();
-  const linha = consulta.get('linha');
-  const ufs = consulta.getAll('uf');
+  // Só valores do contrato da API: o resto da URL é ignorado (a API daria 422).
+  const pedida = consulta.get('linha');
+  const linha = pedida !== null && ehLinha(pedida) ? pedida : null;
+  const ufs = consulta.getAll('uf').filter(ehUF);
   const filtros: Filtros = linha === null ? {ufs} : {linha, ufs};
   const texto = consulta.toString();
   const {carga, tentarDeNovo} = useCarga(() => fonte.listar(filtros), texto);

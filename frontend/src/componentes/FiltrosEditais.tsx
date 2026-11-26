@@ -1,16 +1,16 @@
 import {MultiSelector} from '@astryxdesign/core/MultiSelector';
 import {HStack, VStack} from '@astryxdesign/core/Stack';
 import {ToggleButton, ToggleButtonGroup} from '@astryxdesign/core/ToggleButton';
-import {LINHAS} from '../dados/formatos';
+import {LINHAS, UFS, ehLinha, ehUF} from '../dados/formatos';
+import type {Linha, UF} from '../dados/tipos';
 
 const TODAS = 'todas';
-const UFS = ['SP', 'PR', 'PE', 'MG'];
 
 type Props = {
-  linha: string | null;
-  ufs: string[];
-  onLinha: (linha: string | null) => void;
-  onUfs: (ufs: string[]) => void;
+  linha: Linha | null;
+  ufs: UF[];
+  onLinha: (linha: Linha | null) => void;
+  onUfs: (ufs: UF[]) => void;
 };
 
 // Abas de filtro do template `library`: os botões quebram linha no celular
@@ -21,7 +21,7 @@ export function FiltrosEditais({linha, ufs, onLinha, onUfs}: Props) {
       <ToggleButtonGroup
         label="Linha de serviço"
         value={linha ?? TODAS}
-        onChange={v => onLinha(typeof v === 'string' && v !== TODAS ? v : null)}>
+        onChange={v => onLinha(typeof v === 'string' && ehLinha(v) ? v : null)}>
         <HStack gap={1} wrap="wrap">
           <ToggleButton label="Todas" value={TODAS} size="lg" />
           {Object.entries(LINHAS).map(([valor, nome]) => (
@@ -35,7 +35,7 @@ export function FiltrosEditais({linha, ufs, onLinha, onUfs}: Props) {
         placeholder="Todas as UFs"
         options={UFS}
         value={ufs}
-        onChange={onUfs}
+        onChange={u => onUfs(u.filter(ehUF))}
         triggerDisplay="labels"
         hasClear
         size="lg"

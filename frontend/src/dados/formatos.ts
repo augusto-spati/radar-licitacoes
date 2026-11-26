@@ -1,3 +1,5 @@
+import type {Linha, UF} from './tipos';
+
 // Datas da API sem fuso (ex.: "2026-11-27T08:00:00") são horário de Brasília.
 // O Brasil não tem horário de verão desde 2019, então Brasília é UTC-3 fixo.
 const DESLOCAMENTO_BRASILIA_MS = -3 * 60 * 60 * 1000;
@@ -47,13 +49,23 @@ export function linkPncp(numeroControle: string): string | null {
   return m === null ? null : `https://pncp.gov.br/app/editais/${m[1]}/${m[3]}/${Number(m[2])}`;
 }
 
+/** Só endereço http(s) vira link; vazio ou outro esquema (javascript:, ftp:...) dá nulo. */
+export function linkHttp(link: string | null | undefined): string | null {
+  const aparado = (link ?? '').trim();
+  return /^https?:\/\//i.test(aparado) ? aparado : null;
+}
+
 const numero = (v: number, casas: number) =>
   v.toLocaleString('pt-BR', {minimumFractionDigits: casas, maximumFractionDigits: casas});
 
+// A partir daqui "mil" arredondaria para "R$ 1.000 mil": vira "R$ 1,00 mi".
+const LIMIAR_MILHAO = 999_500;
+
 export function formatarValor(v: string | null): string {
-  if (v === null) return '—';
+  if (v === null || v.trim() === '') return '—';
   const n = Number(v);
-  if (n > 1_000_000) return `R$ ${numero(n / 1_000_000, 2)} mi`;
+  if (!Number.isFinite(n)) return '—';
+  if (n >= LIMIAR_MILHAO) return `R$ ${numero(n / 1_000_000, 2)} mi`;
   if (n >= 1_000) return `R$ ${numero(n / 1_000, 0)} mil`;
   // O Intl do pt-BR separa "R$" do número com espaço sem quebra (U+00A0);
   // trocamos por espaço comum para o texto ser comparável e copiável.
@@ -77,15 +89,26 @@ export function estaDesatualizado(atualizadoEm: string | null, agora: Date): boo
   return atualizadoEm === null || agora.getTime() - instante(atualizadoEm) > LIMITE_DESATUALIZADO_MS;
 }
 
-/** Linhas de serviço da FR, na ordem dos filtros: valor da API → nome de tela. */
-export const LINHAS: Record<string, string> = {
+/**
+ * Linhas de serviço da FR, na ordem dos filtros: valor da API → nome de tela.
+ * O tipo vem do api.d.ts (enum gerado do config/filtro.toml): linha nova ou
+ * removida no filtro.toml faz o tsc falhar aqui até o front acompanhar.
+ */
+export const LINHAS: Record<Linha, string> = {
   redes: 'Redes',
   perdas: 'Perdas',
   comercial: 'Comercial',
   consultoria: 'Consultoria',
 };
 
-export const nomeLinha = (linha: string): string => LINHAS[linha] ?? linha;
+// `satisfies Record<UF, ...>` reprova UF a mais ou a menos que o filtro.toml.
+const ORDEM_UFS = {SP: 0, PR: 1, PE: 2, MG: 3} satisfies Record<UF, number>;
+export const UFS = Object.keys(ORDEM_UFS) as UF[];
+
+export const ehLinha = (v: string): v is Linha => Object.hasOwn(LINHAS, v);
+export const ehUF = (v: string): v is UF => Object.hasOwn(ORDEM_UFS, v);
+
+export const nomeLinha = (linha: string): string => (ehLinha(linha) ? LINHAS[linha] : linha);
 
 export function localidade(municipio: string | null, uf: string | null): string {
   return municipio === null && uf === null ? '—' : `${municipio ?? '—'}/${uf ?? '—'}`;
