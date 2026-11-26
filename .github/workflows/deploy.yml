@@ -6,7 +6,6 @@ on:
   workflow_dispatch:
 
 permissions:
-  id-token: write
   contents: read
 
 concurrency:
@@ -15,14 +14,18 @@ concurrency:
 
 env:
   AWS_REGION: us-east-1
-  AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
 
 jobs:
-  deploy:
+  # Sem credenciais AWS e sem id-token: roda scripts de terceiros (npm) isolado.
+  front:
     runs-on: ubuntu-latest
+    outputs:
+      ativo: ${{ steps.gate.outputs.ativo }}
     steps:
       - name: Verificar se o deploy esta configurado
         id: gate
+        env:
+          AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
         run: |
           if [ -z "$AWS_ROLE_ARN" ]; then
             echo "::notice::AWS_ROLE_ARN nao definida (conta AWS ainda nao existe): deploy ignorado."
@@ -31,65 +34,17 @@ jobs:
             echo "ativo=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         if: steps.gate.outputs.ativo == 'true'
 
-      - uses: aws-actions/configure-aws-credentials@v4
-        if: steps.gate.outputs.ativo == 'true'
-        with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
-          aws-region: us-east-1
-
-      - id: ecr
-        if: steps.gate.outputs.ativo == 'true'
-        uses: aws-actions/amazon-ecr-login@v2
-
-      # --platform/--provenance=false: a Lambda rejeita manifesto OCI index.
-      - name: Build e push das imagens (tag = SHA)
-        if: steps.gate.outputs.ativo == 'true'
-        env:
-          REGISTRO: ${{ steps.ecr.outputs.registry }}
-        run: |
-          for item in "api:api-lambda" "coletor:coletor"; do
-            repo="${item%%:*}"; arquivo="${item##*:}"
-            docker build --platform linux/amd64 --provenance=false \
-              -f "docker/${arquivo}.Dockerfile" -t "${REGISTRO}/radar-${repo}:${GITHUB_SHA}" .
-            docker push "${REGISTRO}/radar-${repo}:${GITHUB_SHA}"
-          done
-
-      - name: Atualizar a Lambda da API
-        if: steps.gate.outputs.ativo == 'true'
-        env:
-          REGISTRO: ${{ steps.ecr.outputs.registry }}
-        run: |
-          aws lambda update-function-code --function-name radar-api \
-            --image-uri "${REGISTRO}/radar-api:${GITHUB_SHA}" > /dev/null
-          aws lambda wait function-updated --function-name radar-api
-
-      # Nova revisao a partir da ULTIMA: so a imagem muda (segredos, env, logs e roles ficam).
-      # Sem terraform apply no CI. Um apply manual depois deve usar -var tag_coletor=<sha>.
-      - name: Registrar nova revisao da task do coletor
-        if: steps.gate.outputs.ativo == 'true'
-        env:
-          REGISTRO: ${{ steps.ecr.outputs.registry }}
-        run: |
-          aws ecs describe-task-definition --task-definition radar-coletor \
-            --query taskDefinition --output json > taskdef.json
-          jq --arg img "${REGISTRO}/radar-coletor:${GITHUB_SHA}" '
-            .containerDefinitions[0].image = $img
-            | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
-                  .compatibilities, .registeredAt, .registeredBy)
-          ' taskdef.json > novo.json
-          aws ecs register-task-definition --cli-input-json file://novo.json \
-            --query taskDefinition.taskDefinitionArn --output text
-
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         if: steps.gate.outputs.ativo == 'true'
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      # --ignore-scripts: nenhum script de instalacao de dependencia roda no deploy.
       - name: Build do front
         if: steps.gate.outputs.ativo == 'true'
         working-directory: frontend
@@ -98,21 +53,100 @@ jobs:
           VITE_COGNITO_REGION: us-east-1
           VITE_COGNITO_CLIENT_ID: ${{ vars.COGNITO_CLIENT_ID }}
         run: |
-          npm ci
+          npm ci --ignore-scripts
           npm run build
 
-      - name: Publicar o front e invalidar o CloudFront
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: steps.gate.outputs.ativo == 'true'
+        with:
+          name: front-dist
+          path: frontend/dist
+          if-no-files-found: error
+          retention-days: 1
+
+  deploy:
+    needs: front
+    if: needs.front.outputs.ativo == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      # Os builds rodam ANTES das credenciais existirem no ambiente.
+      # --platform/--provenance=false: a Lambda rejeita manifesto OCI index.
+      - name: Build das imagens (tag = SHA)
+        run: |
+          docker build --platform linux/amd64 --provenance=false \
+            -f docker/api-lambda.Dockerfile -t "radar-api:${GITHUB_SHA}" .
+          docker build --platform linux/amd64 --provenance=false \
+            -f docker/coletor.Dockerfile -t "radar-coletor:${GITHUB_SHA}" .
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: front-dist
+          path: dist
+
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@7290e214a610b32bc0eef81748948b6d466a8783 # v2.2.0
+
+      - name: Push das imagens
+        env:
+          REGISTRO: ${{ steps.ecr.outputs.registry }}
+        run: |
+          for repo in api coletor; do
+            docker tag "radar-${repo}:${GITHUB_SHA}" "${REGISTRO}/radar-${repo}:${GITHUB_SHA}"
+            docker push "${REGISTRO}/radar-${repo}:${GITHUB_SHA}"
+          done
+
+      # function-updated-v2 usa GetFunction (o v1 usa GetFunctionConfiguration, nao concedido).
+      - name: Atualizar a Lambda da API
+        env:
+          REGISTRO: ${{ steps.ecr.outputs.registry }}
+        run: |
+          aws lambda update-function-code --function-name radar-api \
+            --image-uri "${REGISTRO}/radar-api:${GITHUB_SHA}" > /dev/null
+          aws lambda wait function-updated-v2 --function-name radar-api
+
+      # Nova revisao a partir da ULTIMA: so a imagem muda (segredos, env, logs e roles ficam).
+      # Sem terraform apply no CI. Um apply manual depois deve usar -var tag_coletor=<sha>.
+      - name: Registrar nova revisao da task do coletor
+        env:
+          REGISTRO: ${{ steps.ecr.outputs.registry }}
+        run: |
+          aws ecs describe-task-definition --task-definition radar-coletor \
+            --query taskDefinition --output json > taskdef.json
+          jq --arg img "${REGISTRO}/radar-coletor:${GITHUB_SHA}" '
+            .containerDefinitions |= map(if .name == "coletor" then .image = $img else . end)
+            | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                  .compatibilities, .registeredAt, .registeredBy)
+          ' taskdef.json > novo.json
+          aws ecs register-task-definition --cli-input-json file://novo.json \
+            --query taskDefinition.taskDefinitionArn --output text
+
+      # Assets com hash no nome: cache longo. index.html por ultimo e sem cache.
+      - name: Publicar o front e invalidar o CloudFront
         env:
           S3_BUCKET_FRONT: ${{ vars.S3_BUCKET_FRONT }}
           CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
         run: |
-          aws s3 sync frontend/dist "s3://${S3_BUCKET_FRONT}" --delete
+          aws s3 sync dist "s3://${S3_BUCKET_FRONT}" --exclude index.html \
+            --cache-control "public,max-age=31536000,immutable"
+          aws s3 cp dist/index.html "s3://${S3_BUCKET_FRONT}/index.html" \
+            --cache-control "no-cache"
+          aws s3 sync dist "s3://${S3_BUCKET_FRONT}" --delete \
+            --exclude index.html --cache-control "public,max-age=31536000,immutable"
           aws cloudfront create-invalidation \
             --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" --paths "/*" > /dev/null
 
       - name: Verificacao (smoke)
-        if: steps.gate.outputs.ativo == 'true' && vars.URL_SITE != ''
+        if: vars.URL_SITE != ''
         env:
           URL_SITE: ${{ vars.URL_SITE }}
-        run: curl -fsS --retry 5 --retry-delay 5 --retry-all-errors "${URL_SITE%/}/api/status"
+        run: curl -fsS --max-time 10 --retry 3 --retry-delay 5 "${URL_SITE%/}/api/status"

@@ -16,6 +16,23 @@ resource "aws_iam_openid_connect_provider" "github" {
   thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1", "1c58a3a8518e8759bf075b76b750d4f2df264fcd"]
 }
 
+# Acesso do servico Lambda a imagem da API (mesma conta: basta um lado conceder).
+data "aws_iam_policy_document" "api_lambda_ecr" {
+  statement {
+    sid     = "LambdaECRImageRetrievalPolicy"
+    actions = ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"]
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_ecr_repository_policy" "api_lambda" {
+  repository = aws_ecr_repository.api.name
+  policy     = data.aws_iam_policy_document.api_lambda_ecr.json
+}
+
 data "aws_iam_policy_document" "deploy_assume" {
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
@@ -35,6 +52,15 @@ data "aws_iam_policy_document" "deploy_assume" {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
       values   = ["repo:${var.repositorio_github}:ref:refs/heads/main"]
+    }
+
+    # Amarra a role ao workflow de deploy (chave suportada pelo IAM para o GitHub:
+    # https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_iam-condition-keys.html).
+    # Outro workflow na main nao assume a role.
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:job_workflow_ref"
+      values   = ["${var.repositorio_github}/.github/workflows/deploy.yml@refs/heads/main"]
     }
   }
 }
@@ -60,6 +86,15 @@ data "aws_iam_policy_document" "deploy" {
       "ecr:PutImage",
     ]
     resources = [aws_ecr_repository.api.arn, aws_ecr_repository.coletor.arn]
+  }
+
+  # Quem atualiza a Lambda por imagem precisa ler a imagem no ECR:
+  # https://docs.aws.amazon.com/lambda/latest/dg/images-create.html#gettingstarted-images-permissions
+  # Get/SetRepositoryPolicy so seriam necessarios para o Lambda criar a politica do repo;
+  # ela e criada abaixo pelo Terraform (aws_ecr_repository_policy.api_lambda), entao nao sao concedidos.
+  statement {
+    actions   = ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"]
+    resources = [aws_ecr_repository.api.arn]
   }
 
   statement {

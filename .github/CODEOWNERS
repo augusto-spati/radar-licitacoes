@@ -13,6 +13,5 @@
 /frontend/src/componentes/Shell.tsx     @augusto-spati
 /frontend/e2e/                          @augusto-spati
 /frontend/scripts/                      @augusto-spati
-/.github/workflows/ci.yml               @augusto-spati
-/.github/workflows/deploy.yml               @augusto-spati
+/.github/workflows/                     @augusto-spati
 /.github/CODEOWNERS                     @augusto-spati
