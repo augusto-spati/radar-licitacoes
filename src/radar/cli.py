@@ -15,6 +15,7 @@ from radar.api.app import criar_app
 from radar.coleta import (
     ClienteEducado,
     ClientePNCP,
+    FonteCompesa,
     FonteRetrato,
     FonteSanepar,
     coletar_pendentes,
@@ -69,8 +70,8 @@ def _criar_cliente() -> ClientePNCP:
 
 
 def _fontes_retrato() -> list[FonteRetrato]:
-    """Fontes lidas por retrato, na ordem em que rodam (a Compesa entra aqui)."""
-    return [FonteSanepar()]
+    """Fontes lidas por retrato, na ordem em que rodam."""
+    return [FonteSanepar(), FonteCompesa()]
 
 
 def _criar_cliente_retrato(fonte: FonteRetrato) -> ClienteEducado:

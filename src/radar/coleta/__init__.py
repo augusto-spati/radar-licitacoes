@@ -1,5 +1,6 @@
 """Módulo coleta."""
 
+from radar.coleta.compesa import FonteCompesa
 from radar.coleta.janelas import (
     Auditoria,
     ResumoColeta,
@@ -33,6 +34,7 @@ __all__ = [
     "ClientePNCP",
     "ErroFonte",
     "ErroPNCP",
+    "FonteCompesa",
     "FonteRetrato",
     "FonteSanepar",
     "InfoRetrato",
