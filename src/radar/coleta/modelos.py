@@ -58,6 +58,7 @@ class ColetaRetrato(Base):
     paginas: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     registros: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     erro: Mapped[str | None] = mapped_column(Text)
+    processado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class PaginaBruta(Base):

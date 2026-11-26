@@ -1,6 +1,9 @@
 from datetime import date
+from pathlib import Path
 
 import pytest
+from alembic import command
+from alembic.config import Config as AlembicConfig
 from sqlalchemy import Engine, inspect
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -33,3 +36,15 @@ def test_janela_unica(sessao: Session) -> None:
     sessao.add(_janela())
     with pytest.raises(IntegrityError):
         sessao.flush()
+
+
+RAIZ = Path(__file__).resolve().parents[2]
+
+
+def test_modelos_e_migracoes_sem_diferencas(engine: Engine) -> None:
+
+    config = AlembicConfig(str(RAIZ / "alembic.ini"))
+    config.set_main_option("script_location", str(RAIZ / "migrations"))
+    config.attributes["url"] = engine.url.render_as_string(hide_password=False)
+
+    command.check(config)
