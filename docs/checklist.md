@@ -21,12 +21,18 @@ Cada item marcado aponta para o arquivo e o commit onde está implementado e par
 
 ## Eventos e AWS
 
-- [ ] Coleta, fila e processamento: fila em memória, depois pgmq.
-- [ ] Padrão outbox e SQS.
-- [ ] Páginas brutas no S3 (armazém de brutos com duas implementações: arquivo local e S3).
-- [ ] Infraestrutura como código (Terraform): S3, CloudFront, Lambda, API Gateway, ECS Fargate, EventBridge, SSM e alerta de orçamento.
-- [ ] IAM com papel por função e deploy sem chave fixa (OIDC do GitHub Actions).
-- [ ] Custos sob controle (alerta no AWS Budgets, sem NAT Gateway).
+Filas ficam como futuro, no tema 2: primeiro pgmq no Postgres, depois outbox, depois SQS. A etapa "2b-brutos" (páginas brutas no S3) foi descartada: a retenção de brutos da etapa 3 (`limpar_brutos`) mantém o banco em cerca de 120 MB. O S3 volta no tema 4, para os PDFs dos editais.
+
+- [ ] Coleta, fila e processamento: fila em memória, depois pgmq (tema 2).
+- [ ] Padrão outbox e SQS (tema 2).
+- [x] Infraestrutura como código (Terraform): S3, CloudFront, Lambda, API Gateway, ECS Fargate, EventBridge Scheduler, Cognito, SES, SSM, alarmes e orçamento. `infra/bootstrap/`, `infra/prod/*.tf`, `infra/README.md`. Vídeo: a gravar (`docs/videos/02b-aws.md`).
+- [x] IAM com papel por função e deploy sem chave fixa (OIDC do GitHub Actions, trust com `sub` imutável e `job_workflow_ref`). `infra/prod/github_oidc.tf`, `.github/workflows/deploy.yml` (commits `80ec1d9`, `c34b14f`). Vídeo: a gravar.
+- [x] Custos sob controle: sem NAT Gateway, load balancer, RDS, EC2 e EIP (teste `tests/unit/test_infra_estatico.py`) e orçamento de US$ 5 com alertas. `infra/prod/orcamento.tf`. Vídeo: a gravar.
+- [ ] Custo real da primeira semana. A medir em 2026-12-03 (`docs/etapas/02b-aws.md`).
+- [x] Coleta agendada na nuvem (Fargate pelo EventBridge Scheduler) e alarme "coleta não rodou". `infra/prod/coletor.tf`. Vídeo: a gravar.
+- [x] Login por código (Cognito e SES em sandbox) com JWT no API Gateway. `infra/prod/auth.tf`, `infra/prod/api.tf`. Vídeo: a gravar.
+- [x] Coletores Sanepar e Compesa no modelo multi-fonte. `docs/etapas/03-coletores.md`. Vídeo: a gravar (`docs/videos/03-coletores.md`).
+- [x] Etapa 2b-brutos (páginas brutas no S3): descartada, ver acima. Volta no tema 4.
 
 ## Observabilidade
 
@@ -54,6 +60,6 @@ Exceção registrada em D7: o front é feito majoritariamente com IA e não cont
 - [x] Tipos do front gerados do OpenAPI e conferidos no CI. `frontend/src/dados/api.d.ts`, `.github/workflows/ci.yml` (commits `44fb252`, `3ae340c`). Vídeo: a gravar.
 - [x] Screenshot do shell em celular e desktop, gerado no CI Linux. `frontend/e2e/` (commits `b5ddb19`, `0198f00`). Vídeo: a gravar.
 - [x] Guarda dos arquivos do contrato por trailer `Contrato-Front: aprovado` e `CODEOWNERS`. `frontend/scripts/contrato-guardado.mjs`, `.github/CODEOWNERS` (commit `3ae340c`). Vídeo: a gravar.
-- [ ] Guarda rodando o script da base via `pull_request_target`. Pendente: só vale depois do merge (ver `docs/etapas/02a-prototipo.md`).
+- [x] Guarda rodando o script da base via `pull_request_target` (job `guarda-base`). `.github/workflows/guarda-base.yml`. Vídeo: a gravar (`docs/videos/02a-prototipo.md`).
 - [ ] Revisão pelo Front-End-Checklist (acessibilidade, segurança, performance).
 - [ ] Storybook MCP, quando houver cerca de 5 componentes próprios.
