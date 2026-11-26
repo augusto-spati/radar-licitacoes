@@ -82,40 +82,180 @@
       "data_abertura_proposta": "2026-11-09T17:00:00"
     },
     {
-      "numero_controle_pncp": "49325434000150-1-000003/2027",
-      "objeto": "Aquisição de fitas de borda, destinadas à produção de tampos para mesas escolares reformadas e mobiliários para sala de leitura do projeto \"Salas da Liberdade\" da Fundação Prof. Dr. Manoel Pedro Pimentel (FUNAP).",
-      "orgao_nome": "FUNDACAO PROF.DR.MANOEL PEDRO PIMENTEL-FUNAP",
+      "numero_controle_pncp": "05546795000151-1-000046/2026",
+      "objeto": "Contratação de empresa especializada para execução de obras de revitalização de Espaços Livres - Praça Cairbar Schutel e Praça João Batista Tramontano (Rua Gen. Brasilio Taborda e Rua João Maffei) - Butantã - São Paulo/SP, conforme especificações constantes do Anexo I do Edital.",
+      "orgao_nome": "SUBPREFEITURA BUTANTA",
       "uf": "SP",
       "municipio": "São Paulo",
-      "modalidade_id": 6,
-      "valor_estimado": "0.0",
-      "data_encerramento_proposta": "2026-11-27T08:59:00",
-      "link_origem": "https://cnetmobile.estaleiro.serpro.gov.br/comprasnet-web/public/compras/acompanhamento-compra?compra=38110105000952027",
-      "linhas": [
-        "comercial"
-      ],
-      "orgao_cnpj": "49325434000150",
+      "modalidade_id": 4,
+      "valor_estimado": "789693.74",
+      "data_encerramento_proposta": "2026-11-26T16:00:00",
+      "link_origem": "https://cnetmobile.estaleiro.serpro.gov.br/comprasnet-web/public/compras/acompanhamento-compra?compra=92506603000462026",
+      "linhas": [],
+      "orgao_cnpj": "05546795000151",
       "situacao_nome": "Divulgada no PNCP",
-      "data_publicacao": "2026-11-11T12:09:30",
-      "data_abertura_proposta": "2026-11-12T09:00:00"
+      "data_publicacao": "2026-11-10T14:40:37",
+      "data_abertura_proposta": "2026-11-11T08:00:00"
     },
     {
-      "numero_controle_pncp": "22988000000184-1-000053/2026",
-      "objeto": "[Portal de Compras Públicas] - Constitui objeto do presente processo Contratação de empresa para fornecimento de licença de uso de sistemas informatizados para Gestão do Saneamento, Leitura com Impressão Simultânea, Ordem de Serviço, LGPD e Chatbot de Atendimento com Inteligência Artificial.",
-      "orgao_nome": "SERVICO AUTONOMO DE AGUA E ESGOTO",
-      "uf": "MG",
-      "municipio": "Oliveira",
+      "numero_controle_pncp": "46137428000181-1-000075/2026",
+      "objeto": "A presente licitação tem por objeto, o Registro de Preços para a Aquisição de Fórmulas e Suplementos Alimentares, conforme especificações constantes do Termo de Referência, que integra este Edital como Anexo I.",
+      "orgao_nome": "MUNICIPIO DE AREALVA",
+      "uf": "SP",
+      "municipio": "Arealva",
       "modalidade_id": 6,
-      "valor_estimado": "662938.75",
-      "data_encerramento_proposta": "2026-11-30T08:30:00",
-      "link_origem": "https://www.portaldecompraspublicas.com.br/processos/MG/Servico-Autonomo-de-Agua-e-Esgoto-de-Oliveira-SAAE-2813/PE-22-2026-2026-512306",
-      "linhas": [
-        "comercial"
-      ],
-      "orgao_cnpj": "22988000000184",
+      "valor_estimado": "580315.3",
+      "data_encerramento_proposta": "2026-11-26T23:59:00",
+      "link_origem": "http://portaltransp.arealva.sp.gov.br:5885/comprasedital",
+      "linhas": [],
+      "orgao_cnpj": "46137428000181",
       "situacao_nome": "Divulgada no PNCP",
-      "data_publicacao": "2026-11-12T16:07:49",
-      "data_abertura_proposta": "2026-11-12T17:00:00"
+      "data_publicacao": "2026-11-09T16:41:15",
+      "data_abertura_proposta": "2026-11-26T00:01:00"
+    },
+    {
+      "numero_controle_pncp": "44441558000188-1-000024/2026",
+      "objeto": "a CONTRATAÇÃO DE EMPRESA PARA LOCAÇÃO DE ATÉ 100 (CEM) HORAS DE RETROESCAVADEIRA DE MÉDIO PORTE, COM OPERADOR, PARA SERVIÇOS DE LIMPEZA DE BARRANCO, BEIRA DE PISTA, VALAS, EM LOCAIS ÚMIDOS E DEMAIS SERVIÇOS PERTINENTES AO MAQUINÁRIO",
+      "orgao_nome": "MUNICIPIO DE LUIZIANIA",
+      "uf": "SP",
+      "municipio": "Luiziânia",
+      "modalidade_id": 7,
+      "valor_estimado": "43333.0",
+      "data_encerramento_proposta": "2026-11-26T23:59:00",
+      "link_origem": "",
+      "linhas": [],
+      "orgao_cnpj": "44441558000188",
+      "situacao_nome": "Divulgada no PNCP",
+      "data_publicacao": "2026-11-09T15:31:27",
+      "data_abertura_proposta": "2026-11-26T00:01:00"
+    },
+    {
+      "numero_controle_pncp": "11040896000159-1-000013/2026",
+      "objeto": "REGISTRO DE PREÇOS VISANDO FUTURO E EVENTUAL CONTRATO DE SERVIÇO PARA CONFECÇÃO DE MOCHILA ESCOLAR PARA ATENDER A SECRETARIA DE EDUCAÇÃO DO MUNICÍPIO DE IPUBI/PE.",
+      "orgao_nome": "MUNICIPIO DE IPUBI",
+      "uf": "PE",
+      "municipio": "Ipubi",
+      "modalidade_id": 6,
+      "valor_estimado": "0.0",
+      "data_encerramento_proposta": "2026-11-26T23:59:00",
+      "link_origem": "http://www.portaldeipubi.com.br",
+      "linhas": [],
+      "orgao_cnpj": "11040896000159",
+      "situacao_nome": "Divulgada no PNCP",
+      "data_publicacao": "2026-11-10T09:49:50",
+      "data_abertura_proposta": "2026-11-12T08:00:00"
+    },
+    {
+      "numero_controle_pncp": "11040904000167-1-000120/2026",
+      "objeto": "CONTRATAÇÃO DE EMPRESA ESPECIALIZADA PARA LOCAÇÃO DE CAMINHÃO EQUIPADO COM POLIGUINDASTE E 10 (DEZ) CAÇAMBAS ESTACIONÁRIAS TIPO PAPA-METRALHA, COM CAPACIDADE MÍNIMA DE 5 M³ CADA, SEM MOTORISTA E SEM COMBUSTÍVEL, COM MANUTENÇÃO PREVENTIVA E CORRETIVA SOB RESPONSABILIDADE DA CONTRATADA, DESTINADA A ATENDER ÀS DIVERSAS DEMANDAS DA SECRETARIA MUNICIPAL DE INFRAESTRUTURA E SERVIÇOS PÚBLICOS DE OURICURI/PE",
+      "orgao_nome": "MUNICIPIO DE OURICURI",
+      "uf": "PE",
+      "municipio": "Ouricuri",
+      "modalidade_id": 6,
+      "valor_estimado": "301200.0",
+      "data_encerramento_proposta": "2026-11-26T23:59:00",
+      "link_origem": "http://www.portaldeouricuri.com.br",
+      "linhas": [],
+      "orgao_cnpj": "11040904000167",
+      "situacao_nome": "Divulgada no PNCP",
+      "data_publicacao": "2026-11-10T11:48:45",
+      "data_abertura_proposta": "2026-11-12T08:00:00"
+    },
+    {
+      "numero_controle_pncp": "45157104000142-1-000139/2026",
+      "objeto": "Contratação de empresa especializada para a execução das obras de construção de unidade básica de saúde, situada na Rua Abílio Gonçalves Cruz, esquina com a Rua Luiz Donizeti do Nascimento – Bairro Sítio do Estado, no Município de Tanabi/SP, compreendendo o fornecimento de materiais, mão de obra, equipamentos, ferramentas e demais insumos necessários à completa e adequada execução do objeto, conforme especificações, condições e exigências estabelecidas no Termo de Referência e demais documentos que integram a contratação.",
+      "orgao_nome": "MUNICIPIO DE TANABI",
+      "uf": "SP",
+      "municipio": "Tanabi",
+      "modalidade_id": 4,
+      "valor_estimado": "1430042.13",
+      "data_encerramento_proposta": "2026-11-26T23:59:00",
+      "link_origem": "http://portalcompras.tanabi.sp.gov.br",
+      "linhas": [],
+      "orgao_cnpj": "45157104000142",
+      "situacao_nome": "Divulgada no PNCP",
+      "data_publicacao": "2026-11-11T16:46:02",
+      "data_abertura_proposta": "2026-11-26T00:01:00"
+    },
+    {
+      "numero_controle_pncp": "44498988000136-1-000043/2026",
+      "objeto": "A Diretoria de Saúde vem respeitosamente ao Excelentíssimo Senhor Prefeito, solicitar a abertura de Ata de Registros de Preços para Contratação de Serviços Especializados em Odontologia de acordo com Emenda Parlamentar Federal nº 3135.0012.",
+      "orgao_nome": "MUNICIPIO DE BOCAINA",
+      "uf": "SP",
+      "municipio": "Bocaina",
+      "modalidade_id": 7,
+      "valor_estimado": "154684.6",
+      "data_encerramento_proposta": "2026-11-26T23:59:00",
+      "link_origem": "",
+      "linhas": [],
+      "orgao_cnpj": "44498988000136",
+      "situacao_nome": "Divulgada no PNCP",
+      "data_publicacao": "2026-11-11T08:18:52",
+      "data_abertura_proposta": "2026-11-26T00:01:00"
+    },
+    {
+      "numero_controle_pncp": "45144748000104-1-000043/2026",
+      "objeto": "aquisição de equipamentos de informática destinados às Unidades Escolares 3",
+      "orgao_nome": "MUNICIPIO DE MIRASSOLANDIA",
+      "uf": "SP",
+      "municipio": "Mirassolândia",
+      "modalidade_id": 6,
+      "valor_estimado": "163912.4",
+      "data_encerramento_proposta": "2026-11-26T23:59:00",
+      "link_origem": "",
+      "linhas": [],
+      "orgao_cnpj": "45144748000104",
+      "situacao_nome": "Divulgada no PNCP",
+      "data_publicacao": "2026-11-12T16:47:28",
+      "data_abertura_proposta": "2026-11-13T00:00:00"
+    },
+    {
+      "numero_controle_pncp": "46523130000100-1-000266/2026",
+      "objeto": "contratação de instituição financeira bancária \r\nautorizada a funcionar pelo Banco Central do Brasil para prestação, em caráter de \r\nexclusividade, de serviços de processamento e gerenciamento dos créditos da folha de \r\npagamento dos servidores municipais ativos (efetivos, comissionados e temporários), \r\nagentes políticos, conselheiros tutelares, estagiários, bolsistas de programas municipais, \r\naposentados e pensionistas, com a possibilidade facultativa de instalação de Posto de \r\nAtendimento Bancário (PAB) no Paço Municipal",
+      "orgao_nome": "MUNICIPIO DE ITAPECERICA DA SERRA",
+      "uf": "SP",
+      "municipio": "Itapecerica da Serra",
+      "modalidade_id": 7,
+      "valor_estimado": "6761145.55",
+      "data_encerramento_proposta": "2026-11-27T00:00:00",
+      "link_origem": null,
+      "linhas": [],
+      "orgao_cnpj": "46523130000100",
+      "situacao_nome": "Divulgada no PNCP",
+      "data_publicacao": "2026-11-06T15:42:12",
+      "data_abertura_proposta": "2026-11-27T00:00:00"
+    },
+    {
+      "numero_controle_pncp": "45141132000171-1-000083/2026",
+      "objeto": "Contratação de serviços de hospedagem em hotel, mediante diárias com café da manhã incluso, para acomodação de atletas e membros de comissões técnicas e de arbitragem das delegações participantes de campeonatos esportivos oficiais realizados no Município de José Bonifácio, conforme especificações anexas",
+      "orgao_nome": "MUNICIPIO DE JOSE BONIFACIO",
+      "uf": "SP",
+      "municipio": "José Bonifácio",
+      "modalidade_id": 7,
+      "valor_estimado": "194274.0",
+      "data_encerramento_proposta": "2026-11-27T00:00:00",
+      "link_origem": "",
+      "linhas": [],
+      "orgao_cnpj": "45141132000171",
+      "situacao_nome": "Divulgada no PNCP",
+      "data_publicacao": "2026-11-07T14:25:03",
+      "data_abertura_proposta": "2026-11-06T00:00:00"
+    },
+    {
+      "numero_controle_pncp": "46482857000196-1-000294/2026",
+      "objeto": "Contratação de Instituição Financeira para execução de serviços de cobrança bancária registrada para arrecadação de tributos e demais receitas muicipais, através de boletos de cobrança bancária registradas hibridos, com prestação de contas dos valores arrecadados por meio magnético, integração por API e possibilidade de desenvolvimento de serviço de mensageria, denominado Webhook.",
+      "orgao_nome": "MUNICIPIO DE UBATUBA",
+      "uf": "SP",
+      "municipio": "Ubatuba",
+      "modalidade_id": 6,
+      "valor_estimado": "535784.0",
+      "data_encerramento_proposta": "2026-11-27T00:00:00",
+      "link_origem": null,
+      "linhas": [],
+      "orgao_cnpj": "46482857000196",
+      "situacao_nome": "Divulgada no PNCP",
+      "data_publicacao": "2026-11-11T09:27:49",
+      "data_abertura_proposta": "2026-11-11T00:00:00"
     },
     {
       "numero_controle_pncp": "56023443000152-1-000736/2026",
@@ -152,24 +292,6 @@
       "situacao_nome": "Divulgada no PNCP",
       "data_publicacao": "2026-11-11T15:25:12",
       "data_abertura_proposta": "2026-11-11T15:25:09"
-    },
-    {
-      "numero_controle_pncp": "00460408000146-1-000083/2026",
-      "objeto": "Aquisição de bobinas de papel termo sensível para as impressoras portáteis utilizadas pelos leituristas na impressão de contas de água e esgoto, atendendo as necessidades do Departamento Administrativo do SAAE de Cambuí-MG, conforme as especificações técnicas e quantitativos definidos no termo de referência (ANEXO I) do edital.",
-      "orgao_nome": "SERVICO AUTONOMO DE AGUA E ESGOTO DE CAMBUI",
-      "uf": "MG",
-      "municipio": "Cambuí",
-      "modalidade_id": 6,
-      "valor_estimado": "22455.0",
-      "data_encerramento_proposta": "2026-12-01T08:00:00",
-      "link_origem": "",
-      "linhas": [
-        "comercial"
-      ],
-      "orgao_cnpj": "00460408000146",
-      "situacao_nome": "Divulgada no PNCP",
-      "data_publicacao": "2026-11-17T10:13:21",
-      "data_abertura_proposta": "2026-11-18T08:00:00"
     },
     {
       "numero_controle_pncp": "04691691000178-1-000335/2026",
@@ -209,42 +331,6 @@
       "data_abertura_proposta": "2026-11-16T08:30:00"
     },
     {
-      "numero_controle_pncp": "03668152000155-1-000022/2026",
-      "objeto": "Considerando o Edital 023/2026 e o Termo de Referência 032/2026, trata-se de Contratação de empresa especializada para prestação de Serviços de Material Gráfico.  Detalhes conforme Edital e TR, leitura obrigatória para os licitantes interessados na demanda. ",
-      "orgao_nome": "CONSELHO REGIONAL DE EDUCACAO FISICA DA SEXTA REGIAO",
-      "uf": "MG",
-      "municipio": "Belo Horizonte",
-      "modalidade_id": 6,
-      "valor_estimado": "150380.0",
-      "data_encerramento_proposta": "2026-12-01T08:59:00",
-      "link_origem": "https://cnetmobile.estaleiro.serpro.gov.br/comprasnet-web/public/compras/acompanhamento-compra?compra=92976705000232026",
-      "linhas": [
-        "comercial"
-      ],
-      "orgao_cnpj": "03668152000155",
-      "situacao_nome": "Divulgada no PNCP",
-      "data_publicacao": "2026-11-13T15:03:27",
-      "data_abertura_proposta": "2026-11-16T09:00:00"
-    },
-    {
-      "numero_controle_pncp": "66229584000180-1-000038/2026",
-      "objeto": "Registro de Preços, objetivando a futura e eventual aquisição de livros paradidáticos ilustrados, destinados ao atendimento das necessidades da Secretaria Municipal de Educação de Santa Rita de Minas/MG, visando ao fortalecimento das práticas pedagógicas, ao incentivo à leitura e ao desenvolvimento de atividades educacionais nas unidades escolares da rede municipal de ensino, conforme solicitação",
-      "orgao_nome": "MUNICIPIO DE SANTA RITA DE MINAS",
-      "uf": "MG",
-      "municipio": "Santa Rita de Minas",
-      "modalidade_id": 6,
-      "valor_estimado": "504900.0",
-      "data_encerramento_proposta": "2026-12-01T09:30:00",
-      "link_origem": "",
-      "linhas": [
-        "comercial"
-      ],
-      "orgao_cnpj": "66229584000180",
-      "situacao_nome": "Divulgada no PNCP",
-      "data_publicacao": "2026-11-16T10:50:18",
-      "data_abertura_proposta": "2026-11-16T18:00:00"
-    },
-    {
       "numero_controle_pncp": "46717104000112-1-000058/2026",
       "objeto": "REGISTRO DE PREÇOS PARA EVENTUAL CONTRATAÇÃO DE EMPRESA ESPECIALIZADA EM SERVIÇOS DE HIDROJATEAMENTO PARA LIMPEZA E DESOBSTRUÇÃO DE REDE DE ÁGUAS PLUVIAIS (BUEIROS E BOCAS DE LOBO) E ESGOTOS DO MUNICÍPIO DE BOA ESPERANÇA DO SUL/SP",
       "orgao_nome": "MUNICIPIO DE BOA ESPERANCA DO SUL",
@@ -261,42 +347,6 @@
       "situacao_nome": "Divulgada no PNCP",
       "data_publicacao": "2026-11-12T16:30:31",
       "data_abertura_proposta": "2026-11-13T12:30:00"
-    },
-    {
-      "numero_controle_pncp": "47563739000175-1-000358/2026",
-      "objeto": "Contratação de serviços de empresa especializada para instalação e locação de infraestrutura e equipamentos que compõe um Sistema Inteligente de Videomonitoramento Urbano, com analíticos de detecção e reconhecimento facial e monitoramento de trânsito, por meio de sistema automático de leitura de placas veiculares, integrado ao sistema Detecta, Alerta Brasil, Muralha Paulista e Centro Integrado de Monitoramento e Inteligência com funcionalidade de talonário eletrônico, incluindo proteção antivírus, firewall, backup e replicação de dados, armazenados em nuvem de data center apartado para a Prefeitura Municipal de Lorena.",
-      "orgao_nome": "MUNICIPIO DE LORENA",
-      "uf": "SP",
-      "municipio": "Lorena",
-      "modalidade_id": 6,
-      "valor_estimado": "12650383.47",
-      "data_encerramento_proposta": "2026-12-02T08:00:00",
-      "link_origem": null,
-      "linhas": [
-        "comercial"
-      ],
-      "orgao_cnpj": "47563739000175",
-      "situacao_nome": "Divulgada no PNCP",
-      "data_publicacao": "2026-11-16T09:00:18",
-      "data_abertura_proposta": "2026-11-16T09:00:00"
-    },
-    {
-      "numero_controle_pncp": "08682079000190-1-000068/2026",
-      "objeto": "Aquisição de bobinas térmicas para impressão das leituras e demais registros provenientes dos equipamentos de leitura de consumo de água, destinadas ao atendimento das necessidades operacionais do Serviço Autárquico de Água e Esgoto – SAAE",
-      "orgao_nome": "SAAE - SERVICO AUTARQUICO DE AGUA E ESGOTO DE CARMO DO CAJURU",
-      "uf": "MG",
-      "municipio": "Carmo do Cajuru",
-      "modalidade_id": 6,
-      "valor_estimado": "93800.0",
-      "data_encerramento_proposta": "2026-12-02T08:29:00",
-      "link_origem": "",
-      "linhas": [
-        "comercial"
-      ],
-      "orgao_cnpj": "08682079000190",
-      "situacao_nome": "Divulgada no PNCP",
-      "data_publicacao": "2026-11-13T08:12:27",
-      "data_abertura_proposta": "2026-11-17T10:00:00"
     },
     {
       "numero_controle_pncp": "46717104000112-1-000059/2026",
@@ -317,24 +367,6 @@
       "data_abertura_proposta": "2026-11-14T08:30:00"
     },
     {
-      "numero_controle_pncp": "45138070000149-1-000984/2026",
-      "objeto": "Contratação de empresa especializada para a elaboração da revisão e atualização do Plano Municipal de Saneamento Básico da Estância Turística de Santa Fé do Sul-SP., conforme UGRHI 18, (código do empreendimento: 2025-SJD-411), por meio de convênio, contrato nº 181/2025 firmado junto ao FEHIDRO .",
-      "orgao_nome": "MUNICIPIO DE SANTA FE DO SUL",
-      "uf": "SP",
-      "municipio": "Santa Fé do Sul",
-      "modalidade_id": 6,
-      "valor_estimado": "336622.8",
-      "data_encerramento_proposta": "2026-12-02T09:00:00",
-      "link_origem": "https://bllcompras.com/Process/ProcessView?param1=[gkz]knPUL47E2SoH_lFmHoo66/z/B/S2ftzpsBrHJu3L6z8e2Jm3YdEAgkN7815kr2tLB4rvKc1XTaTg07Rlg55zcxr1S/1mNkdrbREuA44dbUw=",
-      "linhas": [
-        "consultoria"
-      ],
-      "orgao_cnpj": "45138070000149",
-      "situacao_nome": "Divulgada no PNCP",
-      "data_publicacao": "2026-11-12T15:24:25",
-      "data_abertura_proposta": "2026-11-16T09:00:00"
-    },
-    {
       "numero_controle_pncp": "46711362000191-1-000106/2026",
       "objeto": "Registro de Preços para futuras aquisições de parafusos, arruelas, porcas, barras e lençol de borracha, utilizados na fixação de conexões flangeadas de ferro fundido durante a manutenção das redes de água e esgoto do SAAE Mogi Mirim/SP.",
       "orgao_nome": "SERVICO AUTONOMO DE AGUA E ESGOTOS DE MOGI MIRIM",
@@ -351,6 +383,24 @@
       "situacao_nome": "Divulgada no PNCP",
       "data_publicacao": "2026-11-16T22:52:51",
       "data_abertura_proposta": "2026-11-17T08:00:00"
+    },
+    {
+      "numero_controle_pncp": "45138070000149-1-000984/2026",
+      "objeto": "Contratação de empresa especializada para a elaboração da revisão e atualização do Plano Municipal de Saneamento Básico da Estância Turística de Santa Fé do Sul-SP., conforme UGRHI 18, (código do empreendimento: 2025-SJD-411), por meio de convênio, contrato nº 181/2025 firmado junto ao FEHIDRO .",
+      "orgao_nome": "MUNICIPIO DE SANTA FE DO SUL",
+      "uf": "SP",
+      "municipio": "Santa Fé do Sul",
+      "modalidade_id": 6,
+      "valor_estimado": "336622.8",
+      "data_encerramento_proposta": "2026-12-02T09:00:00",
+      "link_origem": "https://bllcompras.com/Process/ProcessView?param1=[gkz]knPUL47E2SoH_lFmHoo66/z/B/S2ftzpsBrHJu3L6z8e2Jm3YdEAgkN7815kr2tLB4rvKc1XTaTg07Rlg55zcxr1S/1mNkdrbREuA44dbUw=",
+      "linhas": [
+        "consultoria"
+      ],
+      "orgao_cnpj": "45138070000149",
+      "situacao_nome": "Divulgada no PNCP",
+      "data_publicacao": "2026-11-12T15:24:25",
+      "data_abertura_proposta": "2026-11-16T09:00:00"
     },
     {
       "numero_controle_pncp": "45369220000125-1-000087/2026",
@@ -480,24 +530,6 @@
       "data_abertura_proposta": "2026-11-25T14:00:00"
     },
     {
-      "numero_controle_pncp": "45699626000176-1-000601/2026",
-      "objeto": "CONTRATAÇÃO DE EMPRESA ESPECIALIZADA PARA PRESTAÇÃO DE SERVIÇO DE LOCAÇÃO DE SOFTWARES, INSTALAÇÃO, CONFIGURAÇÃO, MANUTENÇÃO, SUPORTE, IMPLANTAÇÃO E TREINAMENTO DE PLATAFORMA TECNOLÓGICA PARA PERMITIR A INTEGRAÇÃO COM EMPRESAS HOMOLOGADAS PARA OPERAR O APLICATIVO (APP); PONTO DE VENDA FÍSICO NO COMÉRCIO LOCAL (PDV) E PONTO DE VENDA MÓVEL (ATRAVÉS DE OPERADORES CREDENCIADOS), DISPONIBILIZAÇÃO DE EQUIPAMENTOS PARA OS AGENTES DE TRÂNSITO E IMPLANTAÇÃO DO SISTEMA DE LEITURA DE PLACA COM CÂMERAS PARA FISCALIZAÇÃO DA UTILIZAÇÃO VIAS A SEREM MONITORADAS, E SERVIÇOS ACESSÓRIOS E COMPLEMENTARES.",
-      "orgao_nome": "MUNICIPIO DE CAMPOS DO JORDAO",
-      "uf": "SP",
-      "municipio": "Campos do Jordão",
-      "modalidade_id": 6,
-      "valor_estimado": "3851956.1",
-      "data_encerramento_proposta": "2026-12-08T08:00:00",
-      "link_origem": "http://www.licitacaocamposdojordao.com.br",
-      "linhas": [
-        "comercial"
-      ],
-      "orgao_cnpj": "45699626000176",
-      "situacao_nome": "Divulgada no PNCP",
-      "data_publicacao": "2026-11-19T16:03:16",
-      "data_abertura_proposta": "2026-11-20T08:00:00"
-    },
-    {
       "numero_controle_pncp": "45359973000150-1-000249/2026",
       "objeto": "Contratação de empresa especializada para pesquisa de vazamentos não visíveis e reparo de vazamentos de água, na macrorregião da Vila Prado e implantação de macro medidores no município de São Carlos - SP (Contrato FEHIDRO 005/2026), tudo em conformidade com as especificações contidas nos Anexos deste Edital.",
       "orgao_nome": "SERVICO AUTONOMO DE AGUA E ESGOTO",
@@ -513,42 +545,6 @@
       "orgao_cnpj": "45359973000150",
       "situacao_nome": "Divulgada no PNCP",
       "data_publicacao": "2026-11-24T18:33:29",
-      "data_abertura_proposta": "2026-11-25T08:00:00"
-    },
-    {
-      "numero_controle_pncp": "49576416000141-1-000367/2026",
-      "objeto": "Contratação de empresa especializada para o fornecimento, instalação, configuração, testes e entrega em pleno funcionamento de sistema autônomo para leitura e reconhecimento automático de placas veiculares (LPR/ANPR), alimentado por energia solar e com comunicação de dados por rede móvel 4G/LTE ou superior",
-      "orgao_nome": "MUNICIPIO DE PENAPOLIS",
-      "uf": "SP",
-      "municipio": "Penápolis",
-      "modalidade_id": 6,
-      "valor_estimado": "110000.0",
-      "data_encerramento_proposta": "2026-12-08T09:00:00",
-      "link_origem": "https://bllcompras.com/Process/ProcessView?param1=[gkz]3qu0DlLfaEMuDEb2cQkcCxvUpVHuHcYVTnuJ1VxeSO7JFLJwYzX_YHWoIzsXa8t0YO2rBopzrfosLGfnQly4woVBs00APeMSqjXQoOMVlLw=",
-      "linhas": [
-        "comercial"
-      ],
-      "orgao_cnpj": "49576416000141",
-      "situacao_nome": "Divulgada no PNCP",
-      "data_publicacao": "2026-11-23T15:44:07",
-      "data_abertura_proposta": "2026-11-24T09:00:00"
-    },
-    {
-      "numero_controle_pncp": "75825828000188-1-000087/2026",
-      "objeto": "Registro de preços para futura e eventual contratação de empresa especializada para o fornecimento, a implantação, a configuração, a manutenção e o suporte técnico de solução integrada de videomonitoramento, leitura automática de placas veiculares (LPR/OCR), recursos de inteligência artificial, plataforma de gerenciamento de vídeo (VMS) e reconhecimento facial, com disponibilização dos equipamentos e demais recursos em regime de comodato, para atendimento às necessidades do Município de Congonhi",
-      "orgao_nome": "MUNICIPIO DE CONGONHINHAS",
-      "uf": "PR",
-      "municipio": "Congonhinhas",
-      "modalidade_id": 6,
-      "valor_estimado": "132234.12",
-      "data_encerramento_proposta": "2026-12-09T08:00:00",
-      "link_origem": "https://cnetmobile.estaleiro.serpro.gov.br/comprasnet-web/public/compras/acompanhamento-compra?compra=98751705000242026",
-      "linhas": [
-        "comercial"
-      ],
-      "orgao_cnpj": "75825828000188",
-      "situacao_nome": "Divulgada no PNCP",
-      "data_publicacao": "2026-11-24T16:29:48",
       "data_abertura_proposta": "2026-11-25T08:00:00"
     },
     {
@@ -568,24 +564,6 @@
       "situacao_nome": "Divulgada no PNCP",
       "data_publicacao": "2026-11-19T16:28:46",
       "data_abertura_proposta": "2026-11-23T09:00:00"
-    },
-    {
-      "numero_controle_pncp": "76966845000106-1-000244/2026",
-      "objeto": "O objeto da presente licitação é a Contratação de empresa para a prestação continuada de serviços de telecomunicações, conectividade, transmissão de dados, manutenção, gerenciamento e monitoramento da infraestrutura de redes do Município de Joaquim Távora - PR, compreendendo o transporte de VLANs fixas em camada 2 por fibra óptica, com fornecimento dos equipamentos e materiais necessários em regime de comodato; acesso à Internet dedicada por fibra óptica, com banda simétrica e endereçamento IPv4 público; manutenção preventiva e corretiva, reestruturação, gerenciamento e monitoramento da rede municipal, incluindo infraestrutura de conectividade, equipamentos de rede e integração com o ambiente central baseado em MikroTik; conectividade, manutenção e suporte ao sistema de videomonitoramento e leitura de placas, abrangendo os pontos instalados no Município; implantação, hospedagem, gerenciamento, monitoramento e suporte de solução de Hotspot Wi-Fi em nuvem, com Portal Cativo, autenticação, controle de usuários, sessões, banda, VLANs, firewall, relatórios e armazenamento seguro de logs; e gestão, manutenção e suporte de solução centralizada de Telefonia IP (PABX IP Asterisk/FreePBX), compreendendo 16 linhas/canais com chamadas ilimitadas e até 250 ramais, distribuídos entre os pontos e departamentos municipais, incluindo configuração, administração, manutenção dos equipamentos, ramais, gateways, infraestrutura e demais recursos necessários ao pleno funcionamento dos serviços.",
-      "orgao_nome": "MUNICIPIO DE JOAQUIM TAVORA",
-      "uf": "PR",
-      "municipio": "Joaquim Távora",
-      "modalidade_id": 6,
-      "valor_estimado": "650238.0",
-      "data_encerramento_proposta": "2026-12-11T09:30:00",
-      "link_origem": null,
-      "linhas": [
-        "comercial"
-      ],
-      "orgao_cnpj": "76966845000106",
-      "situacao_nome": "Divulgada no PNCP",
-      "data_publicacao": "2026-11-24T10:44:40",
-      "data_abertura_proposta": "2026-11-24T11:01:00"
     },
     {
       "numero_controle_pncp": "04691691000178-1-000318/2026",
