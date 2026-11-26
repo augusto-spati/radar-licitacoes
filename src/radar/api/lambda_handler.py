@@ -27,8 +27,12 @@ def _cliente_ssm() -> Any:
 def _garantir_url_do_banco() -> None:
     if os.environ.get("RADAR_DATABASE_URL"):
         return
-    resposta = _cliente_ssm().get_parameter(Name=PARAMETRO_URL_BANCO, WithDecryption=True)
-    os.environ["RADAR_DATABASE_URL"] = resposta["Parameter"]["Value"]
+    try:
+        resposta = _cliente_ssm().get_parameter(Name=PARAMETRO_URL_BANCO, WithDecryption=True)
+        valor: str = resposta["Parameter"]["Value"]
+    except Exception as exc:
+        raise RuntimeError(f"não foi possível ler {PARAMETRO_URL_BANCO} do SSM") from exc
+    os.environ["RADAR_DATABASE_URL"] = valor
 
 
 _garantir_url_do_banco()

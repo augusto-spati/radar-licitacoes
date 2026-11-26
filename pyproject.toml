@@ -42,6 +42,7 @@ packages = ["src/radar"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-m 'not rede'"
+filterwarnings = ["ignore:There is no current event loop:DeprecationWarning:mangum.adapter"]
 markers = ["rede: acessa a rede real (PNCP); fora do CI"]
 
 [tool.ruff]

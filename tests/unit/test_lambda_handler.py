@@ -90,8 +90,14 @@ def test_app_criado_uma_vez(modulo: ModuleType, monkeypatch: pytest.MonkeyPatch)
     assert chamadas == [1]
 
 
-def test_import_nao_abre_conexao(modulo: ModuleType) -> None:
-    # a URL aponta para uma porta fechada: importar não pode ter tentado conectar
+def test_import_nao_abre_conexao(modulo: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
+    def proibido(*args: Any, **kwargs: Any) -> None:
+        raise AssertionError("importar o handler não pode abrir conexão")
+
+    monkeypatch.setattr("sqlalchemy.engine.Engine.connect", proibido)
+    monkeypatch.setattr("sqlalchemy.engine.Engine.raw_connection", proibido)
+    monkeypatch.setattr("sqlalchemy.engine.Engine.begin", proibido)
+    importlib.reload(modulo)
     assert modulo.handler is not None
 
 
@@ -122,3 +128,15 @@ def test_nao_le_ssm_com_env(modulo: ModuleType, monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setenv("RADAR_DATABASE_URL", "postgresql+psycopg://local")
     monkeypatch.setattr(modulo, "_cliente_ssm", explode)
     modulo._garantir_url_do_banco()
+
+
+def test_falha_do_ssm_nao_vaza_valor(modulo: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
+    class Quebrado:
+        def get_parameter(self, **kwargs: Any) -> Any:
+            raise ValueError("segredo-postgresql://u:p@h")
+
+    monkeypatch.delenv("RADAR_DATABASE_URL", raising=False)
+    monkeypatch.setattr(modulo, "_cliente_ssm", lambda: Quebrado())
+    with pytest.raises(RuntimeError, match="/radar/prod/database_url") as info:
+        modulo._garantir_url_do_banco()
+    assert "segredo" not in str(info.value)
