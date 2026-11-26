@@ -13,9 +13,11 @@ Antes de criar um componente: `astryx search`, depois `src/componentes/`; compon
 
   Rota nova, página nova ou item de menu novo só com pedido explícito. O roteador é `HashRouter` e o build usa `base: './'`.
 - **Shell fixo**: `src/componentes/Shell.tsx` (template `shell-top-nav`). Não mude a moldura, o cabeçalho nem a navegação; o menu sai de `rotas`.
-- **Fronteiras** (`npm run lint`, eslint-plugin-boundaries): só `src/rotas.tsx` importa páginas; páginas não importam páginas; componentes não importam páginas.
-- **Sem HTML cru** (`react/forbid-elements`): nada de `button`, `input`, `select`, `table`, `a`, `div`, `span` fora de `src/componentes/base/`.
-- **Sem outra biblioteca de UI nem CSS** (`no-restricted-imports`): MUI, antd, Chakra, Bootstrap e Tailwind são proibidos; CSS só em `src/main.tsx`. Nada de cor ou medida fixa: props, `xstyle` e tokens.
+- **Fronteiras** (`npm run lint`, eslint-plugin-boundaries): só `src/rotas.tsx` importa páginas (além do teste da própria página); páginas não importam páginas; componentes não importam páginas; ninguém importa arquivo `*.test.*`.
+- Só o Shell e o App leem `rotas`; página não importa `src/rotas.tsx`.
+- **Sem HTML cru** (`react/forbid-elements`): nada de `button`, `input`, `select`, `textarea`, `form`, `label`, `table`, `a`, `img`, `div`, `span`, `section`, `p`, `ul`, `li`, `h1`–`h6` fora de `src/componentes/base/`. Também nada de `style` ou `className` em elemento do DOM (`react/forbid-dom-props`).
+- **Sem outra biblioteca de UI nem CSS** (`no-restricted-imports`): MUI, antd, Chakra, Bootstrap, Tailwind, styled-components, Emotion, Mantine, Radix, Headless UI, PrimeReact, Semantic UI, Fluent UI, daisyUI, NextUI/HeroUI e shadcn são proibidos. CSS/SCSS/Sass/Less (inclusive `?inline`) só em `src/main.tsx`. Nada de cor ou medida fixa: props, `xstyle` e tokens.
+- **Dependências de runtime**: só as de `src/dependencias.test.ts`. Dependência nova só com pedido explícito, editando essa lista.
 - **Sem duplicação** (`npm run duplicacao`: jscpd com threshold 0 e minTokens 50 em `src`): reaproveite em vez de copiar.
 - Nunca afrouxe uma regra do `eslint.config.js` ou do `.jscpd.json` para algo passar. `src/eslint-contrato.test.ts` prova que as regras pegam a deriva.
 
