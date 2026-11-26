@@ -12,6 +12,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - run: uv sync --locked
       - run: uv run ruff check .
+      - run: uv run ruff format --check .
       - run: uv run mypy src
       - run: uv run lint-imports
       - run: uv run pytest -v
@@ -31,9 +32,32 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run duplicacao
+      - run: npm run contrato:verificar
+      # O api.d.ts commitado tem de ser o gerado do openapi.json commitado.
+      - run: npm run contrato && git diff --exit-code src/dados/api.d.ts
       - run: npx tsc --noEmit
       - run: npm test
       - run: npm run build
+
+  contrato-guardado:
+    # Arquivos que guardam o contrato do front só mudam com o trailer
+    # "Contrato-Front: aprovado" em algum commit do intervalo (push ou PR).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Guarda do contrato do front
+        env:
+          EVENTO: ${{ github.event_name }}
+          BASE_PR: ${{ github.event.pull_request.base.sha }}
+          CABECA_PR: ${{ github.event.pull_request.head.sha }}
+          ANTES: ${{ github.event.before }}
+          BRANCH_PADRAO: ${{ github.event.repository.default_branch }}
+        run: node frontend/scripts/contrato-guardado.mjs
 
   e2e:
     # Os screenshots de referência são do Linux: o Playwright roda no container

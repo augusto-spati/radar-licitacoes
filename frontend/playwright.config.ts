@@ -7,7 +7,8 @@ export default defineConfig({
   // Referências só do Linux (container do CI): sem sufixo de plataforma no nome.
   snapshotPathTemplate: '{testDir}/__screenshots__/{projectName}/{testFilePath}/{arg}{ext}',
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
+  // Sem nova tentativa: um screenshot que passa na segunda vez esconderia a diferença.
+  retries: 0,
   reporter: process.env.CI ? [['list'], ['html', {open: 'never'}]] : 'list',
   use: {baseURL: 'http://localhost:4173', trace: 'retain-on-failure'},
   webServer: {

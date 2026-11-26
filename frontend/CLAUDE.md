@@ -4,7 +4,7 @@ React + Vite + Astryx 0.7.17 (versão exata em core, tema e cli). Texto da inter
 
 ## Contrato (não negociável)
 
-Antes de criar um componente: `astryx search`, depois `src/componentes/`; componente novo só com pedido explícito.
+Antes de criar um componente: `astryx search`, depois `src/componentes/`; componente novo só com pedido explícito. A lista de componentes (e de pastas de `src/`) é fechada em `src/componentes.test.ts`.
 
 - **Rotas (lista fechada da v1)**, todas em `src/rotas.tsx`, que também gera o menu:
   - `/`: lista de editais (única no menu)
@@ -18,10 +18,25 @@ Antes de criar um componente: `astryx search`, depois `src/componentes/`; compon
 - **Sem HTML cru** (`react/forbid-elements`): nada de `button`, `input`, `select`, `textarea`, `form`, `label`, `table`, `a`, `img`, `div`, `span`, `section`, `p`, `ul`, `li`, `h1`–`h6` fora de `src/componentes/base/`. Também nada de `style` ou `className` em elemento do DOM (`react/forbid-dom-props`).
 - **Sem outra biblioteca de UI nem CSS** (`no-restricted-imports`): MUI, antd, Chakra, Bootstrap, Tailwind, styled-components, Emotion, Mantine, Radix, Headless UI, PrimeReact, Semantic UI, Fluent UI, daisyUI, NextUI/HeroUI e shadcn são proibidos. CSS/SCSS/Sass/Less (inclusive `?inline`) só em `src/main.tsx`. Nada de cor ou medida fixa: props, `xstyle` e tokens.
 - **Dependências de runtime**: só as de `src/dependencias.test.ts`. Dependência nova só com pedido explícito, editando essa lista.
-- **Sem duplicação** (`npm run duplicacao`: jscpd com threshold 0 e minTokens 50 em `src`): reaproveite em vez de copiar.
+- **Nada de fora de `src/`** (`boundaries/no-unknown-dependencies`): código de `src/` só importa arquivos de `src/` (e pacotes); uma pasta paralela como `frontend/ui/` reprova, com qualquer número de `../`. Import absoluto (`/ui/X`) também. As regras de HTML cru, `style`/`className`, bibliotecas e CSS valem em todo o front, não só em `src/`.
+- **Sem duplicação** (`npm run duplicacao`: jscpd com threshold 0 e minTokens 50 no front inteiro, menos `node_modules`, `dist`, relatórios, screenshots, `api.d.ts` e JSON): reaproveite em vez de copiar.
+- **Regra não se desliga por comentário**: o ESLint roda com `noInlineConfig` e `--max-warnings 0`, e `npm run contrato:verificar` (`scripts/verificar-contrato.mjs`) reprova qualquer diretiva de desligar regra do ESLint, config inline ou marcador de ignorar do jscpd em qualquer arquivo de código do front.
+- **Tipos da API**: `src/dados/api.d.ts` é gerado (`npm run contrato`) do `openapi.json`; o CI reprova se divergir. `Linha` e `UF` vêm do `config/filtro.toml` por esse caminho: `LINHAS` e `UFS` em `src/dados/formatos.ts` não compilam se ficarem diferentes.
 - Nunca afrouxe uma regra do `eslint.config.js` ou do `.jscpd.json` para algo passar. `src/eslint-contrato.test.ts` prova que as regras pegam a deriva.
 
-Antes de commitar, dentro de `frontend/`: `npm test`, `npm run lint`, `npm run duplicacao`, `npm run build` e `npx tsc --noEmit`.
+### Arquivos de guarda e o trailer `Contrato-Front: aprovado`
+
+Estes arquivos fazem o contrato valer e só mudam com aprovação explícita do Augusto: `eslint.config.js`, `.jscpd.json`, `package.json`, `vite.config.ts`, `playwright.config.ts`, este `CLAUDE.md`, `src/rotas.test.ts`, `src/dependencias.test.ts`, `src/componentes.test.ts`, `src/eslint-contrato.test.ts`, `src/componentes/Shell.tsx`, `e2e/` (inclusive os screenshots), `scripts/`, `.github/workflows/ci.yml` e `.github/CODEOWNERS` (lista em `scripts/contrato-guardado.mjs`).
+
+O job `contrato-guardado` do CI reprova o push ou o PR em que algum deles mudou sem que pelo menos um commit do intervalo tenha, no bloco final da mensagem, o trailer:
+
+```
+Contrato-Front: aprovado
+```
+
+Agente nenhum põe esse trailer por conta própria: só quando o Augusto pediu a mudança no contrato. Se a mudança não foi pedida, desfaça-a.
+
+Antes de commitar, dentro de `frontend/`: `npm test`, `npm run lint`, `npm run duplicacao`, `npm run contrato:verificar`, `npm run build` e `npx tsc --noEmit`.
 
 ## Astryx (bloco gerenciado pelo `npx astryx init`; não edite à mão)
 

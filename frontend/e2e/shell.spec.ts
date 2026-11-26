@@ -31,7 +31,12 @@ test('shell: gaveta de navegação no celular', async ({page}, info) => {
   await page.getByRole('button', {name: 'Abrir navegação'}).click();
   const gaveta = page.getByRole('dialog');
   await expect(gaveta).toBeVisible();
-  await expect(gaveta).toHaveScreenshot('gaveta.png', {maxDiffPixels: ORCAMENTO_PIXELS});
+  // Só o painel da gaveta (marca, fechar, menu): o diálogo ocupa a tela toda e
+  // mostraria os cartões da fixture atrás do fundo escurecido, e regerar o
+  // exemplo.json não pode mudar o screenshot do shell.
+  const painel = gaveta.locator(':scope > div').first();
+  await expect(painel.getByRole('navigation', {name: 'Navegação'})).toBeVisible();
+  await expect(painel).toHaveScreenshot('gaveta.png', {maxDiffPixels: ORCAMENTO_PIXELS});
 });
 
 test('nenhum elemento passa da largura da tela', async ({page}, info) => {
