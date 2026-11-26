@@ -1,7 +1,7 @@
 """Porta de entrada de terminal."""
 
 import logging
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
 from zoneinfo import ZoneInfo
@@ -24,6 +24,7 @@ from radar.coleta import (
     executar_retrato,
     ids_do_retrato,
     ler_paginas_nao_processadas,
+    limpar_brutos,
     marcar_processada,
     marcar_retrato_falha,
     planejar_janelas,
@@ -35,6 +36,7 @@ from radar.coleta import (
 )
 from radar.comum import configurar_logs, criar_engine, fabrica_sessao, obter_config
 from radar.editais import (
+    Criterios,
     EditalResumo,
     carregar_criterios,
     reconciliar_retrato,
@@ -49,6 +51,8 @@ app = typer.Typer(help="Radar de licitações.", no_args_is_help=True)
 
 FUSO = ZoneInfo("America/Sao_Paulo")
 IDADE_MAXIMA_RETRATO = timedelta(hours=36)
+# Acima disto, os inválidos não são editais esquisitos: é o parser lendo errado. O retrato falha.
+FRACAO_INVALIDOS = 0.2
 # Padrão de RADAR_CONFIG_FILTRO (config/filtro.toml da raiz, sem depender do cwd).
 ARQUIVO_CONFIG = obter_config().config_filtro
 
@@ -113,8 +117,21 @@ def _rodar_retrato(sessao: Session, fonte: FonteRetrato) -> int:
             # Fronteira coleta -> editais: gravar e reconciliar numa transação só.
             vistos = ids_do_retrato(resumo)
             resultado = registrar_normalizados(sessao, resumo.normalizados)
+            if resultado.invalidos > FRACAO_INVALIDOS * resumo.registros:
+                sessao.rollback()  # desfaz o registro: nada gravado, nada reconciliado
+                erro = f"muitos inválidos: {resultado.invalidos} de {resumo.registros}"
+                logger.warning(
+                    "retrato_muitos_invalidos",
+                    extra={"fonte": fonte.nome, "retrato_id": retrato_id, "erro": erro},
+                )
+                assert retrato_id is not None  # concluido sempre tem id
+                marcar_retrato_falha(sessao, retrato_id, erro)
+                typer.echo(f"retrato {fonte.nome}: falha: {erro}")
+                return 1
             if vistos:
-                encerrados = reconciliar_retrato(sessao, fonte.nome, vistos, _agora())
+                encerrados = reconciliar_retrato(
+                    sessao, fonte.nome, vistos, _agora(), rotulo=fonte.rotulo_saida
+                )
             else:
                 # Defesa extra: com `vistos` vazio a reconciliação encerraria a fonte inteira.
                 logger.warning(
@@ -122,6 +139,7 @@ def _rodar_retrato(sessao: Session, fonte: FonteRetrato) -> int:
                 )
                 encerrados = 0
             sessao.commit()
+            _limpar_brutos(sessao, fonte.nome)
     except Exception as erro:  # Ctrl+C (BaseException) continua parando o processo
         sessao.rollback()
         logger.exception("retrato_erro_registro", extra={"fonte": fonte.nome})
@@ -151,6 +169,30 @@ def _rodar_retrato(sessao: Session, fonte: FonteRetrato) -> int:
         f"{encerrados} encerrados"
     )
     return 0
+
+
+def _limpar_brutos(sessao: Session, fonte: str) -> None:
+    """Retenção das páginas brutas da fonte. Falhar aqui não desfaz o retrato já gravado."""
+    try:
+        limpar_brutos(sessao, fonte)
+    except Exception:
+        sessao.rollback()
+        logger.exception("brutos_erro_limpeza", extra={"fonte": fonte})
+
+
+def _rodar_pncp(sessao: Session, criterios: Criterios, hoje: date, lookback: int) -> int:
+    """Janelas do PNCP; devolve as falhas. Um erro inesperado não impede os retratos."""
+    try:
+        novas = planejar_janelas(
+            sessao, "atualizacao", hoje - timedelta(days=lookback), hoje, criterios.modalidades
+        )
+        typer.echo(f"janelas novas: {novas}")
+        return _processar(sessao, _criar_cliente())
+    except Exception:  # Ctrl+C (BaseException) continua parando o processo
+        sessao.rollback()
+        logger.exception("pncp_erro_inesperado")
+        typer.echo("pncp: erro inesperado (veja o log)")
+        return 1
 
 
 def _processar(sessao: Session, cliente: ClientePNCP) -> int:
@@ -251,11 +293,7 @@ def atualizar(
     falhas = 0
     with _criar_sessao() as sessao:
         if "pncp" in escolhidas:
-            novas = planejar_janelas(
-                sessao, "atualizacao", hoje - timedelta(days=lookback), hoje, criterios.modalidades
-            )
-            typer.echo(f"janelas novas: {novas}")
-            falhas += _processar(sessao, _criar_cliente())
+            falhas += _rodar_pncp(sessao, criterios, hoje, lookback)
         for nome in escolhidas:
             if nome != "pncp":
                 falhas += _rodar_retrato(sessao, retratos[nome])

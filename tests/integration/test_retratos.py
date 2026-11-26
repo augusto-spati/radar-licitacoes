@@ -23,6 +23,7 @@ from radar.coleta import (
     executar_retrato,
     ids_do_retrato,
     ler_paginas_nao_processadas,
+    limpar_brutos,
     ultimo_retrato,
 )
 from radar.coleta.modelos import ColetaJanela, ColetaRetrato, PaginaBruta
@@ -61,10 +62,17 @@ class FonteFalsa:
 
     marcador_bloqueio: str | None = None
 
-    def __init__(self, nome: str, paginas: int, minimo_registros: int = 1) -> None:
+    def __init__(
+        self,
+        nome: str,
+        paginas: int,
+        minimo_registros: int = 1,
+        rotulo_saida: str = "saiu da lista",
+    ) -> None:
         self.nome = nome
         self.minimo_registros = minimo_registros
         self.paginas = paginas
+        self.rotulo_saida = rotulo_saida
 
     def coletar(self, cliente: ClienteEducado) -> Iterator[PaginaColetada]:
         for numero in range(1, self.paginas + 1):
@@ -136,10 +144,32 @@ def test_403_para_sem_tentar_de_novo(status: int) -> None:
     chamadas: list[str] = []
     cliente = _cliente({"https://x.test/": httpx.Response(status)}, chamadas)
 
-    with pytest.raises(ErroFonte, match=str(status)):
+    with pytest.raises(ErroFonte, match=str(status)) as erro:
         cliente.get("https://x.test/")
 
     assert chamadas == ["https://x.test/"]
+    assert erro.value.status == status
+
+
+def test_erro_http_expoe_o_status_e_bloqueio_nao() -> None:
+    cliente = ClienteEducado(
+        _http(
+            {
+                "https://x.test/a": httpx.Response(404),
+                "https://x.test/b": httpx.Response(200, text="captcha"),
+            }
+        ),
+        dormir=lambda _s: None,
+        marcador_bloqueio="captcha",
+    )
+
+    with pytest.raises(ErroFonte) as nao_achou:
+        cliente.get("https://x.test/a")
+    with pytest.raises(ErroFonte) as bloqueio:
+        cliente.get("https://x.test/b")
+
+    assert nao_achou.value.status == 404
+    assert bloqueio.value.status is None
 
 
 def test_marcador_de_bloqueio_vira_erro() -> None:
@@ -350,6 +380,61 @@ def test_paginas_de_retrato_nao_entram_na_fila_do_pncp(sessao: Session) -> None:
     assert ler_paginas_nao_processadas(sessao) == []
 
 
+# --- limpar_brutos ---------------------------------------------------------------------
+
+
+def _retrato_com_paginas(
+    sessao: Session, fonte: str, status: str, horas_atras: float, paginas: int = 2
+) -> int:
+    retrato = ColetaRetrato(
+        fonte=fonte, status=status, iniciado_em=AGORA - timedelta(hours=horas_atras),
+        paginas=paginas, registros=paginas,
+    )  # fmt: skip
+    sessao.add(retrato)
+    sessao.flush()
+    for numero in range(1, paginas + 1):
+        sessao.add(
+            PaginaBruta(
+                retrato_id=retrato.id, numero_pagina=numero, formato="html",
+                conteudo_texto="<tr/>", coletada_em=AGORA,
+            )
+        )  # fmt: skip
+    sessao.commit()
+    return retrato.id
+
+
+def _com_paginas(sessao: Session) -> set[int]:
+    return set(
+        sessao.scalars(select(PaginaBruta.retrato_id).where(PaginaBruta.retrato_id.is_not(None)))
+    )
+
+
+def test_limpar_brutos_mantem_os_3_ultimos_concluidos_e_10_falhas(
+    sessao: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    concluidos = [_retrato_com_paginas(sessao, "sanepar", "concluido", h) for h in (5, 4, 3, 2, 1)]
+    falhas = [_retrato_com_paginas(sessao, "sanepar", "falha", 100 + h) for h in range(12, 0, -1)]
+    outra = _retrato_com_paginas(sessao, "compesa", "concluido", 50)
+    andamento = _retrato_com_paginas(sessao, "sanepar", "em_andamento", 200)
+
+    with caplog.at_level(logging.INFO):
+        removidas = limpar_brutos(sessao, "sanepar")
+
+    # Os dois concluídos e as duas falhas mais antigos perdem as páginas (2 cada).
+    assert removidas == 8
+    assert _com_paginas(sessao) == set(concluidos[2:]) | set(falhas[2:]) | {outra, andamento}
+    assert len(_retratos(sessao, "sanepar")) == 18  # os retratos ficam, só as páginas saem
+    registro = next(r for r in caplog.records if r.getMessage() == "brutos_removidos")
+    assert (registro.__dict__["fonte"], registro.__dict__["paginas"]) == ("sanepar", 8)
+
+
+def test_limpar_brutos_sem_excesso_nao_remove_nada(sessao: Session) -> None:
+    _retrato_com_paginas(sessao, "sanepar", "concluido", 1)
+
+    assert limpar_brutos(sessao, "sanepar") == 0
+    assert len(_com_paginas(sessao)) == 1
+
+
 # --- esquema --------------------------------------------------------------------------
 
 
@@ -479,7 +564,9 @@ def test_retrato_concluido_registra_e_reconcilia(
 ) -> None:
     _ja_abertos(fabrica, "sanepar", "OE-1/26", "OE-9/26", "OE-8/26")
     # OE-8 continua na lista, mas com uf inválida: foi listado, então não é encerrado.
-    pagina = _lista("OE-1/26", "OE-2/26", "OE-8/26", ufs={"OE-8/26": "PRX"})
+    pagina = _lista(
+        "OE-1/26", "OE-2/26", "OE-3/26", "OE-4/26", "OE-5/26", "OE-8/26", ufs={"OE-8/26": "PRX"}
+    )
     _registrar_fontes(monkeypatch, [FonteFalsa("sanepar", 1)], _rotas("sanepar", pagina))
 
     resultado = _atualizar(config_filtro, "sanepar")
@@ -488,6 +575,9 @@ def test_retrato_concluido_registra_e_reconcilia(
     assert _situacoes(fabrica, "sanepar") == {
         "OE-1/26": "aberta",
         "OE-2/26": "aberta",
+        "OE-3/26": "aberta",
+        "OE-4/26": "aberta",
+        "OE-5/26": "aberta",
         "OE-8/26": "aberta",
         "OE-9/26": "encerrada",
     }
@@ -616,6 +706,80 @@ def test_segunda_rodada_durante_o_registro_e_ocupado(
     assert _situacoes(fabrica, "sanepar") == {"OE-1/26": "aberta"}
     with fabrica() as sessao:
         assert len(_retratos(sessao, "sanepar")) == 1
+
+
+def test_muitos_invalidos_e_falha_sem_gravar_nem_reconciliar(
+    fabrica: sessionmaker[Session], config_filtro: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _ja_abertos(fabrica, "sanepar", "OE-9/26")
+    pagina = _lista("OE-1/26", "OE-2/26", "OE-3/26", ufs={"OE-3/26": "PRX"})  # 1 de 3
+    _registrar_fontes(monkeypatch, [FonteFalsa("sanepar", 1)], _rotas("sanepar", pagina))
+
+    resultado = _atualizar(config_filtro, "sanepar")
+
+    assert resultado.exit_code == 1
+    assert "muitos inválidos: 1 de 3" in resultado.output
+    assert _situacoes(fabrica, "sanepar") == {"OE-9/26": "aberta"}
+    with fabrica() as sessao:
+        info = ultimo_retrato(sessao, "sanepar")
+    assert info is not None and (info.status, info.erro) == ("falha", "muitos inválidos: 1 de 3")
+
+
+def test_rotulo_de_saida_vem_da_fonte(
+    fabrica: sessionmaker[Session], config_filtro: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _ja_abertos(fabrica, "compesa", "2026LC9")
+    fonte = FonteFalsa("compesa", 1, rotulo_saida="fora da janela")
+    _registrar_fontes(monkeypatch, [fonte], _rotas("compesa", _lista("2026LC1")))
+
+    assert _atualizar(config_filtro, "compesa").exit_code == 0
+
+    with fabrica() as sessao:
+        edital = sessao.get(Edital, ("compesa", "2026LC9"))
+        assert edital is not None
+        assert (edital.situacao_normalizada, edital.situacao_original) == (
+            "encerrada",
+            "fora da janela",
+        )
+
+
+def test_atualizar_limpa_brutos_antigos_da_fonte(
+    fabrica: sessionmaker[Session],
+    config_filtro: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with fabrica() as sessao:
+        antigos = [_retrato_com_paginas(sessao, "sanepar", "concluido", h) for h in (3, 2, 1)]
+    _registrar_fontes(monkeypatch, [FonteFalsa("sanepar", 1)], _rotas("sanepar", _lista("OE-1/26")))
+    monkeypatch.setattr(cli, "configurar_logs", lambda: None)
+
+    with caplog.at_level(logging.INFO):
+        resultado = _atualizar(config_filtro, "sanepar")
+
+    assert resultado.exit_code == 0, resultado.output
+    with fabrica() as sessao:
+        com_paginas = _com_paginas(sessao)
+    assert antigos[0] not in com_paginas  # o 4º concluído mais novo perde as páginas
+    assert set(antigos[1:]) <= com_paginas and len(com_paginas) == 3
+    assert "brutos_removidos" in [r.getMessage() for r in caplog.records]
+
+
+def test_erro_no_pncp_nao_impede_os_retratos(
+    fabrica: sessionmaker[Session], config_filtro: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _registrar_fontes(monkeypatch, [FonteFalsa("sanepar", 1)], _rotas("sanepar", _lista("OE-1/26")))
+
+    def planejar_quebrado(*_args: Any, **_kwargs: Any) -> int:
+        raise RuntimeError("pncp fora")
+
+    monkeypatch.setattr(cli, "planejar_janelas", planejar_quebrado)
+
+    resultado = _atualizar(config_filtro, "pncp,sanepar")
+
+    assert resultado.exit_code == 1
+    assert "pncp: erro inesperado" in resultado.output
+    assert _situacoes(fabrica, "sanepar") == {"OE-1/26": "aberta"}
 
 
 def test_fontes_desconhecida_sai_com_2(
@@ -772,3 +936,37 @@ def test_cli_registra_a_sanepar_real_e_atualizar_grava_com_a_fonte(
     situacoes = _situacoes(fabrica, "sanepar")
     assert len(situacoes) == 40 and "OE-352/26" in situacoes
     assert set(situacoes.values()) == {"aberta"}
+
+
+def test_sanepar_abertura_vazia_com_julgamento_cheio_falha_sem_reconciliar(
+    fabrica: sessionmaker[Session], config_filtro: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from radar.coleta.sanepar import ler_lista
+
+    dados = Path(__file__).resolve().parent.parent / "dados" / "fontes"
+    p1 = (dados / "lista-oe-abertura-p1.html").read_text(encoding="utf-8")
+    vazia = (dados / "lista-oe-abertura-p4-vazia.html").read_text(encoding="utf-8")
+    julgamento = (
+        p1.replace("57 editais", "20 editais")
+        .replace("edt-badge--abertura", "edt-badge--julgamento")
+        .replace("Abertura\n", "Julgamento\n")
+    )
+    detalhe = (dados / "detalhe-345-26-vazamentos.html").read_text(encoding="utf-8")
+    base = "https://www.sanepar.com.br"
+    rotas: Rota = {
+        f"{base}/licitacoes?Tipo=OE&Situacao=Abertura&page=0": httpx.Response(200, text=vazia),
+        f"{base}/licitacoes?Tipo=OE&Situacao=Julgamento&page=0": httpx.Response(
+            200, text=julgamento
+        ),
+        f"{base}/licitacoes?Tipo=OE&Situacao=Julgamento&page=1": httpx.Response(200, text=vazia),
+    }
+    for linha in ler_lista(p1).linhas:
+        rotas[f"{base}{linha.caminho_detalhe}"] = httpx.Response(200, text=detalhe)
+    _ja_abertos(fabrica, "sanepar", "OE-1/26", "OE-2/26")
+    monkeypatch.setattr(cli, "_criar_cliente_retrato", lambda _fonte: _cliente(rotas))
+
+    resultado = _atualizar(config_filtro, "sanepar")
+
+    assert resultado.exit_code == 1
+    assert "layout: lista de Abertura vazia" in resultado.output
+    assert _situacoes(fabrica, "sanepar") == {"OE-1/26": "aberta", "OE-2/26": "aberta"}
