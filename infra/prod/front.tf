@@ -8,6 +8,10 @@ data "aws_cloudfront_cache_policy" "desligada" {
   name = "Managed-CachingDisabled"
 }
 
+data "aws_cloudfront_response_headers_policy" "seguranca" {
+  name = "Managed-SecurityHeadersPolicy"
+}
+
 data "aws_cloudfront_origin_request_policy" "todos_menos_host" {
   name = "Managed-AllViewerExceptHostHeader"
 }
@@ -79,7 +83,9 @@ resource "aws_cloudfront_distribution" "site" {
     allowed_methods        = ["GET", "HEAD"]
     cached_methods         = ["GET", "HEAD"]
     cache_policy_id        = data.aws_cloudfront_cache_policy.otimizada.id
-    compress               = true
+
+    response_headers_policy_id = data.aws_cloudfront_response_headers_policy.seguranca.id
+    compress                   = true
   }
 
   ordered_cache_behavior {

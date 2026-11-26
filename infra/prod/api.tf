@@ -53,6 +53,11 @@ resource "aws_iam_role_policy" "api_banco" {
   policy = data.aws_iam_policy_document.api_banco.json
 }
 
+resource "aws_cloudwatch_log_group" "lambda_api" {
+  name              = "/aws/lambda/radar-api"
+  retention_in_days = 14
+}
+
 resource "aws_lambda_function" "api" {
   function_name = "radar-api"
   role          = aws_iam_role.api.arn
@@ -69,7 +74,25 @@ resource "aws_lambda_function" "api" {
     }
   }
 
+  logging_config {
+    log_format = "Text"
+    log_group  = aws_cloudwatch_log_group.lambda_api.name
+  }
+
+  # O deploy (workflow) troca a imagem depois da criacao; o Terraform nao desfaz.
+  lifecycle {
+    ignore_changes = [image_uri]
+  }
+
   depends_on = [aws_iam_role_policy_attachment.api_basico]
+}
+
+# Avisa no plan quando a API ficaria aberta.
+check "login_configurado" {
+  assert {
+    condition     = !(var.exigir_login && var.cognito == null)
+    error_message = "exigir_login=true mas cognito=null: /api/{proxy+} ficara SEM autorizador."
+  }
 }
 
 resource "aws_apigatewayv2_api" "api" {
@@ -122,21 +145,23 @@ resource "aws_apigatewayv2_stage" "padrao" {
   auto_deploy = true
 
   default_route_settings {
-    throttling_burst_limit = 20
-    throttling_rate_limit  = 10
+    throttling_burst_limit = 10
+    throttling_rate_limit  = 5
   }
 
   access_log_settings {
     destination_arn = aws_cloudwatch_log_group.api_acesso.arn
     format = jsonencode({
       requestId      = "$context.requestId"
-      ip             = "$context.identity.sourceIp"
+      ip             = "$context.identity.sourceIp" # IP do CloudFront, nao do usuario
       requestTime    = "$context.requestTime"
       routeKey       = "$context.routeKey"
       status         = "$context.status"
       responseLength = "$context.responseLength"
       latency        = "$context.responseLatency"
       error          = "$context.error.message"
+      authorizerErr  = "$context.authorizer.error"
+      integrationErr = "$context.integrationErrorMessage"
     })
   }
 }

@@ -20,11 +20,19 @@ PROIBIDOS = {
     "aws_opensearch_domain",
     "aws_msk_cluster",
     "aws_kms_key",
+    "aws_ecs_service",
+    "aws_eks_cluster",
+    "aws_lambda_provisioned_concurrency_config",
+    "aws_secretsmanager_secret",
+    "aws_route53_zone",
+    "aws_wafv2_web_acl",
+    "aws_ec2_transit_gateway",
+    "aws_apigatewayv2_vpc_link",
 }
 MODULOS_PERMITIDOS: set[str] = set()
-PADRAO_RECURSO = re.compile(r'^\s*resource\s+"([a-z0-9_]+)"', re.MULTILINE)
+PADRAO_RECURSO = re.compile(r'^\s*resource\s+"?([a-z0-9_]+)"?', re.MULTILINE)
 
-PADRAO_MODULO = re.compile(r'^\s*module\s+"([^"]+)"', re.MULTILINE)
+PADRAO_MODULO = re.compile(r'^\s*module\s+"?([^"\s{]+)"?', re.MULTILINE)
 
 
 def _tipos_de_recurso() -> dict[str, set[str]]:
@@ -36,6 +44,11 @@ def _tipos_de_recurso() -> dict[str, set[str]]:
         for tipo in PADRAO_RECURSO.findall(texto):
             tipos.setdefault(tipo, set()).add(arquivo.relative_to(RAIZ).as_posix())
     return tipos
+
+
+def test_nenhum_tf_json() -> None:
+    achados = [p for p in (RAIZ / "infra").rglob("*.tf.json") if ".terraform" not in p.parts]
+    assert not achados, f"*.tf.json escapa das guardas: {achados}"
 
 
 def test_ha_configuracao_terraform() -> None:

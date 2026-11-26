@@ -22,10 +22,16 @@ do apply, o primeiro deploy tem tres passos: criar os repositorios, empurrar a t
     terraform init -backend-config="bucket=radar-licitacoes-tfstate-<account_id>"
     terraform apply -target=aws_ecr_repository.api -target=aws_ecr_repository.coletor
     aws ecr get-login-password | docker login --username AWS --password-stdin <account_id>.dkr.ecr.us-east-1.amazonaws.com
-    docker build -f docker/api-lambda.Dockerfile -t <account_id>.dkr.ecr.us-east-1.amazonaws.com/radar-api:bootstrap .
+    docker build --platform linux/amd64 --provenance=false -f docker/api-lambda.Dockerfile -t <account_id>.dkr.ecr.us-east-1.amazonaws.com/radar-api:bootstrap .
     docker push <account_id>.dkr.ecr.us-east-1.amazonaws.com/radar-api:bootstrap
 
-As tags dos repositorios sao mutaveis: o deploy normal publica tags por SHA.
+Rode o `docker build` na raiz do repositorio. `--platform linux/amd64 --provenance=false`
+e obrigatorio: o Lambda rejeita manifestos OCI index (o buildx gera um com proveniencia).
+O workflow de deploy (Task 7) deve usar as mesmas flags.
+
+As tags dos repositorios sao mutaveis: o deploy normal publica tags por SHA. A tag
+`bootstrap` so e necessaria na criacao da Lambda; depois o deploy e dono da imagem
+(`ignore_changes = [image_uri]`) e a politica de ciclo de vida pode expirar a `bootstrap`.
 
 ## 3. Ambiente `prod`
 
