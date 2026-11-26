@@ -36,7 +36,7 @@ O front fica fora da trilha de estudo e é feito majoritariamente com IA (decis�
 ## Restrições
 
 - Conta AWS nova, no plano grátis: US$ 200 em crédito, por 6 meses ou até acabar o crédito.
-- Região us-east-1. Dado público; a latência de ~120 ms para o Brasil é aceitável.
+- Região us-east-2. Dado público; a latência de ~120 ms para o Brasil é aceitável.
 - O banco tem que caber no plano grátis do Neon: 1 GB por projeto. Medida da etapa 1: 1 dia de editais ocupa ~10 MB, contando páginas brutas, editais e índices.
 - cl. 10.1 do contrato com a Intertechne: a leitura registrada é que ela trata de prestar serviço pago. A hospedagem paga pelo Augusto para um projeto mostrado de graça ao tio não está nesse caso. Qualquer cobrança ao tio exige checar antes.
 - O repositório é público: segredos só no AWS Secrets Manager/SSM ou nos secrets do GitHub.
@@ -68,7 +68,7 @@ EventBridge Scheduler (06:00 BRT)
 ECS Fargate task (sub-rede pública, IP público, sem NAT)
   radar atualizar --lookback 10
         │  páginas brutas ──► S3 (bucket radar-brutos)
-        │  editais ─────────► Neon (Postgres, us-east-1, TLS)
+        │  editais ─────────► Neon (Postgres, us-east-2, TLS)
         ▼
 Neon ◄── Lambda (FastAPI + Mangum, fora de VPC) ◄── API Gateway HTTP API
                                                         ▲

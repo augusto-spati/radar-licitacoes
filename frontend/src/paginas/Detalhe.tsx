@@ -18,10 +18,10 @@ import {
   formatarDataHora,
   formatarPrazo,
   formatarValor,
+  NOMES_FONTE,
+  idNaFonte,
   linkHttp,
-  linkPncp,
   localidade,
-  nomeModalidade,
 } from '../dados/formatos';
 import type {EditalDetalhe} from '../dados/tipos';
 import {useCarga} from '../dados/useCarga';
@@ -47,8 +47,8 @@ function Voltar() {
 
 function Cabecalho({edital}: {edital?: EditalDetalhe}) {
   // A API já manda nulo no lugar de "" ou link sem http(s); o front confere de novo.
-  const origem = linkHttp(edital?.link_origem);
-  const destino = origem ?? (edital ? linkPncp(edital.numero_controle_pncp) : null);
+  // O link de reserva por fonte já vem da API em `link_origem`.
+  const destino = linkHttp(edital?.link_origem);
   return (
     <LayoutHeader hasDivider padding={4}>
       <VStack gap={3}>
@@ -71,7 +71,7 @@ function Cabecalho({edital}: {edital?: EditalDetalhe}) {
         {destino !== null && (
           <HStack gap={2}>
             <Button
-              label={origem !== null ? 'Abrir no sistema de origem' : 'Abrir no PNCP'}
+              label="Abrir no sistema de origem"
               variant="primary"
               href={destino}
               target="_blank"
@@ -101,7 +101,7 @@ function Conteudo({edital}: {edital: EditalDetalhe}) {
             <MetadataListItem label="Órgão">{edital.orgao_nome}</MetadataListItem>
             <MetadataListItem label="CNPJ do órgão">{formatarCnpj(edital.orgao_cnpj)}</MetadataListItem>
             <MetadataListItem label="Município/UF">{localidade(edital.municipio, edital.uf)}</MetadataListItem>
-            <MetadataListItem label="Modalidade">{nomeModalidade(edital.modalidade_id)}</MetadataListItem>
+            <MetadataListItem label="Modalidade">{edital.modalidade_nome}</MetadataListItem>
             <MetadataListItem label="Situação">{edital.situacao_nome}</MetadataListItem>
             <MetadataListItem label="Valor estimado">{formatarValor(edital.valor_estimado)}</MetadataListItem>
             <MetadataListItem label="Publicação">{formatarDataHora(edital.data_publicacao)}</MetadataListItem>
@@ -114,8 +114,9 @@ function Conteudo({edital}: {edital: EditalDetalhe}) {
             <MetadataListItem label="Linhas de serviço">
               <TokensLinhas linhas={edital.linhas} />
             </MetadataListItem>
-            <MetadataListItem label="Número de controle no PNCP">
-              {edital.numero_controle_pncp}
+            <MetadataListItem label="Fonte">{NOMES_FONTE[edital.fonte]}</MetadataListItem>
+            <MetadataListItem label="Identificador na fonte">
+              {idNaFonte(edital.id_publico)}
             </MetadataListItem>
           </MetadataList>
         </VStack>

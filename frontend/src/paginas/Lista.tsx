@@ -79,10 +79,10 @@ export function Lista() {
                 <Grid columns={COLUNAS} gap={4}>
                   {carga.dados.editais.map(e => (
                     <CartaoEdital
-                      key={e.numero_controle_pncp}
+                      key={e.id_publico}
                       edital={e}
                       agora={agora}
-                      href={`/edital/${encodeURIComponent(e.numero_controle_pncp)}${sufixo}`}
+                      href={`/edital/${encodeURIComponent(e.id_publico)}${sufixo}`}
                     />
                   ))}
                 </Grid>

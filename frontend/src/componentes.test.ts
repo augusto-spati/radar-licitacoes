@@ -20,6 +20,7 @@ const COMPONENTES = [
   'CartaoEdital.tsx',
   'EstadoCarga.tsx',
   'FiltrosEditais.tsx',
+  'SeloFonte.tsx',
   'Shell.tsx',
   'TokensLinhas.tsx',
   'base/README.md',

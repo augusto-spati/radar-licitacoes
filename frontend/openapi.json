@@ -26,7 +26,21 @@
             "title": "Data Encerramento Proposta"
           },
           "data_publicacao": {
-            "title": "Data Publicacao",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Publicacao"
+          },
+          "fonte": {
+            "$ref": "#/components/schemas/Fonte"
+          },
+          "id_publico": {
+            "title": "Id Publico",
             "type": "string"
           },
           "linhas": {
@@ -48,8 +62,19 @@
             "title": "Link Origem"
           },
           "modalidade_id": {
-            "title": "Modalidade Id",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modalidade Id"
+          },
+          "modalidade_nome": {
+            "title": "Modalidade Nome",
+            "type": "string"
           },
           "municipio": {
             "anyOf": [
@@ -62,17 +87,20 @@
             ],
             "title": "Municipio"
           },
-          "numero_controle_pncp": {
-            "title": "Numero Controle Pncp",
-            "type": "string"
-          },
           "objeto": {
             "title": "Objeto",
             "type": "string"
           },
           "orgao_cnpj": {
-            "title": "Orgao Cnpj",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Orgao Cnpj"
           },
           "orgao_nome": {
             "title": "Orgao Nome",
@@ -80,6 +108,16 @@
           },
           "situacao_nome": {
             "title": "Situacao Nome",
+            "type": "string"
+          },
+          "situacao_normalizada": {
+            "enum": [
+              "aberta",
+              "em_julgamento",
+              "encerrada",
+              "outra"
+            ],
+            "title": "Situacao Normalizada",
             "type": "string"
           },
           "uf": {
@@ -106,18 +144,21 @@
           }
         },
         "required": [
-          "numero_controle_pncp",
+          "fonte",
+          "id_publico",
           "objeto",
           "orgao_nome",
           "uf",
           "municipio",
           "modalidade_id",
+          "modalidade_nome",
           "valor_estimado",
           "data_encerramento_proposta",
           "link_origem",
           "linhas",
           "orgao_cnpj",
           "situacao_nome",
+          "situacao_normalizada",
           "data_publicacao",
           "data_abertura_proposta"
         ],
@@ -137,6 +178,13 @@
             ],
             "title": "Data Encerramento Proposta"
           },
+          "fonte": {
+            "$ref": "#/components/schemas/Fonte"
+          },
+          "id_publico": {
+            "title": "Id Publico",
+            "type": "string"
+          },
           "linhas": {
             "items": {
               "type": "string"
@@ -156,8 +204,19 @@
             "title": "Link Origem"
           },
           "modalidade_id": {
-            "title": "Modalidade Id",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modalidade Id"
+          },
+          "modalidade_nome": {
+            "title": "Modalidade Nome",
+            "type": "string"
           },
           "municipio": {
             "anyOf": [
@@ -169,10 +228,6 @@
               }
             ],
             "title": "Municipio"
-          },
-          "numero_controle_pncp": {
-            "title": "Numero Controle Pncp",
-            "type": "string"
           },
           "objeto": {
             "title": "Objeto",
@@ -206,12 +261,14 @@
           }
         },
         "required": [
-          "numero_controle_pncp",
+          "fonte",
+          "id_publico",
           "objeto",
           "orgao_nome",
           "uf",
           "municipio",
           "modalidade_id",
+          "modalidade_nome",
           "valor_estimado",
           "data_encerramento_proposta",
           "link_origem",
@@ -219,6 +276,16 @@
         ],
         "title": "EditalResumoOut",
         "type": "object"
+      },
+      "Fonte": {
+        "description": "Fonte do edital. Vira o enum `Fonte` do OpenAPI (uma união no TypeScript).",
+        "enum": [
+          "pncp",
+          "sanepar",
+          "compesa"
+        ],
+        "title": "Fonte",
+        "type": "string"
       },
       "HTTPValidationError": {
         "properties": {
@@ -436,16 +503,17 @@
         "summary": "Listar"
       }
     },
-    "/api/editais/{numero}": {
+    "/api/editais/{id_publico}": {
       "get": {
-        "operationId": "detalhe_api_editais__numero__get",
+        "description": "`id_publico` é `<fonte>~<id_na_fonte>`; o id da fonte pode ter `/` (ou `%2F`).",
+        "operationId": "detalhe_api_editais__id_publico__get",
         "parameters": [
           {
             "in": "path",
-            "name": "numero",
+            "name": "id_publico",
             "required": true,
             "schema": {
-              "title": "Numero",
+              "title": "Id Publico",
               "type": "string"
             }
           }

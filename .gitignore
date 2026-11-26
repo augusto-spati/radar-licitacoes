@@ -14,3 +14,16 @@ frontend/playwright-report/
 frontend/test-results/
 frontend/blob-report/
 .playwright-mcp/
+
+.superpowers/
+
+# Terraform: estado e segredos nunca vao para o repositorio
+*.tfstate
+*.tfstate.*
+terraform.tfvars
+*.auto.tfvars
+.terraform/
+crash.log
+.env.local
+.env.*.local
+.neon

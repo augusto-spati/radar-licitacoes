@@ -17,6 +17,28 @@ jobs:
       - run: uv run lint-imports
       - run: uv run pytest -v
 
+  infra:
+    # Valida o Terraform sem acessar a AWS (sem credenciais).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.17.2
+          terraform_wrapper: false
+      - run: terraform fmt -check -recursive infra
+      - name: Validar bootstrap
+        run: |
+          terraform -chdir=infra/bootstrap init -backend=false -input=false
+          terraform -chdir=infra/bootstrap validate
+      - name: Validar prod
+        run: |
+          terraform -chdir=infra/prod init -backend=false -input=false
+          terraform -chdir=infra/prod validate
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --locked
+      - run: uv run pytest tests/unit/test_infra_estatico.py -v
+
   front:
     runs-on: ubuntu-latest
     defaults:
@@ -57,7 +79,29 @@ jobs:
           CABECA_PR: ${{ github.event.pull_request.head.sha }}
           ANTES: ${{ github.event.before }}
           BRANCH_PADRAO: ${{ github.event.repository.default_branch }}
-        run: node frontend/scripts/contrato-guardado.mjs
+        run: |
+          # Quem decide é o script da BASE do intervalo, não o do commit testado
+          # (senão um commit editaria a guarda para sempre aprovar). A base segue
+          # a mesma regra do script (veja escolherIntervalo).
+          set -eu
+          ZERO=0000000000000000000000000000000000000000
+          if [ "$EVENTO" = pull_request ] || [ "$EVENTO" = pull_request_target ]; then
+            BASE=$(git merge-base "$BASE_PR" "$CABECA_PR")
+          elif [ -n "${ANTES:-}" ] && [ "$ANTES" != "$ZERO" ] && git cat-file -e "$ANTES^{commit}" 2>/dev/null; then
+            BASE=$ANTES
+          else
+            BASE=$(git merge-base HEAD "origin/$BRANCH_PADRAO" 2>/dev/null || true)
+            if [ -z "$BASE" ] || [ "$BASE" = "$(git rev-parse HEAD)" ]; then
+              BASE=$(git rev-parse HEAD~1)
+            fi
+          fi
+          if git show "$BASE:frontend/scripts/contrato-guardado.mjs" > "$RUNNER_TEMP/guarda.mjs"; then
+            echo "usando a guarda da base $BASE"
+          else
+            echo "AVISO: a guarda não existe na base $BASE (primeira vez); usando a do commit testado"
+            cp frontend/scripts/contrato-guardado.mjs "$RUNNER_TEMP/guarda.mjs"
+          fi
+          node "$RUNNER_TEMP/guarda.mjs"
 
   e2e:
     # Os screenshots de referência são do Linux: o Playwright roda no container

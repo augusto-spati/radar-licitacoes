@@ -21,15 +21,18 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/editais/{numero}": {
+    "/api/editais/{id_publico}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Detalhe */
-        get: operations["detalhe_api_editais__numero__get"];
+        /**
+         * Detalhe
+         * @description `id_publico` é `<fonte>~<id_na_fonte>`; o id da fonte pode ter `/` (ou `%2F`).
+         */
+        get: operations["detalhe_api_editais__id_publico__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -66,25 +69,33 @@ export interface components {
             /** Data Encerramento Proposta */
             data_encerramento_proposta: string | null;
             /** Data Publicacao */
-            data_publicacao: string;
+            data_publicacao: string | null;
+            fonte: components["schemas"]["Fonte"];
+            /** Id Publico */
+            id_publico: string;
             /** Linhas */
             linhas: string[];
             /** Link Origem */
             link_origem: string | null;
             /** Modalidade Id */
-            modalidade_id: number;
+            modalidade_id: number | null;
+            /** Modalidade Nome */
+            modalidade_nome: string;
             /** Municipio */
             municipio: string | null;
-            /** Numero Controle Pncp */
-            numero_controle_pncp: string;
             /** Objeto */
             objeto: string;
             /** Orgao Cnpj */
-            orgao_cnpj: string;
+            orgao_cnpj: string | null;
             /** Orgao Nome */
             orgao_nome: string;
             /** Situacao Nome */
             situacao_nome: string;
+            /**
+             * Situacao Normalizada
+             * @enum {string}
+             */
+            situacao_normalizada: "aberta" | "em_julgamento" | "encerrada" | "outra";
             /** Uf */
             uf: string | null;
             /** Valor Estimado */
@@ -94,16 +105,19 @@ export interface components {
         EditalResumoOut: {
             /** Data Encerramento Proposta */
             data_encerramento_proposta: string | null;
+            fonte: components["schemas"]["Fonte"];
+            /** Id Publico */
+            id_publico: string;
             /** Linhas */
             linhas: string[];
             /** Link Origem */
             link_origem: string | null;
             /** Modalidade Id */
-            modalidade_id: number;
+            modalidade_id: number | null;
+            /** Modalidade Nome */
+            modalidade_nome: string;
             /** Municipio */
             municipio: string | null;
-            /** Numero Controle Pncp */
-            numero_controle_pncp: string;
             /** Objeto */
             objeto: string;
             /** Orgao Nome */
@@ -113,6 +127,12 @@ export interface components {
             /** Valor Estimado */
             valor_estimado: string | null;
         };
+        /**
+         * Fonte
+         * @description Fonte do edital. Vira o enum `Fonte` do OpenAPI (uma união no TypeScript).
+         * @enum {string}
+         */
+        Fonte: "pncp" | "sanepar" | "compesa";
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -196,12 +216,12 @@ export interface operations {
             };
         };
     };
-    detalhe_api_editais__numero__get: {
+    detalhe_api_editais__id_publico__get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                numero: string;
+                id_publico: string;
             };
             cookie?: never;
         };

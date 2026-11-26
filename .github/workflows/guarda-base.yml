@@ -1,0 +1,35 @@
+# Guarda do contrato do front, controlada pela BASE. `pull_request_target` roda
+# a definição deste workflow a partir da branch base, então um PR não consegue
+# editá-lo nem trocar o script. Não executa código da cabeça do PR: só busca os
+# commits dela e lê alterados e mensagens com git.
+name: Guarda da base
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  guarda-base:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Busca os commits do PR (só dados, nada é executado)
+        env:
+          NUMERO: ${{ github.event.pull_request.number }}
+        run: git fetch --no-tags origin "refs/pull/$NUMERO/head"
+      - name: Guarda do contrato do front (script da base)
+        env:
+          EVENTO: pull_request_target
+          BASE_PR: ${{ github.event.pull_request.base.sha }}
+          CABECA_PR: ${{ github.event.pull_request.head.sha }}
+        run: node frontend/scripts/contrato-guardado.mjs

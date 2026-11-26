@@ -21,7 +21,7 @@ from radar.api.modelos import (
 )
 from radar.coleta import ultima_atualizacao
 from radar.comum import criar_engine, fabrica_sessao, obter_config
-from radar.editais import carregar_criterios, filtrar, obter_edital
+from radar.editais import carregar_criterios, filtrar, obter_edital, separar_id_publico
 
 FUSO = ZoneInfo("America/Sao_Paulo")
 
@@ -84,9 +84,11 @@ def criar_app(
             editais=[resumo_out(e) for e in editais],
         )
 
-    @app.get("/api/editais/{numero:path}")
-    def detalhe(numero: str, sessao: SessaoDep) -> EditalDetalheOut:
-        edital = obter_edital(sessao, numero, criterios)
+    @app.get("/api/editais/{id_publico:path}")
+    def detalhe(id_publico: str, sessao: SessaoDep) -> EditalDetalheOut:
+        """`id_publico` é `<fonte>~<id_na_fonte>`; o id da fonte pode ter `/` (ou `%2F`)."""
+        chave = separar_id_publico(id_publico)
+        edital = None if chave is None else obter_edital(sessao, *chave, criterios)
         if edital is None:
             raise HTTPException(status_code=404, detail="edital não encontrado")
         return detalhe_out(edital)
