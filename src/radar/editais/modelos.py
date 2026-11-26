@@ -2,8 +2,8 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import CHAR, DateTime, Index, Integer, Numeric, Text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import CHAR, Computed, DateTime, Index, Integer, Numeric, Text
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column
 
 from radar.comum import Base
@@ -14,6 +14,7 @@ class Edital(Base):
     __table_args__ = (
         Index("ix_edital_uf", "uf"),
         Index("ix_edital_data_encerramento_proposta", "data_encerramento_proposta"),
+        Index("ix_edital_busca", "busca", postgresql_using="gin"),
     )
 
     numero_controle_pncp: Mapped[str] = mapped_column(Text, primary_key=True)
@@ -32,3 +33,6 @@ class Edital(Base):
     data_atualizacao: Mapped[datetime] = mapped_column(DateTime())
     link_origem: Mapped[str | None] = mapped_column(Text)
     bruto: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    busca: Mapped[str | None] = mapped_column(
+        TSVECTOR, Computed("to_tsvector('portuguese', radar_unaccent(objeto))", persisted=True)
+    )

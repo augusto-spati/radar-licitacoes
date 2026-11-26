@@ -130,7 +130,7 @@ def registrar(sessao: Session, registros: list[dict[str, Any]]) -> ResultadoRegi
     colunas_novas = {
         c.name: insercao.excluded[c.name]
         for c in Edital.__table__.columns
-        if c.name != "numero_controle_pncp"
+        if c.name != "numero_controle_pncp" and c.computed is None
     }
     comando = insercao.on_conflict_do_update(
         index_elements=["numero_controle_pncp"],
