@@ -24,6 +24,7 @@
   "devDependencies": {
     "@astryxdesign/cli": "0.7.17",
     "@eslint/js": "^9.39.5",
+    "@playwright/test": "1.65.1",
     "@stylexjs/unplugin": "^0.19.2",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^22.20.7",
