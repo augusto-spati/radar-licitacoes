@@ -19,7 +19,7 @@ from sqlalchemy.sql.elements import ColumnElement
 from radar.coleta.fatias import coletar_fatia, lease_livre
 from radar.coleta.modelos import ColetaJanela, PaginaBruta
 from radar.coleta.pncp import ClientePNCP
-from radar.comum import Outbox
+from radar.comum import Outbox, enfileirar
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,16 @@ class Auditoria:
     esperadas: int
     concluidas: int
     faltando: list[tuple[date, int]]
-    falhas: list[tuple[date, int, str]]
+    # (dia, modalidade, erro, proxima_pagina, total_paginas): onde a janela parou
+    falhas: list[tuple[date, int, str, int, int | None]]
+
+
+@dataclass(frozen=True)
+class JanelaParada:
+    dia: date
+    modalidade: int
+    proxima_pagina: int
+    total_paginas: int | None
 
 
 def planejar_janelas(
@@ -100,6 +109,7 @@ def coletar_pendentes(
             return resumo
         tentadas.add(janela_id)
         _reabrir(sessao, ColetaJanela.id == janela_id)
+        sessao.commit()
         try:
             resultado = coletar_fatia(
                 sessao,
@@ -120,6 +130,47 @@ def coletar_pendentes(
             resumo.falhas += 1
         elif resultado.desfecho == "dividida":
             resumo.divididas += 1
+
+
+def enfileirar_elegiveis(sessao: Session, endpoint: str) -> int:
+    """Reabre as concluídas cedo demais e enfileira `coletar_janela` das elegíveis; um commit.
+
+    Elegível: pendente, falha ou em_andamento, com o lease livre. A mensagem leva o `lote`
+    atual. Uma mensagem a mais para janela que já tem continuação na fila é inofensiva: uma
+    das duas sai `ocupada` ou `obsoleta`. Devolve quantas mensagens.
+    """
+    _reabrir(sessao, ColetaJanela.endpoint == endpoint)
+    elegiveis = sessao.execute(
+        select(ColetaJanela.id, ColetaJanela.lote)
+        .where(
+            ColetaJanela.endpoint == endpoint,
+            ColetaJanela.status.in_(("pendente", "falha", "em_andamento")),
+            lease_livre(),
+        )
+        .order_by(ColetaJanela.data_ini, ColetaJanela.modalidade, ColetaJanela.id)
+    ).all()
+    for janela_id, lote in elegiveis:
+        enfileirar(sessao, "coletar_janela", {"janela_id": janela_id, "lote": lote})
+    sessao.commit()
+    return len(elegiveis)
+
+
+def janelas_paradas(sessao: Session, iniciadas_antes_de: datetime) -> list[JanelaParada]:
+    """Janelas em_andamento começadas antes do corte: a cadeia de fatias parou no caminho."""
+    linhas = sessao.execute(
+        select(
+            ColetaJanela.data_ini,
+            ColetaJanela.modalidade,
+            ColetaJanela.proxima_pagina,
+            ColetaJanela.total_paginas,
+        )
+        .where(
+            ColetaJanela.status == "em_andamento",
+            ColetaJanela.iniciada_em < iniciadas_antes_de,
+        )
+        .order_by(ColetaJanela.data_ini, ColetaJanela.modalidade, ColetaJanela.id)
+    ).all()
+    return [JanelaParada(*linha) for linha in linhas]
 
 
 def ler_paginas_nao_processadas(
@@ -211,7 +262,7 @@ def auditar(
     ).all()
     concluidos: set[tuple[date, int]] = set()
     em_falha: set[tuple[date, int]] = set()
-    falhas: list[tuple[date, int, str]] = []
+    falhas: list[tuple[date, int, str, int, int | None]] = []
     for janela in janelas:
         cobertos = {
             (dia, janela.modalidade)
@@ -221,7 +272,15 @@ def auditar(
             concluidos |= cobertos
         elif janela.status == "falha":
             em_falha |= cobertos
-            falhas.append((janela.data_ini, janela.modalidade, janela.erro or ""))
+            falhas.append(
+                (
+                    janela.data_ini,
+                    janela.modalidade,
+                    janela.erro or "",
+                    janela.proxima_pagina,
+                    janela.total_paginas,
+                )
+            )
     esperadas = [(dia, m) for dia in _dias(inicio, fim) for m in modalidades]
     faltando = [par for par in esperadas if par not in concluidos and par not in em_falha]
     return Auditoria(
@@ -250,7 +309,7 @@ def _concluida_cedo() -> ColumnElement[bool]:
 
 
 def _reabrir(sessao: Session, *filtros: ColumnElement[bool]) -> list[int]:
-    """Concluída cedo demais e sem lease vira pendente do zero, num lote novo; commita.
+    """Concluída cedo demais e sem lease vira pendente do zero, num lote novo; sem commit.
 
     O lote novo invalida qualquer mensagem velha da janela (sai `obsoleta`).
     """
@@ -266,7 +325,6 @@ def _reabrir(sessao: Session, *filtros: ColumnElement[bool]) -> list[int]:
         )
         .returning(ColetaJanela.id)
     ).all()
-    sessao.commit()
     return list(reabertas)
 
 

@@ -353,8 +353,10 @@ def auditar(
     for dia, modalidade in auditoria.faltando:
         typer.echo(f"  {dia:%Y-%m-%d} modalidade {modalidade}")
     typer.echo(f"falhas: {len(auditoria.falhas)}")
-    for dia, modalidade, erro in auditoria.falhas:
-        typer.echo(f"  {dia:%Y-%m-%d} modalidade {modalidade}: {erro}")
+    for dia, modalidade, erro, proxima, total in auditoria.falhas:
+        typer.echo(
+            f"  {dia:%Y-%m-%d} modalidade {modalidade} (página {proxima}/{total or '?'}): {erro}"
+        )
     retratos_ruins = 0
     for nome, info in retratos:
         if info is None:

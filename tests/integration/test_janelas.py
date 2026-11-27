@@ -7,8 +7,11 @@ from sqlalchemy.orm import Session
 
 from radar.coleta import (
     ErroPNCP,
+    JanelaParada,
     auditar,
     coletar_pendentes,
+    enfileirar_elegiveis,
+    janelas_paradas,
     ler_paginas_nao_processadas,
     marcar_processada,
     planejar_janelas,
@@ -212,7 +215,7 @@ def test_auditoria_lista_faltando(sessao: Session) -> None:
     assert aud.esperadas == 4
     assert aud.concluidas == 2
     assert aud.faltando == [(d2, 8)]
-    assert aud.falhas == [(d2, 6, "HTTP 500")]
+    assert aud.falhas == [(d2, 6, "HTTP 500", 1, None)]
 
 
 def test_auditoria_considera_janela_multidia(sessao: Session) -> None:
@@ -301,3 +304,172 @@ def test_excluir_pula_paginas_na_leitura(sessao: Session) -> None:
     coletar_pendentes(sessao, como_cliente(falso), AGORA)
     ids = [p for p, _ in ler_paginas_nao_processadas(sessao)]
     assert [p for p, _ in ler_paginas_nao_processadas(sessao, excluir=[ids[0]])] == [ids[1]]
+
+
+# --- planejador: reabrir e enfileirar; janelas paradas -----------------------------------
+
+HOJE = date(2026, 11, 10)
+
+
+def _coletar_janela(sessao: Session) -> list[dict[str, int]]:
+    return list(
+        sessao.scalars(
+            select(Outbox.carga).where(Outbox.tipo == "coletar_janela").order_by(Outbox.id)
+        )
+    )
+
+
+def test_enfileirar_reabre_concluida_cedo(sessao: Session) -> None:
+    cedo = datetime(2026, 11, 10, 10, 0, tzinfo=BRT)  # antes de o dia 10 acabar em Brasília
+    j = janela(
+        sessao,
+        endpoint="atualizacao",
+        data_ini=HOJE,
+        data_fim=HOJE,
+        status="concluida",
+        concluida_em=cedo,
+        lote=2,
+        proxima_pagina=4,
+        total_paginas=3,
+        esperados=6,
+    )
+
+    assert enfileirar_elegiveis(sessao, "atualizacao") == 1
+
+    sessao.refresh(j)
+    assert (j.status, j.proxima_pagina, j.total_paginas, j.esperados, j.lote) == (
+        "pendente",
+        1,
+        None,
+        None,
+        3,
+    )
+    assert _coletar_janela(sessao) == [{"janela_id": j.id, "lote": 3}]
+
+
+def test_enfileirar_nao_reabre_concluida_depois_do_dia(sessao: Session) -> None:
+    depois = datetime(2026, 11, 11, 0, 30, tzinfo=BRT)
+    j = janela(
+        sessao,
+        endpoint="atualizacao",
+        data_ini=HOJE,
+        data_fim=HOJE,
+        status="concluida",
+        concluida_em=depois,
+    )
+
+    assert enfileirar_elegiveis(sessao, "atualizacao") == 0
+
+    sessao.refresh(j)
+    assert (j.status, j.lote) == ("concluida", 0)
+    assert _coletar_janela(sessao) == []
+
+
+def test_enfileirar_pula_lease_vivo(sessao: Session) -> None:
+    viva = datetime.now(UTC) + timedelta(hours=1)
+    cedo = datetime(2026, 11, 10, 10, 0, tzinfo=BRT)
+    andando = janela(
+        sessao,
+        endpoint="atualizacao",
+        data_ini=HOJE,
+        data_fim=HOJE,
+        status="em_andamento",
+        travada_por="lambda",
+        travada_ate=viva,
+    )
+    # Concluída cedo, mas com lease vivo (estado estranho): reabrir atropelaria quem coleta.
+    concluida = janela(
+        sessao,
+        endpoint="atualizacao",
+        data_ini=HOJE - timedelta(days=1),
+        data_fim=HOJE - timedelta(days=1),
+        status="concluida",
+        concluida_em=cedo,
+        travada_por="x",
+        travada_ate=viva,
+    )
+
+    assert enfileirar_elegiveis(sessao, "atualizacao") == 0
+
+    sessao.refresh(andando)
+    sessao.refresh(concluida)
+    assert (andando.status, andando.lote, concluida.status, concluida.lote) == (
+        "em_andamento",
+        0,
+        "concluida",
+        0,
+    )
+    assert _coletar_janela(sessao) == []
+
+
+def test_enfileirar_cobre_pendente_falha_e_em_andamento_livre(sessao: Session) -> None:
+    vencida = datetime.now(UTC) - timedelta(hours=1)
+    ids = [
+        janela(
+            sessao,
+            endpoint="atualizacao",
+            data_ini=HOJE - timedelta(days=n),
+            data_fim=HOJE - timedelta(days=n),
+            **campos,
+        ).id
+        for n, campos in enumerate(
+            [
+                {"status": "pendente"},
+                {"status": "falha", "lote": 1},
+                {"status": "em_andamento", "lote": 4},
+                {"status": "em_andamento", "lote": 2, "travada_por": "x", "travada_ate": vencida},
+            ]
+        )
+    ]
+    janela(sessao, endpoint="publicacao", data_ini=HOJE, data_fim=HOJE)  # outro endpoint
+
+    assert enfileirar_elegiveis(sessao, "atualizacao") == 4
+
+    assert sorted(_coletar_janela(sessao), key=lambda c: c["janela_id"]) == sorted(
+        [
+            {"janela_id": ids[0], "lote": 0},
+            {"janela_id": ids[1], "lote": 1},
+            {"janela_id": ids[2], "lote": 4},
+            {"janela_id": ids[3], "lote": 2},
+        ],
+        key=lambda c: c["janela_id"],
+    )
+
+
+def test_janelas_paradas_so_em_andamento_antes_do_corte(sessao: Session) -> None:
+    corte = datetime(2026, 11, 10, 6, 0, tzinfo=BRT)
+    antes = corte - timedelta(hours=1)
+    janela(
+        sessao,
+        data_ini=D1,
+        data_fim=D1,
+        status="em_andamento",
+        iniciada_em=antes,
+        proxima_pagina=7,
+        total_paginas=80,
+    )
+    janela(
+        sessao,
+        data_ini=D1,
+        data_fim=D1,
+        modalidade=8,
+        status="em_andamento",
+        iniciada_em=corte + timedelta(minutes=5),
+    )
+    janela(
+        sessao,
+        data_ini=date(2026, 11, 2),
+        data_fim=date(2026, 11, 2),
+        status="falha",
+        iniciada_em=antes,
+    )
+
+    assert janelas_paradas(sessao, corte) == [JanelaParada(D1, 6, 7, 80)]
+
+
+def test_auditar_mostra_onde_a_falha_parou(sessao: Session) -> None:
+    janela(sessao, status="falha", erro="HTTP 500", proxima_pagina=3, total_paginas=5)
+
+    aud = auditar(sessao, "publicacao", D1, D1, [6])
+
+    assert aud.falhas == [(D1, 6, "HTTP 500", 3, 5)]
