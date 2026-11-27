@@ -1080,3 +1080,27 @@ def test_telemetria_quebrada_nao_muda_nada(
     # O processo desliga o que ligou: nada vaza para o próximo teste.
     assert modulo_metricas.emissor_atual() is None
     assert telemetria.traceparent_atual() is None
+
+
+def test_tcepe_sondar_imprime_status_e_sai_1_sem_resposta(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import httpx
+
+    def transporte(requisicao: httpx.Request) -> httpx.Response:
+        if "falha" in str(requisicao.url):
+            raise httpx.ConnectTimeout("sem rota")
+        return httpx.Response(200, content=b"[" + b"0," * 100 + b"0]")
+
+    original = httpx.Client
+
+    def cliente(*args: object, **kwargs: object) -> httpx.Client:
+        return original(*args, transport=httpx.MockTransport(transporte), **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(httpx, "Client", cliente)
+    ok = runner.invoke(cli.app, ["tcepe", "sondar", "--url", "https://exemplo/ok"])
+    assert ok.exit_code == 0, ok.output
+    assert "tcepe: HTTP 200" in ok.output
+    falha = runner.invoke(cli.app, ["tcepe", "sondar", "--url", "https://exemplo/falha"])
+    assert falha.exit_code == 1
+    assert "tcepe: sem resposta" in falha.output
