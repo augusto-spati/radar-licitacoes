@@ -1,8 +1,9 @@
 """Histórico do órgão de um edital: contagens, últimas contratações, vencedores e régua.
 
-Recorte: editais do PNCP com o mesmo CNPJ do órgão, que casam alguma linha do filtro, com
-resumo em `resultado_busca` e encerramento nos últimos 24 meses. Um edital de retrato
-(Sanepar, Compesa) usa o próprio `orgao_cnpj` e enxerga os pregões que o órgão publica no PNCP.
+Recorte: editais do PNCP que casam alguma linha do filtro, com resumo em `resultado_busca` e
+encerramento nos últimos 24 meses. Contagens, últimas e vencedores ficam no mesmo CNPJ do
+órgão; a régua usa todos os órgãos. Um edital de retrato (Sanepar, Compesa) usa o próprio
+`orgao_cnpj` e enxerga os pregões que o órgão publica no PNCP.
 """
 
 import statistics
@@ -85,8 +86,8 @@ def limite_inexequivel(orgao_cnpj: str | None) -> Decimal:
 
 
 def faixa_de_valor(valor: Decimal | None) -> str | None:
-    """`ate_1m` (≤ 1 mi), `1m_a_5m` (≤ 5 mi), `acima_5m`; None sem valor."""
-    if valor is None:
+    """`ate_1m` (≤ 1 mi), `1m_a_5m` (≤ 5 mi), `acima_5m`; None sem valor ou com valor ≤ 0."""
+    if valor is None or valor <= 0:
         return None
     if valor <= UM_MILHAO:
         return "ate_1m"
@@ -97,6 +98,7 @@ def faixa_de_valor(valor: Decimal | None) -> str | None:
 
 def _faixa_sql() -> ColumnElement[Any]:
     return case(
+        (Edital.valor_estimado <= 0, None),
         (Edital.valor_estimado <= UM_MILHAO, "ate_1m"),
         (Edital.valor_estimado <= CINCO_MILHOES, "1m_a_5m"),
         (Edital.valor_estimado > CINCO_MILHOES, "acima_5m"),
@@ -115,12 +117,12 @@ def _meses_atras(data: datetime, meses: int) -> datetime:
     raise AssertionError("inalcançável")
 
 
-def _recorte(criterios: Criterios, orgao_cnpj: str, agora: datetime) -> list[ColumnElement[bool]]:
+def _recorte(criterios: Criterios, agora: datetime) -> list[ColumnElement[bool]]:
+    """Contratações do PNCP que casam alguma linha, encerradas nos últimos 24 meses."""
     agora_brasilia = agora.astimezone(FUSO).replace(tzinfo=None)
     casamentos = _casamentos(criterios)
     return [
         Edital.fonte == Fonte.pncp.value,
-        Edital.orgao_cnpj == orgao_cnpj,
         or_(*casamentos) if casamentos else false(),
         Edital.data_encerramento_proposta > _meses_atras(agora_brasilia, MESES_RECORTE),
     ]
@@ -158,6 +160,11 @@ def _referencia() -> ColumnElement[Any]:
     return func.coalesce(data_resultado, func.timezone(FUSO.key, Edital.data_encerramento_proposta))
 
 
+def _positivo(valor: Decimal | None) -> Decimal | None:
+    """Estimado ≤ 0 é "sem estimado" (a tela trata nulo)."""
+    return valor if valor is not None and valor > 0 else None
+
+
 def _ultimas(sessao: Session, filtro: list[ColumnElement[bool]]) -> list[ContratacaoPassada]:
     consulta = (
         select(
@@ -185,9 +192,11 @@ def _ultimas(sessao: Session, filtro: list[ColumnElement[bool]]) -> list[Contrat
             data=linha.data_encerramento_proposta,
             situacao=linha.situacao,
             # O par considerado é o que dá o desconto; sem ele, o estimado do edital.
-            valor_estimado=linha.valor_estimado_considerado
-            if linha.valor_estimado_considerado is not None
-            else linha.valor_estimado,
+            valor_estimado=_positivo(
+                linha.valor_estimado_considerado
+                if linha.valor_estimado_considerado is not None
+                else linha.valor_estimado
+            ),
             valor_homologado=linha.valor_homologado_considerado,
             desconto=linha.desconto,
             parcial=linha.situacao == "parcial",
@@ -308,28 +317,30 @@ def historico_do_edital(
 
     O próprio edital fica fora das réguas, mas entra nas contagens, últimas e vencedores.
     `agora` sem fuso → ValueError.
-    Órgão sem nada no recorte (ou edital sem CNPJ) → histórico vazio, com as réguas zeradas.
+    Órgão sem nada no recorte (ou edital sem CNPJ) → contagens, últimas e vencedores vazios.
     Régua: uma por linha do edital (sem linha → uma de todas as linhas), na UF e faixa de valor
-    do edital, só contratações `homologada` com desconto; com menos de 5 casos, vem também a
-    régua da mesma linha sem UF e sem faixa.
+    do edital (sem faixa se o valor é nulo ou ≤ 0), só contratações `homologada` com desconto,
+    de todos os órgãos; com menos de 5 casos, vem também a régua da mesma linha sem UF e sem
+    faixa. Edital sem CNPJ tem histórico vazio, mas régua.
     """
     if agora.tzinfo is None or agora.utcoffset() is None:
         raise ValueError("agora precisa ter fuso horário")
     edital = obter_edital(sessao, fonte, id_na_fonte, criterios)
     if edital is None:
         return None
-    sem_orgao: list[ColumnElement[bool]] = [false()]
-    filtro = _recorte(criterios, edital.orgao_cnpj, agora) if edital.orgao_cnpj else sem_orgao
+    recorte = _recorte(criterios, agora)
+    do_orgao = Edital.orgao_cnpj == edital.orgao_cnpj if edital.orgao_cnpj else false()
+    filtro = [*recorte, do_orgao]
     contagens = _contagens(sessao, filtro)
     faixa = faixa_de_valor(edital.valor_estimado)
     proprio = (fonte, id_na_fonte)
     reguas: list[Regua] = []
     linhas: list[str | None] = [*edital.linhas] or [None]
     for linha in linhas:
-        regua = _regua(sessao, filtro, criterios, proprio, linha, edital.uf, faixa)
+        regua = _regua(sessao, recorte, criterios, proprio, linha, edital.uf, faixa)
         reguas.append(regua)
         if regua.poucos_casos and (regua.uf is not None or regua.faixa is not None):
-            reguas.append(_regua(sessao, filtro, criterios, proprio, linha, None, None))
+            reguas.append(_regua(sessao, recorte, criterios, proprio, linha, None, None))
     return HistoricoOrgao(
         orgao_cnpj=edital.orgao_cnpj,
         orgao_nome=edital.orgao_nome,

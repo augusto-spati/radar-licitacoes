@@ -303,6 +303,63 @@ def test_o_proprio_edital_fica_fora_da_regua(sessao: Session) -> None:
     assert historico.vencedores[0].nome == "Acme"
 
 
+def test_regua_usa_todos_os_orgaos_e_o_historico_so_o_do_edital(sessao: Session) -> None:
+    _edital(sessao, "alvo", dias=-5)
+    _passada(sessao, "meu", desconto="0.10", ni="111", nome="Acme")
+    for i, desconto in enumerate(["0.20", "0.30", "0.40", "0.50"]):
+        _edital(sessao, f"outro{i}", cnpj=OUTRO)
+        _resultado(sessao, f"outro{i}", desconto=desconto, ni="222", nome="Beta")
+    # Outro órgão, mas fora da linha, da UF ou da faixa: não entra.
+    _edital(sessao, "outro-rede", cnpj=OUTRO, objeto="Obra de rede de agua")
+    _resultado(sessao, "outro-rede", desconto="0.90")
+    _edital(sessao, "outro-pr", cnpj=OUTRO, uf="PR")
+    _resultado(sessao, "outro-pr", desconto="0.90")
+    _edital(sessao, "outro-caro", cnpj=OUTRO, valor="2000000")
+    _resultado(sessao, "outro-caro", desconto="0.90")
+    sessao.flush()
+
+    historico = historico_do_edital(sessao, CRITERIOS, "pncp", "alvo", AGORA)
+
+    assert historico is not None
+    assert [(r.linha, r.uf, r.faixa, r.casos, r.mediana) for r in historico.reguas] == [
+        ("perdas", "SP", "ate_1m", 5, Decimal("0.3000"))
+    ]
+    assert historico.total == 1 and historico.contagens == {"homologada": 1}
+    assert [u.id_publico for u in historico.ultimas] == ["pncp~meu"]
+    assert [v.nome for v in historico.vencedores] == ["Acme"]
+
+
+def test_regua_de_edital_sem_cnpj_usa_todos_os_orgaos(sessao: Session) -> None:
+    _edital(sessao, "alvo", cnpj=None, dias=-5)
+    _passada(sessao, "h", desconto="0.10")
+    sessao.flush()
+
+    historico = historico_do_edital(sessao, CRITERIOS, "pncp", "alvo", AGORA)
+
+    assert historico is not None and historico.total == 0
+    assert historico.reguas[0].casos == 1
+
+
+def test_valor_zero_nao_tem_faixa(sessao: Session) -> None:
+    assert faixa_de_valor(Decimal(0)) is None
+    assert faixa_de_valor(Decimal(-1)) is None
+    _edital(sessao, "alvo", dias=-5, valor="0")
+    _passada(sessao, "h", desconto="0.10")
+    _edital(sessao, "zero", valor="0")
+    _resultado(sessao, "zero", desconto="0.30", homologado=None)
+    sessao.flush()
+
+    historico = historico_do_edital(sessao, CRITERIOS, "pncp", "alvo", AGORA)
+
+    assert historico is not None
+    # Sem faixa, a régua não filtra por valor: entram o de 500 mil e o de valor zero.
+    assert [(r.linha, r.uf, r.faixa, r.casos) for r in historico.reguas[:1]] == [
+        ("perdas", "SP", None, 2)
+    ]
+    zero = next(u for u in historico.ultimas if u.id_publico == "pncp~zero")
+    assert zero.valor_estimado is None
+
+
 def test_agora_sem_fuso_e_erro(sessao: Session) -> None:
     with pytest.raises(ValueError, match="fuso"):
         historico_do_edital(sessao, CRITERIOS, "pncp", "x", AGORA.replace(tzinfo=None))
