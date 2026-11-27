@@ -327,6 +327,20 @@ class _Bruta:
     data_linha: date | None
 
 
+_METRO_POR_EXTENSO = frozenset({"metro", "metros", "mts"})
+_ANTES_DO_COMPRIMENTO = frozenset({"de", "barra", "barras", "com", "c/"})
+
+
+def _comprimento_da_barra(tokens: list[str], i: int, unidade: str) -> bool:
+    """ "BARRA DE 6 METROS 50 ...": "6 METROS" é o comprimento da barra, não a unidade."""
+    return (
+        normalizar_unidade(unidade) in _METRO_POR_EXTENSO
+        and i >= 2
+        and _eh_numero(tokens[i - 1])
+        and sem_acento(tokens[i - 2]) in _ANTES_DO_COMPRIMENTO
+    )
+
+
 def _ler_linha(linha: str) -> tuple[_Bruta, list[str]] | None:
     """Linha de preço, ou None. Devolve também os tokens da descrição (antes da unidade)."""
     tokens = linha.replace("R$", " ").split()
@@ -343,6 +357,8 @@ def _ler_linha(linha: str) -> tuple[_Bruta, list[str]] | None:
         if i is None:
             continue
         bruta = " ".join(tokens[i:depois])
+        if _comprimento_da_barra(tokens, i, bruta):
+            continue
         numeros = tokens[max(depois + 1, cauda) :]
         precos = _precos(quantidade, numeros)
         if precos is None:
@@ -359,6 +375,15 @@ def _ler_linha(linha: str) -> tuple[_Bruta, list[str]] | None:
     return None
 
 
+_NAO_TITULO = frozenset(
+    {
+        "mm", "cm", "m", "km", "pol", "polegada", "polegadas", "kg", "g", "gramas", "l", "litros",
+        "metro", "metros", "mca", "mpa", "kv", "kva", "hp", "cv", "kw", "un", "und", "pc", "pecas",
+        "x", "de", "do", "da", "e", "ou", "a", "com", "para", "em",
+    }
+)  # fmt: skip
+
+
 def _titulo_de_secao(linha: str) -> str | None:
     """ "4.0 EXECUÇÃO ADUTORA 2.578.505,98" → "EXECUÇÃO ADUTORA"; "2.0 Coletor" → "Coletor"."""
     m = _SECAO.match(linha)
@@ -368,7 +393,28 @@ def _titulo_de_secao(linha: str) -> str | None:
     while tokens and _eh_numero(tokens[-1]):
         tokens.pop()
     titulo = " ".join(tokens).strip()
-    return titulo if len(titulo) >= 4 and any(c.isalpha() for c in titulo) else None
+    if len(titulo) < 4 or not any(c.isalpha() for c in titulo):
+        return None
+    # Continuação de descrição que começa com número não é seção: "75 GRAMAS.", "2 E 15813-1.",
+    # "08 MM,UTILIZADA NA MANUTENÇÃO DAS REDES", "50 MM PARA REDE DE ESGOTO".
+    primeira = re.match(r"[^\W\d_]+", titulo)
+    if (
+        not titulo[0].isupper()
+        or titulo.endswith(".")
+        or primeira is None
+        or len(primeira.group()) < 2
+        or sem_acento(primeira.group()) in _NAO_TITULO
+    ):
+        return None
+    return titulo
+
+
+def _preco_nao_lido(linha: str) -> bool:
+    """Linha com "R$" e 2+ números que não virou linha (unidade desconhecida: "Serviço 15 R$
+    2.283,33 R$ 34.249,95"): fecha o item, para a descrição dele não passar ao seguinte."""
+    if "R$" not in linha:
+        return False
+    return sum(1 for t in linha.replace("R$", " ").split() if _eh_numero(t)) >= MIN_NUMEROS
 
 
 def pagina_de_composicao(texto: str) -> bool:
@@ -389,13 +435,19 @@ def ler_planilha(paginas: list[str]) -> list[LinhaPlanilha]:
         if pagina_de_composicao(pagina):
             continue
         anteriores: list[str] = []
+        primeira = True
         for crua in pagina.splitlines():
             linha = crua.strip()
             if not linha:
                 continue
+            # Número de página no topo ("35"): não abre item.
+            if primeira and _INTEIRO_ITEM.match(linha):
+                primeira = False
+                continue
+            primeira = False
             lida = _ler_linha(linha)
             if lida is None:
-                if _TOTAL.match(sem_acento(linha)):
+                if _TOTAL.match(sem_acento(linha)) or _preco_nao_lido(linha):
                     anteriores = []
                     continue
                 if (titulo := _titulo_de_secao(linha)) is not None:
@@ -405,7 +457,8 @@ def ler_planilha(paginas: list[str]) -> list[LinhaPlanilha]:
                 anteriores = [*anteriores, linha][-MAX_LINHAS_DESCRICAO:]
                 continue
             bruta, antes = lida
-            if not _comeca_item(" ".join(antes)) and anteriores:
+            # Item na própria linha ("19 Hidrometro ... Un 8 R$ ..."): a descrição é a dela.
+            if bruta.item is None and not _comeca_item(" ".join(antes)) and anteriores:
                 inicio = max(
                     (i for i, a in enumerate(anteriores) if _abre_item(a)),
                     default=len(anteriores) - 1,

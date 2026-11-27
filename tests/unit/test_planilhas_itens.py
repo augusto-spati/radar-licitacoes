@@ -227,3 +227,34 @@ def test_tubo_da_secao_de_ramal_nao_e_rede() -> None:
     assert [(i.chave_origem.rsplit("#", 1)[-1], i.servico, i.dn) for i in itens] == [
         ("2.11", "rede_esgoto", 150)
     ]
+
+
+MATERIAIS_HIDRAULICOS = replace(
+    RIBEIRAO,
+    id_pncp="25269069000146-1-000045/2026",
+    objeto="Materiais hidráulicos para manutenção, reparo e execução de serviços na rede de "
+    "água e esgoto",
+)
+
+
+def test_item_seguinte_nao_vira_ligacao_com_o_preco_do_hidrometro() -> None:
+    """Revisão: com a descrição do 18 herdada, o 19 viraria ligação de água a R$ 1.216,92."""
+    pagina = """18
+Ligação predial de água
+completa com kit cavalete
+Serviço 15  R$   2.283,33  R$ 34.249,95
+19 Hidrometro medidor de vazão com capacidade de 16m3 h. Un 8  R$   1.216,92  R$ 9.735,36
+"""
+    rural = replace(RIBEIRAO, objeto="Sistemas rurais de abastecimento de água")
+    assert itens_da_planilha(rural, SHA, ler_planilha([pagina])) == []
+
+
+def test_continuacao_nao_decide_agua_ou_esgoto_no_edital_dos_dois() -> None:
+    """ "50 MM PARA REDE DE ESGOTO" virava seção e desempatava o "ÁGUA OU ESGOTO"."""
+    pagina = (
+        "50 MM PARA REDE DE ESGOTO\n"
+        "1.1 ASSENTAMENTO DE TUBO PEAD LISO PARA REDE DE ÁGUA OU ESGOTO, DIÂMETRO DE 110 MM "
+        "M 20,00 1,80 2,25 45,00\n"
+    )
+    (linha,) = ler_planilha([pagina])
+    assert itens_da_planilha(MATERIAIS_HIDRAULICOS, SHA, [linha]) == []

@@ -336,3 +336,89 @@ def test_item_inteiro_com_codigo_e_unidade_por_extenso() -> None:
     assert itens["8"].descricao.startswith("BRAÇADEIRA EM AÇO")
     # "TUBO" não é unidade conhecida: a linha do adesivo fica de fora (a conta não basta).
     assert "6" not in itens
+
+
+# --- Revisão: o item da própria linha, preço não lido, barra, seção e número de página ---
+
+# PNCP 76995422000106-1-000127/2026: a linha de preço do 18 tem unidade desconhecida
+# ("Serviço") e não é lida; o 19 traz o item na própria linha e não herda a descrição do 18.
+MOTOBOMBA_E_HIDROMETRO = """18
+Serviço de instalação e retirada
+completa de conjunto
+motobomba submerso em poço
+tubular profundo, incluindo
+montagem da coluna de
+recalque, instalação elétrica
+interna, conexões hidráulicas,
+fixações e testes operacionais
+Serviço 15  R$   2.283,33  R$ 34.249,95
+19 Hidrometro medidor de vazão com capacidade de 16m3 h. Un 8  R$   1.216,92  R$ 9.735,36
+20 Cabo P. P. 2 x 2,5mm para automação de sistema. Mt 900  R$          9,54  R$ 8.586,00
+"""
+
+
+def test_item_na_propria_linha_nao_herda_o_item_anterior() -> None:
+    itens = _por_item(ler_planilha([MOTOBOMBA_E_HIDROMETRO]))
+    assert set(itens) == {"19", "20"}
+    assert itens["19"].descricao == "Hidrometro medidor de vazão com capacidade de 16m3 h."
+    assert itens["19"].preco_com_bdi == Decimal("1216.92")
+
+
+def test_preco_nao_lido_fecha_o_item() -> None:
+    """Sem o item na linha do preço seguinte, a descrição do 18 também não passa adiante."""
+    pagina = MOTOBOMBA_E_HIDROMETRO.replace(
+        "19 Hidrometro medidor de vazão com capacidade de 16m3 h. Un 8",
+        "Hidrometro medidor de vazão com capacidade de 16m3 h.\nUn 8",
+    )
+    lidas = ler_planilha([pagina])
+    assert [linha.descricao for linha in lidas][0] == (
+        "Hidrometro medidor de vazão com capacidade de 16m3 h."
+    )
+    assert all("motobomba" not in linha.descricao for linha in lidas)
+
+
+def test_comprimento_da_barra_nao_e_unidade() -> None:
+    pagina = (
+        "1.1 TUBO PVC PBA DN 100 BARRA DE 6 METROS 50 R$ 300,00 R$ 15.000,00\n"
+        "1.2 TUBO PVC PBA DN 100 METROS 50 R$ 300,00 R$ 15.000,00\n"
+    )
+    assert [linha.item for linha in ler_planilha([pagina])] == ["1.2"]
+
+
+@pytest.mark.parametrize(
+    "continuacao",
+    [
+        # PNCP 25269069000146-1-000045/2026: viravam título de seção.
+        "75 GRAMAS.",
+        "2 E 15813-1.",
+        "08 MM,UTILIZADA NA MANUTENÇÃO DAS REDES",
+        "50 MM PARA REDE DE ESGOTO",
+        "20 MM PARA RAMAL PREDIAL",
+    ],
+)
+def test_continuacao_com_numero_nao_e_secao(continuacao: str) -> None:
+    pagina = f"{continuacao}\n1.1 TUBO PVC DN 150 m 10,00 5,00 50,00\n"
+    (linha,) = ler_planilha([pagina])
+    assert linha.secao is None
+
+
+@pytest.mark.parametrize(
+    ("titulo", "secao"),
+    [
+        ("1.0 Seviços Preliminares", "Seviços Preliminares"),
+        ("4.0 EXECUÇÃO ADUTORA 2.578.505,98", "EXECUÇÃO ADUTORA"),
+        ("2 EXECUÇÃO DE COLETOR DE ESGOTOS", "EXECUÇÃO DE COLETOR DE ESGOTOS"),
+        ("4.0 Ramal", "Ramal"),
+    ],
+)
+def test_secao_de_verdade_continua(titulo: str, secao: str) -> None:
+    (linha,) = ler_planilha([f"{titulo}\n1.1 TUBO PVC DN 150 m 10,00 5,00 50,00\n"])
+    assert linha.secao == secao
+
+
+def test_numero_de_pagina_no_topo_nao_abre_item() -> None:
+    """PNCP 76995422000106-1-000127/2026: a página começa com "35" e o resto do item 15."""
+    pagina = "35\ncircuito, acionamento\nautomático/manual\nUnd 2  R$   2.173,33  R$ 4.346,66\n"
+    (linha,) = ler_planilha([pagina])
+    assert linha.item is None
+    assert linha.descricao == "automático/manual"
