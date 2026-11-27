@@ -38,8 +38,8 @@ Filas ficam como futuro, no tema 2: outbox + SQS (etapa 4a; o pgmq não existe n
 
 ## Observabilidade
 
-- [ ] Métricas da coleta: falhas, latência por página, atraso da atualização.
-- [ ] OpenTelemetry: traços e logs correlacionados.
+- [x] Métricas da coleta: falhas, latência por página, atraso da atualização (frescor), com SLOs, dashboard e alarmes. `infra/prod/observabilidade.tf`, `docs/etapas/05-observabilidade.md`. Vídeo: a gravar (`docs/videos/05-observabilidade.md`).
+- [x] OpenTelemetry: traços e logs correlacionados (X-Ray com Transaction Search, links pela fila). `docs/etapas/05-observabilidade.md`. Vídeo: a gravar.
 - [ ] Alerta quando a auditoria de cobertura falha.
 
 ## IA aplicada
