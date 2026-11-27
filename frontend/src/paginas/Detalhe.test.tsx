@@ -278,6 +278,7 @@ const historico = (parcial: Partial<Historico> = {}): Historico => ({
       parcial: false,
       vencedor_nome: 'Construtora X',
       vencedor_porte: 'ME',
+      origem: 'PNCP',
     },
     {
       id_publico: 'pncp~13127340000120-1-000011/2025',
@@ -290,6 +291,7 @@ const historico = (parcial: Partial<Historico> = {}): Historico => ({
       parcial: true,
       vencedor_nome: null,
       vencedor_porte: null,
+      origem: 'PNCP',
     },
   ],
   vencedores: [
@@ -442,6 +444,15 @@ describe('Detalhe: histórico do órgão', () => {
       ),
     ).toBeTruthy();
     expect(screen.queryByText(/— a —/)).toBeNull();
+  });
+
+  it('contratação vinda do TCE-PE (Compesa) diz a fonte; a do PNCP não', async () => {
+    const [primeira] = historico().ultimas;
+    const tcepe = {...primeira, id_publico: 'tce_pe~60120073', objeto: 'Adutora do Agreste'};
+    abrirCom(async () => historico({ultimas: [primeira, {...tcepe, origem: 'TCE-PE'}]}));
+    expect(await screen.findByText('Adutora do Agreste')).toBeTruthy();
+    expect(screen.getAllByText('Fonte: TCE-PE (dados abertos)')).toHaveLength(1);
+    expect(screen.queryByText(/Fonte: PNCP/)).toBeNull();
   });
 
   it('com contagens mas sem últimas nem vencedores, mostra as contagens sem listas vazias', async () => {

@@ -85,6 +85,12 @@ function Contratacao({contratacao: c}: {contratacao: ContratacaoPassada}) {
               {c.vencedor_porte === null ? '' : ` (${c.vencedor_porte})`}
             </Text>
           )}
+          {/* PNCP é a origem de sempre; a outra (Compesa, fora do PNCP) é dita. */}
+          {c.origem !== 'PNCP' && (
+            <Text type="supporting" color="secondary">
+              Fonte: {c.origem} (dados abertos)
+            </Text>
+          )}
         </VStack>
       }
     />
