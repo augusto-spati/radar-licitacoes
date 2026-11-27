@@ -124,7 +124,8 @@ def test_erro_do_provedor_depois_de_pago_conta_o_gasto(tmp_path: Path) -> None:
         provedor.gerar(PEDIDO)
     assert provedor.custo_usd == Decimal("0.06")
     assert provedor.chamadas_reais == 1
-    # gravada: a próxima rodada lê a resposta vazia (trecho inválido) em vez de pagar de novo
-    guardada = cache.ler(chave_cache(PEDIDO, "ferramenta"))
-    assert guardada is not None
-    assert guardada.texto == ""
+    # não vira cache: a próxima rodada tenta de novo em vez de herdar um trecho inválido
+    assert cache.ler(chave_cache(PEDIDO, "ferramenta")) is None
+    with pytest.raises(ErroProvedor):
+        provedor.gerar(PEDIDO)
+    assert provedor.chamadas_reais == 2

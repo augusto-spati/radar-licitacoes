@@ -6,6 +6,10 @@ da produção (task Linux do ECS rodando `radar analisar`). No Windows e fora da
 principal a extração roda sem limite (a rodada ainda tem o orçamento de tempo do `analisar`).
 Subprocesso daria o limite em toda plataforma, mas custa um processo por documento e o fork
 de um processo com threads (boto3) não é seguro.
+
+O sinal levanta `_PrazoEsgotado`, que herda de BaseException: o pypdf captura `Exception` em
+volta de cada objeto e seguiria lendo. Só `com_prazo` a captura e a converte em
+`ErroExtracao` (nenhum outro código deve capturá-la).
 """
 
 import io
@@ -38,6 +42,10 @@ def eh_pdf(dados: bytes) -> bool:
     return dados[:4] == b"%PDF"
 
 
+class _PrazoEsgotado(BaseException):
+    """BaseException de propósito: `except Exception` do pypdf não a engole."""
+
+
 def com_prazo[T](funcao: Callable[[], T], prazo_s: float) -> T:
     """Roda `funcao`; passou de `prazo_s` → `ErroExtracao`. Sem SIGALRM: sem limite."""
     if sys.platform == "win32":  # sem SIGALRM
@@ -46,12 +54,14 @@ def com_prazo[T](funcao: Callable[[], T], prazo_s: float) -> T:
         return funcao()
 
     def estourou(_sinal: int, _quadro: FrameType | None) -> None:
-        raise ErroExtracao(f"extração passou do prazo de {prazo_s:g} s")
+        raise _PrazoEsgotado
 
     anterior = signal.signal(signal.SIGALRM, estourou)
     signal.setitimer(signal.ITIMER_REAL, prazo_s)
     try:
         return funcao()
+    except _PrazoEsgotado:
+        raise ErroExtracao(f"extração passou do prazo de {prazo_s:g} s") from None
     finally:
         signal.setitimer(signal.ITIMER_REAL, 0)
         signal.signal(signal.SIGALRM, anterior)

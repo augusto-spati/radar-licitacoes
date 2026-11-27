@@ -337,6 +337,7 @@ def test_analise_devolve_documento_e_pagina_dentro_do_pdf(
         "isto nao e toml = = =",
         'regiao = "us-east-2"\n',
         'regiao = "sa-east-1"\nmodelo_padrao = "x"',
+        'regiao = "us-east-2"\nteto_mensal_usd = "dez"\n',
     ],
 )
 def test_analise_com_config_ia_invalida_da_503_e_o_resto_funciona(
@@ -348,6 +349,21 @@ def test_analise_com_config_ia_invalida_da_503_e_o_resto_funciona(
 ) -> None:
     arquivo = tmp_path / "ia.toml"
     arquivo.write_text(conteudo, encoding="utf-8")
+    monkeypatch.setenv("RADAR_CONFIG_IA", str(arquivo))
+    fabrica = cast(Callable[[], Session], lambda: _SessaoEmprestada(sessao))
+    cliente = TestClient(criar_app(fabrica, config_filtro, relogio=lambda: AGORA))
+
+    assert cliente.get("/api/analises/pncp~1-1-1/2026").status_code == 503
+    assert cliente.get("/api/status").status_code == 200
+
+
+def test_analise_com_teto_nao_decimal_da_503_e_o_resto_funciona(
+    sessao: Session, config_filtro: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    ia = (RAIZ / "config" / "ia.toml").read_text(encoding="utf-8")
+    assert "teto_mensal_usd = 2.0" in ia
+    arquivo = tmp_path / "ia.toml"
+    arquivo.write_text(ia.replace("teto_mensal_usd = 2.0", 'teto_mensal_usd = "dez"'), "utf-8")
     monkeypatch.setenv("RADAR_CONFIG_IA", str(arquivo))
     fabrica = cast(Callable[[], Session], lambda: _SessaoEmprestada(sessao))
     cliente = TestClient(criar_app(fabrica, config_filtro, relogio=lambda: AGORA))

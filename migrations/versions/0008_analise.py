@@ -83,6 +83,7 @@ def upgrade() -> None:
         sa.Column("tokens_saida", sa.Integer(), nullable=False),
         sa.Column("custo_usd", sa.Numeric(12, 6), nullable=False),
         sa.Column("latencia_ms", sa.Integer(), nullable=False),
+        sa.Column("invalida", sa.Boolean(), server_default=sa.false(), nullable=False),
         sa.Column(
             "criada_em", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
         ),

@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import uuid
 from collections.abc import Callable
 from decimal import Decimal
 from pathlib import Path
@@ -56,6 +57,12 @@ class Cache(Protocol):
 
     def gravar(self, chave: str, modelo: str, resposta: Resposta, custo_usd: Decimal) -> None: ...
 
+    def registrar_gasto_invalido(
+        self, chave: str, modelo: str, resposta: Resposta, custo_usd: Decimal
+    ) -> None:
+        """Chamada cobrada que não serviu: entra no gasto, nunca é lida como cache."""
+        ...
+
 
 def pasta_do_modelo(modelo: str) -> str:
     return modelo.replace(":", "_").replace(".", "_")
@@ -101,6 +108,11 @@ class CacheArquivos:
         texto = json.dumps(dados, sort_keys=True, ensure_ascii=False, indent=2) + "\n"
         caminho.write_text(texto, encoding="utf-8", newline="\n")
 
+    def registrar_gasto_invalido(
+        self, chave: str, modelo: str, resposta: Resposta, custo_usd: Decimal
+    ) -> None:
+        """Nos evals o gasto da rodada já fica em `ProvedorComCache.custo_usd`: nada a gravar."""
+
 
 class CacheBanco:
     """Tabela `resposta_llm`, em conexão própria do engine (padrão de `coleta.trava`).
@@ -122,7 +134,7 @@ class CacheBanco:
                     RespostaLLM.tokens_entrada,
                     RespostaLLM.tokens_saida,
                     RespostaLLM.latencia_ms,
-                ).where(RespostaLLM.chave == chave)
+                ).where(RespostaLLM.chave == chave, RespostaLLM.invalida.is_(False))
             ).first()
         if linha is None:
             return None
@@ -149,6 +161,24 @@ class CacheBanco:
         )
         with self._engine.begin() as conexao:
             conexao.execute(comando)
+
+    def registrar_gasto_invalido(
+        self, chave: str, modelo: str, resposta: Resposta, custo_usd: Decimal
+    ) -> None:
+        """Linha `invalida` com chave própria: soma no gasto do mês e não vira cache."""
+        with self._engine.begin() as conexao:
+            conexao.execute(
+                insert(RespostaLLM).values(
+                    chave=f"invalida:{chave}:{uuid.uuid4().hex}",
+                    modelo=modelo,
+                    resposta=resposta.texto,
+                    tokens_entrada=resposta.tokens_entrada,
+                    tokens_saida=resposta.tokens_saida,
+                    custo_usd=custo_usd,
+                    latencia_ms=resposta.latencia_ms,
+                    invalida=True,
+                )
+            )
 
 
 class RespostaAusente(Exception):
@@ -191,14 +221,15 @@ class ProvedorComCache:
         try:
             resposta = self._interno.gerar(pedido)
         except ErroProvedor as erro:
-            if erro.resposta is not None:  # já cobrada: o gasto conta e a resposta vazia fica
-                self._registrar(chave, pedido.modelo, erro.resposta, preco)
+            if erro.resposta is not None:  # já cobrada: o gasto conta, mas não vira cache
+                custo_usd = self._contar(erro.resposta, preco)
+                self._cache.registrar_gasto_invalido(chave, pedido.modelo, erro.resposta, custo_usd)
             raise
-        self._registrar(chave, pedido.modelo, resposta, preco)
+        self._cache.gravar(chave, pedido.modelo, resposta, self._contar(resposta, preco))
         return resposta
 
-    def _registrar(self, chave: str, modelo: str, resposta: Resposta, preco: PrecoModelo) -> None:
+    def _contar(self, resposta: Resposta, preco: PrecoModelo) -> Decimal:
         custo_usd = custo(resposta, preco)
-        self._cache.gravar(chave, modelo, resposta, custo_usd)
         self.custo_usd += custo_usd
         self.chamadas_reais += 1
+        return custo_usd

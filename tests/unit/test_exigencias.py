@@ -99,8 +99,8 @@ def test_exigencias_ida_e_volta_json() -> None:
     assert Exigencias.model_validate_json(e.model_dump_json()) == e
 
 
-@pytest.mark.parametrize("numero", ["NaN", "Infinity", -1])
-def test_numero_nan_infinito_ou_negativo_recusado(numero: object) -> None:
+@pytest.mark.parametrize("numero", ["NaN", "Infinity"])
+def test_numero_nan_ou_infinito_recusado(numero: object) -> None:
     bruto = (
         '{"achados": [{"campo": "capital_social_minimo", "valor": "", "numero": '
         + (str(numero) if not isinstance(numero, str) else numero)
@@ -113,3 +113,15 @@ def test_numero_nan_infinito_ou_negativo_recusado(numero: object) -> None:
 def test_numero_nan_python_recusado() -> None:
     with pytest.raises(ValidationError):
         Achado(campo="capital_social_minimo", valor="", numero=float("nan"), unidade="", trecho="x")
+
+
+def test_numero_negativo_vira_nulo_sem_invalidar_o_trecho() -> None:
+    bruto = (
+        '{"achados": [{"campo": "capital_social_minimo", "valor": "", "numero": -250000,'
+        ' "unidade": "reais", "trecho": "capital social mínimo de R$ 250.000,00"},'
+        ' {"campo": "consorcio", "valor": "vedado", "numero": null, "unidade": "",'
+        ' "trecho": "é vedada a participação em consórcio"}]}'
+    )
+    resposta = RespostaExtracao.model_validate_json(bruto)
+    assert [a.campo for a in resposta.achados] == ["capital_social_minimo", "consorcio"]
+    assert resposta.achados[0].numero is None  # vira `verificar` na comparação

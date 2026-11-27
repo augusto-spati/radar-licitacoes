@@ -5,10 +5,10 @@ import pytest
 from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
-from radar.analise.cache import CacheBanco
+from radar.analise.cache import CacheBanco, ProvedorComCache
 from radar.analise.custos import TetoAtingido, custo, estimar, gasto_do_mes, guarda_teto
 from radar.analise.modelos import RespostaLLM
-from radar.analise.provedor import ConfigIA, Pedido, PrecoModelo, Resposta
+from radar.analise.provedor import ConfigIA, ErroProvedor, Pedido, PrecoModelo, Resposta
 
 MODELO = "amazon.nova-lite-v1:0"
 PRECO = PrecoModelo(
@@ -103,3 +103,29 @@ def test_cache_banco_grava_commitado_e_fora_da_transacao_do_chamador(
         assert gasto_do_mes(outra, datetime.now(UTC)) == Decimal("0.5")
     cache.gravar("k-commit", MODELO, resposta, Decimal("0.5"))  # regravar não duplica
     assert not sessao.in_transaction()
+
+
+def test_cache_banco_gasto_invalido_conta_no_mes_e_nao_e_reusado(
+    engine: Engine, sessao: Session
+) -> None:
+    class ProvedorSemTexto:
+        def __init__(self) -> None:
+            self.chamadas = 0
+
+        def gerar(self, pedido: Pedido) -> Resposta:
+            self.chamadas += 1
+            usada = Resposta(texto="", tokens_entrada=1_000_000, tokens_saida=0, latencia_ms=5)
+            raise ErroProvedor("resposta sem texto nem ferramenta", resposta=usada)
+
+    interno = ProvedorSemTexto()
+    provedor = ProvedorComCache(interno, CacheBanco(sessao), "gravar", CONFIG)
+    pedido = Pedido(modelo=MODELO, sistema="s", texto="t", esquema={}, max_tokens=10)
+    for _ in range(2):
+        with pytest.raises(ErroProvedor):
+            provedor.gerar(pedido)
+    assert interno.chamadas == 2  # a segunda rodada chama o provedor de novo
+
+    with Session(engine) as outra:
+        linhas = outra.scalars(select(RespostaLLM)).all()
+        assert [linha.invalida for linha in linhas] == [True, True]
+        assert gasto_do_mes(outra, datetime.now(UTC)) == Decimal("0.12")

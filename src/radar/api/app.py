@@ -55,7 +55,7 @@ def criar_app(
     except FileNotFoundError:
         logger.warning("config_ia_ausente", extra={"caminho": str(config.config_ia)})
         modelo_padrao = None
-    except (tomllib.TOMLDecodeError, KeyError, TypeError, ValueError) as erro:
+    except (tomllib.TOMLDecodeError, KeyError, TypeError, ValueError, ArithmeticError) as erro:
         # ia.toml quebrado não derruba a API inteira: só a rota da análise fica fora.
         logger.error(
             "config_ia_invalida", extra={"caminho": str(config.config_ia), "erro": repr(erro)}

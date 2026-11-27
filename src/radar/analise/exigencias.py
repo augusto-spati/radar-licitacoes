@@ -3,7 +3,7 @@
 from decimal import Decimal
 from typing import Any, Literal, get_args
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 Campo = Literal[
     "atestado_tecnico",
@@ -43,10 +43,16 @@ class Achado(BaseModel):
     valor: str
     # O esquema enviado pede o campo sempre; no modo ferramenta alguns modelos o omitem quando
     # é nulo (sonda de 2026-11-26), e a ausência vale null.
-    # NaN/infinito quebram a junção (max, conversão para Decimal); negativo não é exigência.
-    numero: float | None = Field(default=None, allow_inf_nan=False, ge=0)
+    # NaN/infinito quebram a junção (max, conversão para Decimal): recusados.
+    numero: float | None = Field(default=None, allow_inf_nan=False)
     unidade: str
     trecho: str
+
+    @field_validator("numero")
+    @classmethod
+    def _negativo_vira_nulo(cls, valor: float | None) -> float | None:
+        # Negativo não é exigência: perde só o número (dá `verificar`), não o trecho inteiro.
+        return None if valor is not None and valor < 0 else valor
 
 
 class RespostaExtracao(BaseModel):

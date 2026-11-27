@@ -16,6 +16,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy import false as sa_false
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -103,4 +104,6 @@ class RespostaLLM(Base):
     tokens_saida: Mapped[int] = mapped_column(Integer)
     custo_usd: Mapped[Decimal] = mapped_column(Numeric(12, 6))
     latencia_ms: Mapped[int] = mapped_column(Integer)
+    # Resposta cobrada mas inutilizável (ErroProvedor): só conta no gasto, nunca é reusada.
+    invalida: Mapped[bool] = mapped_column(Boolean, server_default=sa_false())
     criada_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

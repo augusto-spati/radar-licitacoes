@@ -84,3 +84,21 @@ def test_extrair_paginas_usa_o_prazo(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(extracao, "com_prazo", falso)
     extrair_paginas(PDF_TEXTO, prazo_s=12)
     assert prazos == [12]
+
+
+@pytest.mark.skipif(not hasattr(signal, "SIGALRM"), reason="limite por SIGALRM só em POSIX")
+def test_com_prazo_vence_mesmo_com_except_exception_em_laco() -> None:
+    # Como o pypdf: captura Exception em volta de cada objeto e segue.
+    def engole_tudo() -> None:
+        fim = time.monotonic() + 5
+        while time.monotonic() < fim:
+            try:
+                sum(range(10_000))
+            except Exception:  # noqa: S112
+                continue
+
+    inicio = time.monotonic()
+    with pytest.raises(ErroExtracao, match="prazo"):
+        com_prazo(engole_tudo, 0.2)
+    assert time.monotonic() - inicio < 2
+    assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)
