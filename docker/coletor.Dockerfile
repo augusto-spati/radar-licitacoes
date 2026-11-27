@@ -19,6 +19,6 @@ COPY alembic.ini /app/alembic.ini
 RUN useradd --system --no-create-home radar
 USER radar
 ENV RADAR_DB_NULLPOOL=true \
-    RADAR_CONFIG_FILTRO=/app/config/filtro.toml
+    RADAR_CONFIG_FILTRO=/app/config/filtro.toml     RADAR_CONFIG_SERVICOS=/app/config/servicos.toml
 ENTRYPOINT ["radar"]
 CMD ["atualizar"]

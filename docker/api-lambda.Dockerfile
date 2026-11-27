@@ -11,5 +11,5 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt && rm /tmp/requirements.
 COPY src/ ${LAMBDA_TASK_ROOT}/
 COPY config/ ${LAMBDA_TASK_ROOT}/config/
 ENV RADAR_DB_NULLPOOL=true \
-    RADAR_CONFIG_FILTRO=/var/task/config/filtro.toml
+    RADAR_CONFIG_FILTRO=/var/task/config/filtro.toml     RADAR_CONFIG_SERVICOS=/var/task/config/servicos.toml
 CMD ["radar.api.lambda_handler.handler"]
