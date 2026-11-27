@@ -709,3 +709,20 @@ def test_secao_de_ramal(secao: str | None, esperado: bool) -> None:
 )
 def test_rede_com_dois_materiais_fica_sem(descricao: str) -> None:
     assert classificar(descricao, "M") is None
+
+
+@pytest.mark.parametrize(
+    ("descricao", "material"),
+    [
+        ("TUBO PVC DE FOFO DN 200 PARA REDE DE ÁGUA", "pvc"),
+        ("TUBO PVC DE-FOFO DN 200 PARA REDE DE ÁGUA", "pvc"),
+        ("TUBO PVC DEFOFO DN 200 PARA REDE DE ÁGUA", "pvc"),
+        # "Tubo de FoFo" é ferro fundido.
+        ("TUBO DE FOFO DN 200 PARA REDE DE ÁGUA", "fofo"),
+        ("TUBO FERRO FUNDIDO K7 DN 300 COM MANTA DE POLIETILENO PARA ÁGUA", "fofo"),
+        ("TUBO FERRO FUNDIDO DN 300 REVESTIDO COM MANTA DE POLIETILENO PARA ÁGUA", "fofo"),
+    ],
+)
+def test_um_material_so_depois_de_normalizar(descricao: str, material: str) -> None:
+    c = classificar(descricao, "M")
+    assert c is not None and c.material == material

@@ -335,6 +335,22 @@ def _com_contexto(texto: str, contexto: Contexto | None) -> str:
     return f"{texto} {contexto.obra}"
 
 
+# Antes de contar materiais: "PVC DE FOFO"/"DE-FOFO" é PVC DEFOFO (não ferro fundido); o
+# polietileno da manta/luva que envolve o ferro fundido não é PEAD.
+_DE_FOFO = re.compile(rf"(pvc\s+)de[\s-]?fofo|(?<![a-z{CURINGA}])de-fofo")
+_ENVOLTORIO = re.compile(
+    r"(?:manta|luva|manga|mangueira|envolt\w*|revestid\w*|revestimento)\s+"
+    r"(?:\w+\s+){0,2}?(?:de|em)\s+polietileno"
+)
+
+
+def _sem_falso_material(texto: str) -> str:
+    texto = _DE_FOFO.sub(lambda m: f"{m.group(1) or ''}defofo", texto)
+    if _algum(texto, ("fofo", "ferro fundido", "ferro ductil")):
+        texto = _ENVOLTORIO.sub(" ", texto)
+    return texto
+
+
 def _classificar_em(servico: Servico, texto: str, unidade: str) -> Classificacao | None:
     fator = servico.unidades_aceitas.get(unidade)
     if fator is None or not _casa_termos(servico, texto):
@@ -349,7 +365,8 @@ def _classificar_em(servico: Servico, texto: str, unidade: str) -> Classificacao
     if _cita_agua_e_esgoto(texto):
         return None
     # Dois materiais na linha ("TUBO FERRO FUNDIDO ... COMPATÍVEL COM PVC PBA") é ambíguo: sem.
-    materiais = {m.nome for m in servico.materiais if _algum(texto, m.termos)}
+    so_material = _sem_falso_material(texto)
+    materiais = {m.nome for m in servico.materiais if _algum(so_material, m.termos)}
     dn = extrair_dn(texto)
     if len(materiais) != 1 or dn is None:
         return None
