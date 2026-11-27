@@ -26,7 +26,7 @@ O preço unitário (R$/m de rede, R$/ligação, R$/m³ de escavação) é o núm
 
 ## O que fica para depois
 
-- **7b.2**: preço estimado das planilhas dos editais do PNCP (fora de PE), com IA.
+- **7b.2**: preço estimado das planilhas dos editais do PNCP (fora de PE): ver a seção abaixo.
 - ~~Ligar os processos da Compesa ao "Histórico do órgão" da 7a~~: feito na 7a.3 (`docs/etapas/07-historico.md`, seção "Compesa pelo TCE-PE"), na mesma rodada semanal.
 - Rever as listas de termos com mais dados reais (a primeira rodada semanal).
 
@@ -37,3 +37,49 @@ O preço unitário (R$/m de rede, R$/ligação, R$/m³ de escavação) é o núm
 3. Por que um preço contratado errado é pior que nenhum, e como o código evita atribuir o preço do lote errado?
 4. Por que a escavação precisa da faixa de profundidade na chave, e a rede precisa do escopo?
 5. Que armadilhas da API do TCE-PE viraram teste (filtro ignorado, número por substring, encoding)?
+
+# Etapa 7b.2: preço estimado das planilhas orçamentárias do PNCP
+
+A 7b.1 só cobre Pernambuco. Em SP e MG, onde a FR atua, o preço por item que existe é a planilha orçamentária anexada ao edital no PNCP: o **estimado** do órgão, com código de referência (SINAPI, SABESP, CDHU), data-base e BDI. Desenho: `docs/superpowers/specs/2026-11-27-etapa-07b2-planilhas-design.md` (com as decisões do coordenador no fim).
+
+## O que foi feito
+
+- **Alvos** (`radar.editais.alvos_planilha`): editais `pncp~` das linhas `redes` e `perdas`, nas UFs e modalidades do filtro, publicados nos últimos 120 dias, do mais antigo ao mais novo, até 10 por rodada. Na publicação, não só depois de homologados: a planilha sai com o edital.
+- **Achar a planilha** (`radar.analise.planilhas`): os títulos no PNCP vêm sem extensão ("Processo_completo_revisado..."), então baixa os de título de planilha e os "outros documentos" que não são esclarecimento, aviso, errata e afins (até 6 downloads por edital), abre os ZIPs e pega os PDFs com nome de planilha ("Planilha Orçamentária", "Estimativa de Preços", "PO_"; fora: BDI, cronograma, composição, encargos, modelo, memorial; "Planilha Orçamentária_Cronograma_BDI" entra). Sem nome, o edital e o termo de referência, só as páginas com 8+ "R$". Teto de download de 40 MB só nesta etapa (o ZIP de Santa Bárbara tinha 25,6 MB); o `LIMITE_BYTES` da análise continua 20 MB. XLSX fica de fora na v1 (os dois do spike tinham PDF gêmeo com as mesmas linhas).
+- **Leitura determinística** (`radar.precos.planilha_leitura`): uma linha vale com unidade conhecida seguida da quantidade e 2 a 7 números no fim em que `quantidade × unitário ≈ total` (0,3%). Do maior total coerente sai o com BDI; um unitário menor coerente (ou logo antes, até 60% abaixo) é o sem BDI; `%` na linha é o BDI dela. Código, fonte e data-base por linha ou pelo cabeçalho/rodapé ("SINAPI ref. ago/26"). Descrição quebrada em várias linhas é juntada desde o último número de item; páginas de composição de preço unitário ficam de fora; cópia repetida no mesmo PDF conta uma vez.
+- **IA só no resto**: com menos de 5 linhas coerentes, Nova Lite com ferramenta forçada nas páginas com R$ (até 60 mil caracteres). A ancoragem é a conta (linha sem `quantidade × preço ≈ total` cai), o preço e o total precisam estar no texto (sem espaços, porque vem picotado) e a soma tem de ficar a ±2% do total da planilha quando ele está no texto. Antes de chamar, a estimativa do pior caso passa pelos tetos: US$ 0,02 por edital e US$ 0,30 por mês da 7b.2 (`pulado_teto`), além do teto mensal de US$ 2 da IA. O cache é o do provedor: a mesma planilha em outro edital não paga de novo. Testes só com provedor falso.
+- **Classificação** (`config/servicos.toml`, vale também para o TCE-PE): o contexto da obra (título da seção da planilha, senão o objeto do edital) entra quando a descrição não cita água nem esgoto; "fornec./assent." é completo; "Ligação de água/esgoto" sem "predial" entra; perfuração direcional, método não destrutivo, MND e pipe bursting ficam fora da rede; "(NÃO INCLUI O FORNECIMENTO)" do SINAPI é assentamento (era lido como completo). Rede de água de adutora é rede de água pelo material e DN, com `observacao = "adutora"` para separar depois.
+- **Gravação** (`radar.precos.planilhas`): só linhas com serviço vão para `preco_item`, origem `pncp_planilha`, chave `<id_pncp>#<sha256[:12]>#<item>`, `processo` = id do edital (é o caso das medianas). BDI da linha ou `com ÷ sem − 1`; um preço só e nenhum BDI → `bdi_desconhecido`. Estado por edital em `planilha_edital` (`extraida`, `sem_planilha`, `pulado_teto`, `falhou`, `republicada`), com método, sha256, documento, linhas e custo. Republicação (mesmo sha256, ou do mesmo órgão 80%+ das linhas com mesmo código, quantidade e preço): as linhas ficam uma vez, no edital processado por último.
+- **Comando** `radar planilhas atualizar` (`--limite`, `--edital`, `--refazer`), agenda `radar-planilhas-diario` às 10:00, depois do analisar, na mesma família e role (Bedrock). Trava própria, disjuntor após 5 falhas seguidas do PNCP; `falhou` volta depois de 7 dias e `pulado_teto` no mês seguinte. A última linha é `planilhas: ...`, nunca `resultado:`.
+- **Tela**: nada novo. As referências de `/api/precos` passam a ter casos de SP e MG; cada uma diz de onde vem o estimado (`origens`: "SP (planilhas de editais do PNCP)", "PE (TCE-PE)") e de quais UFs, nunca "Brasil".
+- **Migração 0014** (parte de 0012; religar a 0013 no rebase): CHECK da origem troca `planilha_edital` (nunca gravada) por `pncp_planilha`, `preco_item.observacao`, tabela `planilha_edital`.
+
+## Números medidos nas planilhas do spike (PDFs reais, sem IA, sem banco)
+
+| Edital (UF) | Onde | Linhas lidas | Com termo de serviço | Classificadas |
+|---|---|---|---|---|
+| Cosmópolis, adutora (SP) | ZIP, "Planilha_orcamentaria_assinado.pdf" | 40 | 11 | 3 |
+| Santa Bárbara d'Oeste, adutora (SP) | ZIP, "Planilha Orçamentária_Cronograma_BDI.pdf" (25 páginas, composições fora) | 105 | 35 | 7 |
+| Ribeirão Preto, coletor (SP) | ZIP, "Anexo IV/Planilha Orçamentária.pdf" | 90 | 20 | 4 |
+| Araraquara, coletor (SP) | ZIP, "Anexo III - Escopo de Fornecimento e Estimativa de Preços.pdf" | 31 | 15 | 2 |
+| Ibaté, adutora (SP) | edital, 4 páginas com R$, texto picotado | 0 → IA (estimativa US$ 0,0013) | | |
+| São Simão (SP) | edital, páginas com R$ (composições) | 75 | 5 | 0 |
+| Votuporanga, João Monlevade, Vargem Alegre | sem planilha no PNCP | 0 | | |
+
+Total: 341 linhas, 86 com termo de serviço, **16 classificadas (19%)** contra 5 de 265 antes das mudanças. Regressão da 7b.1: os orçamentos de `tests/dados/tcepe` classificam igual (6 de 26) e todos os casos de `test_servicos.py` seguem passando.
+
+## Limites conhecidos
+
+- "JUNTA FLANGEADA" cai na exclusão `flange` da rede de água (o tubo de FoFo flangeado de Ibaté fica fora).
+- PEAD e PVC PBA às vezes vêm em DE ("DE=60 MM"), guardado como `dn` (só se compara dentro do material, como na 7b.1).
+- A data-base por fonte do cabeçalho não pega formatos fora de "FONTE - mm/aaaa", "FONTE ref. mês/aa" e "FONTE (mm/aaaa)".
+- Republicação vale para o edital processado por último, não para o de publicação mais recente quando um `--edital` antigo é refeito.
+- "Estimado com desconto" ainda não está na consulta.
+
+## Perguntas de entrevista
+
+1. Por que a guarda aritmética (`quantidade × unitário ≈ total`) e não o trecho literal ancora a IA neste caso?
+2. Como o código decide qual número é o preço com BDI quando a linha tem cinco números?
+3. Por que o contexto da obra só vale quando a descrição não cita água nem esgoto?
+4. Como os dois tetos da 7b.2 convivem com o teto mensal da IA e com o cache?
+5. Como uma republicação no PNCP deixaria de inflar a contagem de casos da mediana?

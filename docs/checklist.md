@@ -61,7 +61,9 @@ Filas ficam como futuro, no tema 2: outbox + SQS (etapa 4a; o pgmq não existe n
 - [x] Histórico do órgão, vencedores e régua de desconto por linha, UF e faixa de valor na ficha do edital. `src/radar/editais/historico.py`, `GET /api/historicos/{id}`, `frontend/src/componentes/HistoricoOrgao.tsx`, `ReguaDesconto.tsx`. Vídeo: a gravar.
 - [ ] Carga histórica rodada em produção e números reais na doc da etapa.
 - [x] Preço unitário pelo TCE-PE (7b.1): estimado e contratado por item, serviços-padrão, referências na ficha do edital. `src/radar/precos/`, `src/radar/coleta/tcepe.py`, `docs/etapas/07b-precos.md`.
-- [ ] Preço unitário estimado das planilhas dos editais do PNCP com IA (7b.2).
+- [x] Preço unitário estimado das planilhas dos editais do PNCP (7b.2): planilha achada pelo nome (dentro de ZIP) ou pelas páginas com R$, leitura determinística com guarda aritmética, IA só no texto picotado com tetos próprios, contexto da obra na classificação, republicação. `src/radar/precos/planilha_leitura.py`, `src/radar/precos/planilhas.py`, `src/radar/analise/planilhas.py`, `radar planilhas atualizar` (10:00), `docs/etapas/07b-precos.md`.
+- [ ] 7b.2 em produção: primeira rodada real, recall por formato e gabaritos das 6 planilhas conferidos pelo Augusto.
+- [ ] "Estimado com desconto" (planilha × homologado ÷ estimado da 7a) na consulta.
 - [ ] Resultados da Compesa pelo TCE-PE.
 
 ## Front com IA

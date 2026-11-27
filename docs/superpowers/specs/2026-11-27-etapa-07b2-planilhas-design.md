@@ -147,3 +147,23 @@ Nomes de colunas da `planilha_edital`, regex finas de código e unidade, lista d
 - Parser de estudo: pypdf `extract_text()` (o modo `layout` não ajudou no PDF picotado) e openpyxl `read_only, data_only`; cabeçalho achado por "descri" + "unid" + "quant" + "unit"; linha válida por coerência aritmética.
 - Classificação: `radar.precos.servicos.classificar` do repositório sobre 265 linhas (40 + 102 + 31 + 92): 5 classificadas sem contexto, 16 com a palavra da linha da obra; 79 linhas com termos de rede, escavação, ligação ou asfalto.
 - Arquivos baixados ficaram fora do repositório (pasta temporária); nenhuma chamada de IA, nenhum banco.
+
+## Decisões do coordenador (2026-11-27) e desvios na construção
+
+Respostas às perguntas acima:
+
+1. **Planilhas fora do PNCP**: fora de escopo; etapa posterior.
+2. **Adutora**: tubo de adutora ("Tubo PVC-O DN 250" numa adutora) conta como `rede_agua` pelo material e DN, com marca para separar depois: `preco_item.observacao = "adutora"` (pela descrição ou pelo contexto da obra).
+3. **Sem tela nova**: os preços do próprio edital não vão para a ficha agora; as linhas novas alimentam as medianas de `/api/precos`, que passam a dizer a origem ("planilhas de editais do PNCP", campo `origens`) e as UFs de onde vêm, nunca "Brasil".
+4. **Origem** `pncp_planilha`.
+
+Desvios do construtor:
+
+- Comando `radar planilhas atualizar` (e não `radar precos planilhas`), agenda própria `radar-planilhas-diario` às 10:00 na mesma família e role do analisar, e não na mesma task.
+- A seção da etapa ficou em `docs/etapas/07b-precos.md` (e não num `07b2-planilhas.md`).
+- Seleção sem nome: só as páginas com 8+ "R$", sem exigir "unid" e "quant" no cabeçalho (a página de Ibaté não tem "quant").
+- Os títulos do PNCP vêm sem extensão: além dos de título de planilha, baixam-se os "outros documentos" que não são esclarecimento, aviso, errata e afins (até 6 downloads por edital) para abrir os ZIPs.
+- Republicação: as linhas ficam no edital processado por último (a rodada vai do mais antigo ao mais novo), não pelo critério de data de publicação.
+- Evals formais (gabarito em `evals/`) ficaram para depois; os trechos das planilhas em `tests/dados/planilhas/` com as classificações esperadas nos testes fazem o papel de gabarito rascunho.
+- "Estimado com desconto" não entrou (sem tela nova; fica para a consulta quando houver onde mostrar).
+- Migração `0014` com `down_revision = "0012"`: a 0013 é de outro ramo; religar no rebase.
