@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from fakes import ClienteFalso, como_cliente
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from sqlalchemy import Engine, func, select, text
 from sqlalchemy.orm import Session, sessionmaker
 from typer.testing import CliRunner
@@ -911,3 +912,38 @@ def test_publicar_local_deixa_coletar_janela_para_a_lambda(
     with fabrica() as sessao:
         linha = sessao.scalars(select(Outbox)).one()
     assert (linha.publicada_em, linha.tentativas, linha.erro) == (None, 0, None)
+
+
+def test_consumo_e_outro_trace_com_link_para_a_janela(
+    fabrica: sessionmaker[Session],
+    config_filtro: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    spans: InMemorySpanExporter,
+) -> None:
+    """Fila local: a página coletada em `coleta.janela` é consumida noutro trace, por link."""
+    dia = HOJE - timedelta(days=1)
+    roteiro: dict[tuple[str, date, date, int, int], Pagina | Exception] = {
+        ("publicacao", dia, dia, modalidade, pagina): _pagina(
+            pagina, _registro(f"{modalidade}-{pagina}/2026")
+        )
+        for modalidade in (5, 6)
+        for pagina in (1, 2)
+    }
+    monkeypatch.setattr(cli, "_criar_cliente", lambda: como_cliente(ClienteFalso(roteiro)))
+    monkeypatch.setattr(cli, "fontes_retrato", lambda: {})
+
+    resultado = runner.invoke(
+        cli.app, ["carga-inicial", "--dias", "1", "--config", str(config_filtro)]
+    )
+
+    assert resultado.exit_code == 0, resultado.output
+    terminados = spans.get_finished_spans()
+    janelas = {s.context.span_id: s for s in terminados if s.name == "coleta.janela"}
+    consumos = [s for s in terminados if s.name == "processar mensagem"]
+    assert len(janelas) == 2 and len(consumos) == 4
+    for consumo in consumos:
+        assert consumo.parent is None
+        (link,) = consumo.links
+        janela = janelas[link.context.span_id]
+        assert consumo.context.trace_id != janela.context.trace_id
+        assert link.context.trace_id == janela.context.trace_id

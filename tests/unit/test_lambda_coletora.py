@@ -9,9 +9,12 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from radar.coleta import ResultadoFatia
 from radar.comum import Mensagem, ResumoPublicacao
+from radar.comum.telemetria import traceparent_atual
+from telemetria_memoria import EmissorEmMemoria
 
 
 def _registro(message_id: str, janela_id: int, lote: int = 0) -> dict[str, Any]:
@@ -302,3 +305,68 @@ def test_planejador_com_recusa_levanta(
 
     with pytest.raises(RuntimeError, match="recusad"):
         planejador.handler({}, CONTEXTO)
+
+
+# --- telemetria -------------------------------------------------------------------------
+
+TP = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+
+
+def test_coletora_leva_o_traceparent_da_mensagem(
+    coletora: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vistas: Vistas = []
+    monkeypatch.setattr(
+        coletora, "processar_janela", _processar({1: "concluida", 2: "concluida"}, vistas)
+    )
+    monkeypatch.setattr(coletora, "publicar_outbox", Relay())
+    registro = {
+        **_registro("m1", 1),
+        "messageAttributes": {"traceparent": {"stringValue": TP, "dataType": "String"}},
+    }
+    coletora.handler({"Records": [registro, _registro("m2", 2)]}, CONTEXTO)
+    assert [m.traceparent for m, _, _ in vistas] == [TP, None]
+
+
+def test_coletora_sem_atributo_segue_sem_contexto(
+    coletora: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vistas: Vistas = []
+    monkeypatch.setattr(coletora, "processar_janela", _processar({1: "concluida"}, vistas))
+    monkeypatch.setattr(coletora, "publicar_outbox", Relay())
+    assert coletora.handler({"Records": [_registro("m1", 1)]}, CONTEXTO) == {
+        "batchItemFailures": []
+    }
+    assert vistas[0][0].traceparent is None
+
+
+def test_planejador_e_raiz_e_registra_execucao_ok(
+    planejador: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    spans: InMemorySpanExporter,
+    metricas: EmissorEmMemoria,
+) -> None:
+    contextos: list[str | None] = []
+
+    def planejar(sessao: Any, criterios: Any, hoje: date, recuo: int = 10) -> tuple[int, int]:
+        contextos.append(traceparent_atual())  # o que enfileirar() gravaria na outbox
+        return 3, 11
+
+    monkeypatch.setattr(planejador, "planejar_e_enfileirar", planejar)
+    monkeypatch.setattr(planejador, "publicar_outbox", Relay())
+    planejador.handler({}, CONTEXTO)
+    (span,) = [s for s in spans.get_finished_spans() if s.name == "coleta.planejar"]
+    assert span.parent is None
+    assert contextos[0] is not None and contextos[0].split("-")[2] == f"{span.context.span_id:016x}"
+    assert metricas.valores("ExecucaoOk") == [1.0]
+
+
+def test_planejador_com_erro_registra_execucao_ok_zero(
+    planejador: ModuleType, monkeypatch: pytest.MonkeyPatch, metricas: EmissorEmMemoria
+) -> None:
+    monkeypatch.setattr(planejador, "planejar_e_enfileirar", lambda *a, **k: (0, 1))
+    monkeypatch.setattr(planejador, "publicar_outbox", Relay(recusar_em={1}))
+    with pytest.raises(RuntimeError):
+        planejador.handler({}, CONTEXTO)
+    assert metricas.valores("ExecucaoOk") == [0.0]
+    assert metricas.descarregamentos >= 1  # com_telemetria descarrega no finally

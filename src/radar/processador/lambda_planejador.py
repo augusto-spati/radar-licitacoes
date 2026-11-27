@@ -3,6 +3,11 @@
 Planeja as janelas de atualização do recuo, enfileira `coletar_janela` das elegíveis e roda o
 relay. Erro propaga (vira `Errors` da Lambda); recusa da fila também, para não passar em
 silêncio. Importar este módulo não abre conexão nem lê o SSM.
+
+Telemetria: o planejamento é a unidade de trabalho (span raiz `coleta.planejar`); as
+mensagens `coletar_janela` nascem dentro dele e levam o contexto para a outbox, então a
+primeira fatia de cada janela liga a este trace. `ExecucaoOk` (1/0) no fim, como o
+`radar atualizar` do Fargate.
 """
 
 import logging
@@ -10,6 +15,7 @@ from datetime import UTC, date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from opentelemetry.context import Context
 from sqlalchemy.orm import Session, sessionmaker
 
 from radar.comum import (
@@ -18,9 +24,11 @@ from radar.comum import (
     criar_engine,
     fabrica_sessao,
     garantir_url_do_banco,
+    metricas,
     obter_config,
     publicar_outbox,
 )
+from radar.comum.telemetria import com_telemetria, tracer
 from radar.editais import carregar_criterios
 from radar.processador.coletora import planejar_e_enfileirar
 from radar.processador.fila_local import criar_fila
@@ -49,11 +57,24 @@ def _hoje() -> date:
     return datetime.now(FUSO).date()
 
 
+@com_telemetria("radar-planejador")
 def handler(evento: dict[str, Any], contexto: Any) -> dict[str, int]:
     global _logs_configurados
     if not _logs_configurados:
         configurar_logs()
         _logs_configurados = True
+    ok = False
+    try:
+        with tracer().start_as_current_span("coleta.planejar", context=Context()) as span:
+            resposta = _planejar()
+            span.set_attributes(resposta)
+            ok = True
+            return resposta
+    finally:
+        metricas.registrar("ExecucaoOk", 1 if ok else 0)
+
+
+def _planejar() -> dict[str, int]:
     criterios = carregar_criterios(obter_config().config_filtro)
     hoje = _hoje()
     with _criar_sessao() as sessao:

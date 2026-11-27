@@ -16,8 +16,13 @@ com esperas) e o relay do fim caberem antes do timeout.
 
 O engine, a fila e o cliente do PNCP são criados no primeiro uso, uma vez por container.
 Importar este módulo não abre conexão nem lê o SSM.
+
+Telemetria (`com_telemetria`): a fatia abre o span raiz `coleta.janela` com link para o
+`traceparent` do atributo SQS (o planejador ou a fatia anterior); latência e páginas com erro
+saem por EMF; tudo é descarregado no `finally` da invocação.
 """
 
+import dataclasses
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -37,6 +42,7 @@ from radar.comum import (
     obter_config,
     publicar_outbox,
 )
+from radar.comum.telemetria import com_telemetria, traceparent_do_registro
 from radar.processador.coletora import processar_janela
 from radar.processador.fila_local import criar_fila
 
@@ -101,6 +107,7 @@ def _orcamento(contexto: Any) -> float:
     return max(0.0, min(ORCAMENTO_LAMBDA_S, restante_s - RESERVA_S))
 
 
+@com_telemetria("radar-coletora")
 def handler(evento: dict[str, Any], contexto: Any) -> dict[str, list[dict[str, str]]]:
     global _logs_configurados
     if not _logs_configurados:
@@ -119,7 +126,10 @@ def handler(evento: dict[str, Any], contexto: Any) -> dict[str, list[dict[str, s
         item = {"itemIdentifier": message_id}
         dados = {"message_id": message_id}
         try:
-            mensagem = de_corpo(registro["body"])
+            # O span `coleta.janela` da fatia liga ao contexto de quem enfileirou a janela.
+            mensagem = dataclasses.replace(
+                de_corpo(registro["body"]), traceparent=traceparent_do_registro(registro)
+            )
             dados |= {
                 "outbox_id": str(mensagem.outbox_id),
                 **{k: str(v) for k, v in mensagem.carga.items()},

@@ -5,6 +5,7 @@ from radar.processador.consumidor import (
     FRACAO_INVALIDOS,
     Desfecho,
     MensagemAdiada,
+    processar_com_span,
     processar_mensagem,
 )
 from radar.processador.fila_local import FilaLocal, criar_fila
@@ -19,5 +20,6 @@ __all__ = [
     "fontes_retrato",
     "planejar_e_enfileirar",
     "processar_janela",
+    "processar_com_span",
     "processar_mensagem",
 ]

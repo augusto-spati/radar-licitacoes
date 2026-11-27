@@ -19,6 +19,8 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import Literal
 
+from opentelemetry.context import Context
+from opentelemetry.trace import SpanKind, StatusCode
 from sqlalchemy.orm import Session
 
 from radar.coleta import (
@@ -35,6 +37,7 @@ from radar.coleta import (
     trava_fonte,
 )
 from radar.comum import Mensagem
+from radar.comum.telemetria import link_de, tracer
 from radar.editais import reconciliar_retrato, registrar, registrar_normalizados
 
 logger = logging.getLogger(__name__)
@@ -47,6 +50,54 @@ Desfecho = Literal["ok", "falha_definitiva"]
 
 class MensagemAdiada(Exception):
     """A trava da fonte está ocupada (coleta ou outro consumidor): a mensagem deve voltar."""
+
+
+def processar_com_span(
+    sessao: Session,
+    mensagem: Mensagem,
+    fontes: Mapping[str, FonteRetrato],
+    agora: datetime,
+    message_id: str | None = None,
+) -> Desfecho:
+    """`processar_mensagem` dentro do span `processar mensagem` (CONSUMER, raiz).
+
+    O span é de outro trace, com **link** para o contexto do produtor (`traceparent` da
+    mensagem, gravado na outbox quando a página ou o retrato nasceu): o consumo pode vir
+    minutos ou dias depois, noutro processo. Sem contexto, ou com um malformado, processa
+    igual, sem link. `MensagemAdiada` é fluxo normal (não marca erro); outra exceção marca.
+    """
+    link = link_de(mensagem.traceparent)
+    atributos: dict[str, str | int] = {
+        "messaging.system": "aws_sqs",
+        "messaging.operation.type": "process",
+        "radar.outbox_id": mensagem.outbox_id,
+        "radar.tipo": mensagem.tipo,
+    }
+    if message_id is not None:
+        atributos["messaging.message.id"] = message_id
+    with tracer().start_as_current_span(
+        "processar mensagem",
+        context=Context(),
+        kind=SpanKind.CONSUMER,
+        links=[link] if link is not None else None,
+        attributes=atributos,
+        record_exception=False,
+        set_status_on_exception=False,
+    ) as span:
+        try:
+            desfecho = processar_mensagem(sessao, mensagem, fontes, agora)
+        except MensagemAdiada:
+            span.set_attribute("radar.desfecho", "adiada")
+            raise
+        except Exception as erro:
+            span.set_attribute("radar.desfecho", "erro")
+            span.record_exception(erro)
+            span.set_status(StatusCode.ERROR, repr(erro)[:200])
+            raise
+        span.set_attribute("radar.desfecho", desfecho)
+        if desfecho == "falha_definitiva":
+            span.set_status(StatusCode.ERROR, "falha_definitiva")
+        return desfecho
 
 
 def processar_mensagem(
@@ -71,7 +122,15 @@ def _processar_pagina(sessao: Session, pagina_id: int) -> Desfecho:
         sessao.rollback()
         logger.info("pagina_ja_processada", extra={"pagina_id": pagina_id})
         return "ok"
-    resultado = registrar(sessao, pagina.registros)
+    with tracer().start_as_current_span("editais.registrar") as span:
+        resultado = registrar(sessao, pagina.registros)
+        span.set_attributes(
+            {
+                "inseridos": resultado.inseridos,
+                "atualizados": resultado.atualizados,
+                "invalidos": resultado.invalidos,
+            }
+        )
     marcar_processada(sessao, pagina_id)  # commita o registro junto da marca
     logger.info(
         "pagina_processada",
@@ -142,15 +201,25 @@ def _sob_trava(
     if len(vistos) < fonte.minimo_registros:
         erro = f"abaixo do minimo no consumidor: {len(vistos)} < {fonte.minimo_registros}"
         return _falhar(sessao, retrato.id, fonte.nome, erro)
-    resultado = registrar_normalizados(sessao, normalizados)
+    with tracer().start_as_current_span("editais.registrar") as span:
+        resultado = registrar_normalizados(sessao, normalizados)
+        span.set_attributes(
+            {
+                "inseridos": resultado.inseridos,
+                "atualizados": resultado.atualizados,
+                "invalidos": resultado.invalidos,
+            }
+        )
     if resultado.invalidos > FRACAO_INVALIDOS * len(normalizados):
         sessao.rollback()  # desfaz o registro: nada gravado, nada reconciliado
         erro = f"muitos inválidos: {resultado.invalidos} de {len(normalizados)}"
         return _falhar(sessao, retrato.id, fonte.nome, erro)
     if vistos:
-        encerrados = reconciliar_retrato(
-            sessao, fonte.nome, vistos, agora, rotulo=fonte.rotulo_saida
-        )
+        with tracer().start_as_current_span("editais.reconciliar") as span:
+            encerrados = reconciliar_retrato(
+                sessao, fonte.nome, vistos, agora, rotulo=fonte.rotulo_saida
+            )
+            span.set_attribute("encerrados", encerrados)
     else:
         # Defesa extra: com `vistos` vazio a reconciliação encerraria a fonte inteira.
         logger.warning("reconciliacao_ignorada", extra=dados)
