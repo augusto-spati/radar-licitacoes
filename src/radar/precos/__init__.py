@@ -23,13 +23,17 @@ from radar.precos.servicos import (
     termos_processo_padrao,
 )
 from radar.precos.tcepe import (
+    apagar_processos,
     bdi_fracao,
     casar_itens,
+    contratados_gravados,
     escolher_contrato,
     gravar_precos,
     itens_de_processo,
+    processo_da_chave,
     processo_de_saneamento,
     processo_homologado,
+    processos_gravados,
 )
 
 __all__ = [
@@ -50,7 +54,9 @@ __all__ = [
     "PrecoItem",
     "PrecoItemNovo",
     "Servico",
+    "apagar_processos",
     "bdi_fracao",
+    "contratados_gravados",
     "carregar_servicos",
     "carregar_termos_processo",
     "casar_itens",
@@ -63,7 +69,9 @@ __all__ = [
     "itens_de_processo",
     "normalizar_unidade",
     "processo_de_saneamento",
+    "processo_da_chave",
     "processo_homologado",
+    "processos_gravados",
     "sem_acento",
     "tem_termo",
     "termos_processo_padrao",

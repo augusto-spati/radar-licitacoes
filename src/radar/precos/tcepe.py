@@ -13,18 +13,21 @@ importa a coleta: quem compõe é a CLI.
 - Os itens do contrato não têm número: casam por descrição normalizada + quantidade e, quando
   as duas listas têm o mesmo tamanho, pela mesma posição com a mesma descrição. A unidade
   precisa ser a mesma, e chave repetida com preços diferentes no contrato não casa.
+- Identidade do processo: o `processoContratacaoId`, prefixo de `chave_origem` ("{id}:...").
+  O rótulo `processo` ("uj/numero/ano") não é único (2.245 repetidos na listagem de 2026) e não
+  serve para limpar nem para contar casos.
 """
 
 import logging
 import re
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import asdict
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from sqlalchemy import delete, func
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -296,6 +299,11 @@ def casar_itens(orcamento: list[Registro], contrato: list[Registro]) -> dict[int
 # --- Itens ---
 
 
+def processo_da_chave(chave_origem: str) -> str:
+    """Id do processo no TCE-PE: o prefixo de `chave_origem` até o primeiro ":"."""
+    return chave_origem.split(":", 1)[0]
+
+
 def _chave(processo_id: str, item: Registro, posicao: int) -> str:
     if item_id := _texto(item.get("itemId")):
         return f"{processo_id}:{item_id}"
@@ -310,11 +318,15 @@ def itens_de_processo(
     contratos: Sequence[tuple[Registro, list[Registro]]],
     termos: Sequence[str] | None = None,
     servicos: tuple[Servico, ...] | None = None,
+    contratados: Mapping[str, Decimal | None] | None = None,
 ) -> list[PrecoItemNovo]:
     """Itens do orçamento que casam com um serviço-padrão, com o contratado quando casa.
 
     Processo fora do pré-filtro de saneamento devolve lista vazia. Item sem preço positivo fica
     de fora. Razão contratado ÷ estimado fora de [0,3; 1,5] marca `suspeito`.
+
+    Com `contratados` (chave_origem → contratado já gravado, de `contratados_gravados`), o
+    contrato não é casado de novo: cada item fica com o contratado que já tinha.
     """
     if not processo_de_saneamento(processo, termos):
         return []
@@ -329,8 +341,11 @@ def itens_de_processo(
     data = _data(processo.get("dataResultado")) or _data(processo.get("dataOrcamento"))
     municipio = _municipio(orgao)
 
-    itens_contrato = escolher_contrato(processo, contratos)
-    casados = casar_itens(orcamento, itens_contrato) if itens_contrato else {}
+    homologado = _decimal(processo.get("valorHomologado"))
+    casados: dict[int, Registro] = {}
+    if contratados is None:
+        itens_contrato = escolher_contrato(processo, contratos)
+        casados = casar_itens(orcamento, itens_contrato) if itens_contrato else {}
 
     novos: list[PrecoItemNovo] = []
     for i, item in enumerate(orcamento):
@@ -342,8 +357,11 @@ def itens_de_processo(
         classificacao = classificar(descricao, unidade, servicos)
         if classificacao is None:
             continue
+        chave = _chave(processo_id, item, i)
         contratado = None
-        if (par := casados.get(i)) is not None:
+        if contratados is not None:
+            contratado = contratados.get(chave)
+        elif (par := casados.get(i)) is not None:
             contratado = _decimal(par.get("ValorUnitario"))
             if contratado is not None and contratado <= 0:
                 contratado = None
@@ -351,7 +369,7 @@ def itens_de_processo(
         novos.append(
             PrecoItemNovo(
                 origem=ORIGEM,
-                chave_origem=_chave(processo_id, item, i),
+                chave_origem=chave,
                 uf=UF,
                 municipio=municipio,
                 orgao_nome=orgao,
@@ -377,18 +395,77 @@ def itens_de_processo(
                 unidade_canonica=classificacao.unidade_canonica,
                 fator_unidade=classificacao.fator,
                 suspeito=suspeito,
+                valor_homologado=homologado,
             )
         )
     return novos
 
 
+def contratados_gravados(
+    sessao: Session, processo_id: str, valor_homologado: object
+) -> dict[str, Decimal | None] | None:
+    """Contratado já gravado por `chave_origem`, quando dá para não buscar o contrato de novo.
+
+    Cortesia com o TCE-PE: na rodada semanal, processo cujas linhas já têm algum contratado e
+    cujo `valorHomologado` é o mesmo da gravação não tem os contratos buscados de novo (1 + N
+    requisições a menos por processo). Devolve None quando é preciso buscar: sem linhas,
+    nenhuma com contratado, ou homologado diferente (ou desconhecido). Limite aceito: contrato
+    aditado sem mudar o homologado não é visto; para forçar, apague as linhas do processo.
+    """
+    alvo = _decimal(valor_homologado)
+    if alvo is None:
+        return None
+    linhas = sessao.execute(
+        select(
+            PrecoItem.chave_origem,
+            PrecoItem.preco_contratado_com_bdi,
+            PrecoItem.valor_homologado,
+        ).where(
+            PrecoItem.origem == ORIGEM,
+            PrecoItem.chave_origem.startswith(f"{processo_id}:", autoescape=True),
+        )
+    ).all()
+    if not linhas or all(linha.preco_contratado_com_bdi is None for linha in linhas):
+        return None
+    if any(linha.valor_homologado != alvo for linha in linhas):
+        return None
+    return {linha.chave_origem: linha.preco_contratado_com_bdi for linha in linhas}
+
+
+def _id_do_processo() -> Any:
+    return func.split_part(PrecoItem.chave_origem, ":", 1)
+
+
+def processos_gravados(sessao: Session) -> set[str]:
+    """Ids dos processos do TCE-PE que têm linhas em `preco_item`."""
+    consulta = select(_id_do_processo()).where(PrecoItem.origem == ORIGEM).distinct()
+    return set(sessao.scalars(consulta).all())
+
+
+def apagar_processos(sessao: Session, processo_ids: Collection[str]) -> int:
+    """Apaga as linhas do TCE-PE desses processos (pelo id, prefixo de `chave_origem`). Sem commit.
+
+    Para processo que saiu do alvo (anulado, revogado, não mais homologado, sigiloso, fora do
+    saneamento) ou que ficou sem nenhum item com serviço.
+    """
+    if not processo_ids:
+        return 0
+    resultado = sessao.execute(
+        delete(PrecoItem).where(
+            PrecoItem.origem == ORIGEM, _id_do_processo().in_(list(processo_ids))
+        )
+    )
+    return int(getattr(resultado, "rowcount", 0) or 0)
+
+
 def gravar_precos(sessao: Session, itens: Iterable[PrecoItemNovo]) -> int:
     """Upsert por `(origem, chave_origem)`; devolve quantas linhas foram gravadas. Sem commit.
 
-    Para cada `(origem, processo)` presente em `itens`, apaga as linhas antigas desse processo
-    cuja chave não veio agora (item que deixou de casar com um serviço depois de uma mudança de
-    regra, ou orçamento refeito), na mesma transação. Processo que ficou sem nenhum item não
-    aparece em `itens` e, por isso, não é limpo aqui.
+    Para cada processo presente em `itens` (o id, prefixo de `chave_origem`; o rótulo
+    `processo` não é único), apaga as linhas antigas dele cuja chave não veio agora (item que
+    deixou de casar com um serviço depois de uma mudança de regra, ou orçamento refeito), na
+    mesma transação. Processo que ficou sem nenhum item não aparece em `itens`: quem chama usa
+    `apagar_processos`.
     """
     linhas = [asdict(item) for item in itens]
     if not linhas:
@@ -406,12 +483,13 @@ def gravar_precos(sessao: Session, itens: Iterable[PrecoItemNovo]) -> int:
 
     chaves_por_processo: dict[tuple[str, str], set[str]] = defaultdict(set)
     for linha in unicas:
-        chaves_por_processo[(linha["origem"], linha["processo"])].add(linha["chave_origem"])
-    for (origem, processo), chaves in chaves_por_processo.items():
+        processo_id = processo_da_chave(linha["chave_origem"])
+        chaves_por_processo[(linha["origem"], processo_id)].add(linha["chave_origem"])
+    for (origem, processo_id), chaves in chaves_por_processo.items():
         sessao.execute(
             delete(PrecoItem).where(
                 PrecoItem.origem == origem,
-                PrecoItem.processo == processo,
+                PrecoItem.chave_origem.startswith(f"{processo_id}:", autoescape=True),
                 PrecoItem.chave_origem.not_in(chaves),
             )
         )

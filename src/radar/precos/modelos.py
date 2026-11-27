@@ -90,6 +90,9 @@ class PrecoItem(Base):
     unidade_canonica: Mapped[str] = mapped_column(Text)
     fator_unidade: Mapped[Decimal] = mapped_column(Numeric)
     suspeito: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Valor homologado do processo na gravação (TCE-PE): se não mudou e o contratado já está
+    # gravado, a rodada semanal não busca os contratos de novo.
+    valor_homologado: Mapped[Decimal | None] = mapped_column(Numeric)
     gravado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -124,3 +127,4 @@ class PrecoItemNovo:
     unidade_canonica: str
     fator_unidade: Decimal
     suspeito: bool
+    valor_homologado: Decimal | None = None

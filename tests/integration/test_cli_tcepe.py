@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from typer.testing import CliRunner
 
 from radar import cli
-from radar.coleta import ErroTcepe
+from radar.coleta import ErroTcepe, NumeroSemBusca
 from radar.comum import Base, fabrica_sessao
 from radar.precos import PrecoItem
 
@@ -170,3 +170,159 @@ def test_anos_invalido_e_rejeitado(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli, "_criar_cliente_tcepe", ClienteTcepeFalso)
     resultado = runner.invoke(cli.app, ["tcepe", "atualizar", "--anos", "abc"])
     assert resultado.exit_code != 0
+
+
+# --- Revisão final: número não numérico, limpeza da listagem e cortesia ---
+
+
+def test_numero_que_nao_serve_para_buscar_contrato_grava_o_estimado_sem_falha(
+    fabrica: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class SemNumero(ClienteTcepeFalso):
+        def processos(self, ano: int) -> list[dict[str, Any]]:
+            base = _ler("processos")[0]  # Pedra
+            # Mais processos sem número que o disjuntor aguenta: nenhum conta como falha.
+            return [
+                {**base, "processoContratacaoId": str(60116414 + n), "numeroContratacao": " "}
+                for n in range(FALHAS + 1)
+            ]
+
+        def orcamento(self, processo_id: int | str) -> list[dict[str, Any]]:
+            self.orcamentos.append(str(processo_id))
+            return _ler("orcamento_60116414")
+
+        def instrumentos(self, uj_id: int | str, numero: str, ano: int) -> list[dict[str, Any]]:
+            if not numero.strip():
+                raise NumeroSemBusca("processo sem número")
+            raise AssertionError("não devia buscar")
+
+    ClienteTcepeFalso.instancias = []
+    monkeypatch.setattr(cli, "_criar_cliente_tcepe", SemNumero)
+    monkeypatch.setattr(cli, "configurar_logs", lambda: None)  # deixa o caplog ver o log
+    with caplog.at_level("WARNING"):
+        resultado = runner.invoke(cli.app, ["tcepe", "atualizar", "--anos", "2026"])
+    assert resultado.exit_code == 0, resultado.output
+    assert f"tcepe: {FALHAS + 1} processos de saneamento" in resultado.output
+    assert "0 falhas" in resultado.output
+    with fabrica() as sessao:
+        linhas = sessao.scalars(select(PrecoItem)).all()
+    assert linhas
+    assert all(linha.preco_contratado_com_bdi is None for linha in linhas)
+    assert "tcepe_sem_busca_de_contrato" in caplog.text
+
+
+FALHAS = cli.FALHAS_SEGUIDAS_TCEPE
+
+
+class Contador(ClienteTcepeFalso):
+    """Conta as buscas de contrato; a listagem pode ser trocada entre as rodadas."""
+
+    listagem: list[dict[str, Any]] | None = None
+    orcamento_vazio: set[str] = set()
+    buscas: list[str] = []
+
+    def processos(self, ano: int) -> list[dict[str, Any]]:
+        self.anos.append(ano)
+        if ano != 2026:
+            return []
+        return Contador.listagem if Contador.listagem is not None else _ler("processos")
+
+    def orcamento(self, processo_id: int | str) -> list[dict[str, Any]]:
+        if str(processo_id) in Contador.orcamento_vazio:
+            return [{"itemId": "1", "itemDescricao": "PLACA DE OBRA", "ValorUnitario": "10"}]
+        return super().orcamento(processo_id)
+
+    def instrumentos(self, uj_id: int | str, numero: str, ano: int) -> list[dict[str, Any]]:
+        Contador.buscas.append(f"{uj_id}/{numero}")
+        return super().instrumentos(uj_id, numero, ano)
+
+
+def _por_processo(fabrica: sessionmaker[Session]) -> dict[str, int]:
+    with fabrica() as sessao:
+        chaves = sessao.scalars(select(PrecoItem.chave_origem)).all()
+    contagem: dict[str, int] = {}
+    for chave in chaves:
+        contagem[chave.split(":")[0]] = contagem.get(chave.split(":")[0], 0) + 1
+    return contagem
+
+
+@pytest.fixture
+def contador(monkeypatch: pytest.MonkeyPatch) -> type[Contador]:
+    Contador.listagem = None
+    Contador.orcamento_vazio = set()
+    Contador.buscas = []
+    ClienteTcepeFalso.instancias = []
+    monkeypatch.setattr(cli, "_criar_cliente_tcepe", Contador)
+    return Contador
+
+
+@pytest.mark.parametrize(
+    "mudanca",
+    [
+        {"estagioNome": "Revogado", "valorHomologado": "0"},
+        {"estagioNome": "Anulado"},
+        {"estagioNome": "Em andamento"},
+        {"orcamentoSigiloso": "1"},
+    ],
+)
+def test_processo_que_saiu_do_alvo_tem_as_linhas_apagadas(
+    fabrica: sessionmaker[Session], contador: type[Contador], mudanca: dict[str, str]
+) -> None:
+    assert runner.invoke(cli.app, ["tcepe", "atualizar", "--anos", "2026"]).exit_code == 0
+    antes = _por_processo(fabrica)
+    assert set(antes) == {"60116414", "60116598"}
+
+    contador.listagem = [
+        {**p, **mudanca} if p["processoContratacaoId"] == "60116414" else p
+        for p in _ler("processos")
+    ]
+    resultado = runner.invoke(cli.app, ["tcepe", "atualizar", "--anos", "2026"])
+
+    assert resultado.exit_code == 0, resultado.output
+    assert "1 processos removidos" in resultado.output
+    assert _por_processo(fabrica) == {"60116598": antes["60116598"]}
+
+
+def test_processo_que_ficou_sem_item_classificado_tem_as_linhas_apagadas(
+    fabrica: sessionmaker[Session], contador: type[Contador]
+) -> None:
+    assert runner.invoke(cli.app, ["tcepe", "atualizar", "--anos", "2026"]).exit_code == 0
+    contador.orcamento_vazio = {"60116414"}
+
+    resultado = runner.invoke(cli.app, ["tcepe", "atualizar", "--anos", "2026"])
+
+    assert resultado.exit_code == 0, resultado.output
+    assert set(_por_processo(fabrica)) == {"60116598"}
+
+
+def test_processo_ja_casado_com_o_mesmo_homologado_nao_busca_contrato_de_novo(
+    fabrica: sessionmaker[Session], contador: type[Contador]
+) -> None:
+    assert runner.invoke(cli.app, ["tcepe", "atualizar", "--anos", "2026"]).exit_code == 0
+    assert sorted(contador.buscas) == ["462/016", "802/4015"]
+    with fabrica() as sessao:
+        antes = {
+            linha.chave_origem: linha.preco_contratado_com_bdi
+            for linha in sessao.scalars(select(PrecoItem)).all()
+        }
+    assert any(v is not None for v in antes.values())
+
+    contador.buscas = []
+    assert runner.invoke(cli.app, ["tcepe", "atualizar", "--anos", "2026"]).exit_code == 0
+    assert contador.buscas == []
+    with fabrica() as sessao:
+        depois = {
+            linha.chave_origem: linha.preco_contratado_com_bdi
+            for linha in sessao.scalars(select(PrecoItem)).all()
+        }
+    assert depois == antes
+
+    # Homologado mudou: busca de novo só esse.
+    contador.listagem = [
+        {**p, "valorHomologado": "580000.00"} if p["processoContratacaoId"] == "60116414" else p
+        for p in _ler("processos")
+    ]
+    assert runner.invoke(cli.app, ["tcepe", "atualizar", "--anos", "2026"]).exit_code == 0
+    assert contador.buscas == ["462/016"]

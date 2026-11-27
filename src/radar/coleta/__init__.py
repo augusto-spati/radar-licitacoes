@@ -59,7 +59,7 @@ from radar.coleta.retratos import (
     ultimo_retrato,
 )
 from radar.coleta.sanepar import FonteSanepar
-from radar.coleta.tcepe import ClienteTcepe, ErroTcepe, criar_http_tcepe
+from radar.coleta.tcepe import ClienteTcepe, ErroTcepe, NumeroSemBusca, criar_http_tcepe
 from radar.coleta.trava import liberar_trava, obter_trava, trava_fonte
 
 __all__ = [
@@ -76,6 +76,7 @@ __all__ = [
     "ErroPNCP",
     "ErroResultados",
     "ErroTcepe",
+    "NumeroSemBusca",
     "EstadoRetrato",
     "FonteCompesa",
     "FonteRetrato",

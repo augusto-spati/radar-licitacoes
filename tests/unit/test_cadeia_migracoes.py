@@ -10,7 +10,8 @@ def test_cadeia_linear_com_precos_depois_do_historico() -> None:
     config = AlembicConfig(str(RAIZ / "alembic.ini"))
     config.set_main_option("script_location", str(RAIZ / "migrations"))
     script = ScriptDirectory.from_config(config)
-    assert script.get_heads() == ["0011"]
+    assert script.get_heads() == ["0012"]
+    assert script.get_revision("0012").down_revision == "0011"
     assert script.get_revision("0011").down_revision == "0010"
     assert script.get_revision("0010").down_revision == "0009"
     assert script.get_revision("0009").down_revision == "0008"

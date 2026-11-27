@@ -34,6 +34,10 @@ Quirks tratados aqui:
   conferido contra o filtro pedido, e resultado no limite é tratado como truncado.
 - ``NumeroProcessoContratacao`` casa por substring ("44" traz também o "144"): o registro que
   só contém o número é descartado, sem erro.
+- ``NumeroProcessoContratacao`` aceita texto: ``009.CELOSE`` (UJ 800, 2026) devolveu o contrato
+  072/2026 desse processo (chamada real em 2026-11-27). Número não numérico ("009.CELOSE",
+  "CELOEII-023", "260202DE00003") confere por igualdade sem diferenciar maiúsculas; o que só
+  contém o texto pedido é descartado como na substring numérica.
 - Filtro numérico com valor não numérico dá HTTP 500 com corpo "ERRO": os ids são validados antes.
 - JSON inválido ("Extra data") aconteceu uma vez e passou na repetição: é transitório.
 """
@@ -72,6 +76,10 @@ class ErroTcepe(Exception):
     pass
 
 
+class NumeroSemBusca(ErroTcepe):
+    """O número do processo não serve para buscar contratos (vazio); não é falha do TCE-PE."""
+
+
 class _FalhaTransitoria(Exception):
     def __init__(self, mensagem: str, status: int | None = None) -> None:
         super().__init__(mensagem)
@@ -101,11 +109,14 @@ def _id(valor: int | str, nome: str) -> str:
 def _mesmo_numero(registro: Any, campo: str, valor: str) -> bool:
     """O registro tem `campo` com o mesmo número, ignorando zeros à esquerda ("016" == "16").
 
-    Campo ausente não confere: é sinal de que o filtro foi ignorado. `valor` já foi validado.
+    Valor não numérico (número de processo como "009.CELOSE") confere por igualdade, sem
+    diferenciar maiúsculas. Campo ausente não confere: é sinal de que o filtro foi ignorado.
     """
     if not isinstance(registro, dict) or campo not in registro:
         return False
     texto = str(registro[campo]).strip()
+    if not valor.isdigit():
+        return texto.casefold() == valor.casefold()
     return texto.isdigit() and int(texto) == int(valor)
 
 
@@ -113,7 +124,10 @@ def _contem_numero(registro: Any, campo: str, valor: str) -> bool:
     """O campo traz o número pedido dentro dele ("144" contém "44"): casamento por substring."""
     if not isinstance(registro, dict) or campo not in registro:
         return False
-    return str(int(valor)) in str(registro[campo]).strip()
+    texto = str(registro[campo]).strip()
+    if not valor.isdigit():
+        return valor.casefold() in texto.casefold()
+    return str(int(valor)) in texto
 
 
 # Filtros que o servidor aplica como substring (LIKE): `NumeroProcessoContratacao=44` devolve
@@ -150,9 +164,13 @@ class ClienteTcepe:
         return self._consultar(ORCAMENTO, {"processoContratacaoId": _id(processo_id, "processo")})
 
     def instrumentos(self, uj_id: int | str, numero: str, ano: int) -> list[dict[str, Any]]:
+        """Contratos do processo `numero` (texto, ex. "016" ou "009.CELOSE") da UJ no ano.
+
+        Número vazio levanta `NumeroSemBusca` sem chamar: não há como buscar o contrato.
+        """
         numero = str(numero).strip()
-        if not numero.isdigit():
-            raise ErroTcepe(f"número do processo precisa ser numérico: {numero!r}")
+        if not numero:
+            raise NumeroSemBusca("processo sem número: não dá para buscar o contrato")
         return self._consultar(
             INSTRUMENTOS,
             {

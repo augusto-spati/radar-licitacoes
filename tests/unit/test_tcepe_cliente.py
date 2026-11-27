@@ -4,7 +4,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from radar.coleta import ClienteTcepe, ErroTcepe, criar_http_tcepe
+from radar.coleta import ClienteTcepe, ErroTcepe, NumeroSemBusca, criar_http_tcepe
 from radar.coleta.tcepe import decodificar
 
 DADOS = Path(__file__).resolve().parents[1] / "dados" / "tcepe"
@@ -298,10 +298,44 @@ def test_id_nao_numerico_nem_chama():
         cliente.orcamento("abc")
     with pytest.raises(ErroTcepe, match="numérico"):
         cliente.instrumentos("x", "016", 2026)
-    with pytest.raises(ErroTcepe, match="numérico"):
+    with pytest.raises(NumeroSemBusca, match="sem número"):
         cliente.instrumentos(462, " ", 2026)
-    with pytest.raises(ErroTcepe, match="numérico"):
-        cliente.instrumentos(462, "16/A", 2026)
+
+
+def test_numero_nao_numerico_busca_e_confere_por_igualdade():
+    # Real (2026-11-27): UJ 800, processo "009.CELOSE" devolveu o contrato 072/2026 dele. Números
+    # assim ("CELOEII-023", "260202DE00003") não podem derrubar o processo.
+    base = {"unidadeJurisdicionadaId": "800", "AnoProcessoContratacao": "2026"}
+    registros = [
+        dict(base, instrumentoJuridicoId="60314776", NumeroProcessoContratacao="009.CELOSE"),
+        dict(base, instrumentoJuridicoId="1", NumeroProcessoContratacao="1009.CELOSE"),
+    ]
+    pedidos: list[httpx.URL] = []
+
+    def handler(req):
+        pedidos.append(req.url)
+        return _resposta("Remessa_InstrumentoJuridico", registros)
+
+    achados = _cliente(handler).instrumentos(800, "009.celose", 2026)
+
+    assert [i["instrumentoJuridicoId"] for i in achados] == ["60314776"]
+    assert pedidos[0].params["NumeroProcessoContratacao"] == "009.celose"
+
+
+def test_numero_nao_numerico_de_outro_processo_vira_erro():
+    registros = [
+        {
+            "unidadeJurisdicionadaId": "800",
+            "AnoProcessoContratacao": "2026",
+            "NumeroProcessoContratacao": "CELOEII-023",
+        }
+    ]
+
+    def handler(req):
+        return _resposta("Remessa_InstrumentoJuridico", registros)
+
+    with pytest.raises(ErroTcepe, match="NumeroProcessoContratacao"):
+        _cliente(handler).instrumentos(800, "009.CELOSE", 2026)
 
 
 def test_registro_sem_o_campo_do_filtro_vira_erro():

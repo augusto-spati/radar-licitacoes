@@ -12,13 +12,16 @@ from sqlalchemy.orm import Session
 
 from radar.precos import (
     PrecoItem,
+    apagar_processos,
     bdi_fracao,
     casar_itens,
+    contratados_gravados,
     escolher_contrato,
     gravar_precos,
     itens_de_processo,
     processo_de_saneamento,
     processo_homologado,
+    processos_gravados,
 )
 
 DADOS = Path(__file__).resolve().parent.parent / "dados" / "tcepe"
@@ -478,3 +481,40 @@ def test_chave_repetida_no_lote_avisa(sessao: Session, caplog: pytest.LogCapture
         assert gravar_precos(sessao, [novos[0], novos[0]]) == 1
 
     assert "preco_item_chave_repetida" in caplog.text
+
+
+def test_limpeza_e_pelo_id_do_processo_nao_pelo_rotulo(sessao: Session) -> None:
+    # Dois processos com o mesmo "uj/numero/ano" (2.245 casos na listagem de 2026).
+    processo, orcamento, instrumento, itens = _pedra()
+    gemeo = dict(processo, processoContratacaoId="99999999")
+    novos = itens_de_processo(processo, orcamento, [(instrumento, itens)], TERMOS)
+    novos_gemeo = itens_de_processo(gemeo, orcamento, [], TERMOS)
+    assert {n.processo for n in novos} == {n.processo for n in novos_gemeo}
+    gravar_precos(sessao, novos + novos_gemeo)
+    assert _contar(sessao) == 8
+
+    # Regravar só o tubo do gêmeo não apaga nada do outro processo.
+    gravar_precos(sessao, [n for n in novos_gemeo if n.servico == "rede_esgoto"])
+
+    sessao.expire_all()
+    chaves = sessao.scalars(select(PrecoItem.chave_origem)).all()
+    assert sum(c.startswith("60116414:") for c in chaves) == 4
+    assert sum(c.startswith("99999999:") for c in chaves) == 1
+
+
+def test_apagar_processos_e_contratados_gravados(sessao: Session) -> None:
+    processo, orcamento, instrumento, itens = _pedra()
+    novos = itens_de_processo(processo, orcamento, [(instrumento, itens)], TERMOS)
+    gravar_precos(sessao, novos)
+    assert processos_gravados(sessao) == {"60116414"}
+
+    anteriores = contratados_gravados(sessao, "60116414", processo["valorHomologado"])
+    assert anteriores == {n.chave_origem: n.preco_contratado_com_bdi for n in novos}
+    # Reaproveitar dá os mesmos itens, sem casar o contrato de novo.
+    assert itens_de_processo(processo, orcamento, [], TERMOS, contratados=anteriores) == novos
+    assert contratados_gravados(sessao, "60116414", "1.00") is None
+    assert contratados_gravados(sessao, "6011641", processo["valorHomologado"]) is None
+
+    assert apagar_processos(sessao, ["6011641"]) == 0  # prefixo não é o id
+    assert apagar_processos(sessao, ["60116414"]) == 4
+    assert _contar(sessao) == 0
