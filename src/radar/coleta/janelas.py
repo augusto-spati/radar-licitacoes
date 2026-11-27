@@ -6,23 +6,26 @@ Invariante central: uma janela que falha fica com status "falha" (e o erro), nun
 
 import logging
 import time
+import uuid
 from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import DateTime, Engine, and_, cast, delete, func, or_, select, update
+from sqlalchemy import DateTime, and_, cast, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from radar.coleta.modelos import ColetaJanela, PaginaBruta
 from radar.coleta.pncp import ClientePNCP, ErroPNCP
+from radar.coleta.trava import liberar_trava, obter_trava
 from radar.comum import Outbox, enfileirar
 
 logger = logging.getLogger(__name__)
 
 FUSO = "America/Sao_Paulo"  # as datas do PNCP são em horário de Brasília
-CHAVE_COLETOR = 7_240_001  # chave do advisory lock que garante um único coletor por vez
+TRAVA_COLETOR = "pncp"  # lease em trava_fonte que garante um único coletor por vez
+DURACAO_TRAVA = timedelta(minutes=30)  # renovada a cada página
 LIMITE_ERRO = 500
 
 
@@ -96,27 +99,29 @@ def coletar_pendentes(
     o relógio real (`relogio`, injetável nos testes).
     """
     relogio = relogio or _agora_real
-    bind = sessao.get_bind()
-    # Conexão dedicada: o lock pertence à conexão do banco, e a sessão devolve a dela ao
-    # pool a cada commit.
-    conexao = bind.connect() if isinstance(bind, Engine) else bind
+    # Lease em tabela (coleta.trava), sem conexão presa: a coleta pode levar horas, então o
+    # lease é renovado a cada página. Perder o lease conta como falha no resumo.
+    dono = uuid.uuid4()
+    if not obter_trava(sessao, TRAVA_COLETOR, dono, DURACAO_TRAVA):
+        logger.warning("coleta_em_andamento_noutro_processo")
+        return ResumoColeta()
+
+    def renovar() -> bool:
+        return obter_trava(sessao, TRAVA_COLETOR, dono, DURACAO_TRAVA)
+
     try:
-        if not conexao.scalar(select(func.pg_try_advisory_lock(CHAVE_COLETOR))):
-            logger.warning("coleta_em_andamento_noutro_processo")
-            return ResumoColeta()
-        try:
-            return _coletar_todas(sessao, cliente, relogio)
-        finally:
-            conexao.scalar(select(func.pg_advisory_unlock(CHAVE_COLETOR)))
+        return _coletar_todas(sessao, cliente, relogio, renovar)
     finally:
-        if conexao is not bind:
-            conexao.close()
+        liberar_trava(sessao, TRAVA_COLETOR, dono)
 
 
 def _coletar_todas(
-    sessao: Session, cliente: ClientePNCP, relogio: Callable[[], datetime]
+    sessao: Session,
+    cliente: ClientePNCP,
+    relogio: Callable[[], datetime],
+    renovar: Callable[[], bool],
 ) -> ResumoColeta:
-    # Um único coletor por vez, garantido pelo advisory lock em coletar_pendentes; por isso
+    # Um único coletor por vez, garantido pelo lease em coletar_pendentes; por isso
     # uma janela em_andamento só pode ser sobra de uma execução interrompida.
     sessao.execute(
         update(ColetaJanela).where(ColetaJanela.status == "em_andamento").values(status="pendente")
@@ -126,6 +131,10 @@ def _coletar_todas(
     resumo = ResumoColeta()
     tentadas: set[int] = set()  # uma janela que falhou não é repetida na mesma chamada
     while True:
+        if not renovar():  # o lease venceu e outro coletor o tomou: para aqui
+            logger.warning("coleta_trava_perdida")
+            resumo.falhas += 1
+            return resumo
         janela = _proxima_janela(sessao, tentadas)
         if janela is None:
             return resumo
@@ -133,7 +142,10 @@ def _coletar_todas(
         janela_id = janela.id
         dados = _dados_log(janela, time.monotonic())
         try:
-            _coletar_janela(sessao, cliente, janela, relogio, resumo)
+            _coletar_janela(sessao, cliente, janela, relogio, resumo, renovar)
+        except _TravaPerdida:  # a janela já foi marcada como falha e contada
+            logger.warning("coleta_trava_perdida", extra=dados)
+            return resumo
         except Exception as erro:  # Ctrl+C (BaseException) continua parando o processo
             sessao.rollback()
             logger.exception("janela_erro_inesperado", extra=dados)
@@ -303,12 +315,17 @@ def _falhar(
     logger.warning("janela_falhou", extra={**_dados_log(janela, inicio), "erro": erro})
 
 
+class _TravaPerdida(Exception):
+    """O lease do coletor passou para outro processo no meio de uma janela."""
+
+
 def _coletar_janela(
     sessao: Session,
     cliente: ClientePNCP,
     janela: ColetaJanela,
     relogio: Callable[[], datetime],
     resumo: ResumoColeta,
+    renovar: Callable[[], bool],
 ) -> None:
     inicio = time.monotonic()
     janela.status = "em_andamento"
@@ -340,7 +357,10 @@ def _coletar_janela(
             total = pagina.total_paginas
             bruto_total = pagina.bruto.get("totalRegistros")
             esperados = bruto_total if isinstance(bruto_total, int) else None
-        elif pagina.total_paginas != total:
+        if not renovar():
+            _falhar(sessao, janela, "perdeu a trava do coletor", inicio, resumo)
+            raise _TravaPerdida
+        if numero > 1 and pagina.total_paginas != total:
             _falhar(
                 sessao,
                 janela,

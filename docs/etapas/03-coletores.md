@@ -26,6 +26,14 @@ A segunda rodada seguida deu **0 editais alterados** nas duas fontes. Isso mostr
 2. **A lista da Compesa é o histórico inteiro**, desde 2012, em ordem decrescente. O limite de 50 páginas disparou, e a correção foi a janela de 12 meses.
 3. **Uma lista vazia pode ser layout quebrado.** A revisão final achou um caso que passava por todas as travas: "Abertura" vazia na Sanepar com "Julgamento" cheio. Isso encerraria todos os editais abertos da fonte. Agora "Abertura" vazia é falha.
 
+## Defeito achado em produção (etapa 4a)
+
+**Sintoma.** Na primeira rodada no Fargate contra o Neon, a cli logou `retrato_concluido` da Sanepar e logo depois `retrato_erro_inesperado`: o `pg_advisory_unlock` do fim falhou com `IdleInTransactionSessionTimeout`.
+
+**Causa.** A `trava_fonte` segurava um advisory lock numa conexão dedicada, e a primeira consulta dela abria uma transação que ficava ociosa durante o retrato inteiro (uns 14 min na Sanepar). O Neon encerra sessões assim por `idle_in_transaction_session_timeout`. A sessão caiu no meio da coleta, o lock sumiu junto, e a exclusão mútua acabou sem aviso: só o unlock percebeu. Pior, a `RADAR_DATABASE_URL` de produção passa pelo pooler do Neon (PgBouncer em modo transação), onde um lock de sessão não é confiável nem quando a conexão não cai. O lock do coletor do PNCP (`coletar_pendentes`) tinha o mesmo desenho. Os testes não pegaram porque o Postgres do testcontainers não tem esse timeout nem pooler.
+
+**Correção.** Lease em tabela (`trava_fonte`, migração `0006`, módulo `coleta/trava.py`): uma linha por fonte com dono e prazo. Obter é um `INSERT ... ON CONFLICT DO UPDATE ... WHERE expira_em < now()` numa transação curta, commitada na hora, numa conexão separada da sessão. Liberar é um `DELETE` que só apaga se o dono for o mesmo, então um processo que passou do prazo não apaga o lease de quem o tomou. Nenhuma conexão fica presa entre as duas pontas. O prazo é de 30 min, e tanto o retrato quanto o coletor do PNCP (chave `pncp`, que pode levar horas) renovam o lease a cada página, sem mudar `obtida_em`. Quem perde o lease para: o retrato termina em falha ("perdeu a trava da fonte") e a janela do PNCP também, contada no `resultado:`. O custo: um processo morto deixa a fonte presa até o prazo vencer.
+
 ## Perguntas de entrevista
 
 Responda com suas palavras, citando o arquivo ou o comportamento. A etapa só fecha quando estiverem respondidas.

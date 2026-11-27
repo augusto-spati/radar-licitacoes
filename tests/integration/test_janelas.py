@@ -12,9 +12,11 @@ from radar.coleta import (
     ler_paginas_nao_processadas,
     marcar_processada,
     planejar_janelas,
+    trava_fonte,
 )
-from radar.coleta.janelas import CHAVE_COLETOR, ResumoColeta
+from radar.coleta.janelas import TRAVA_COLETOR, ResumoColeta
 from radar.coleta.modelos import ColetaJanela, PaginaBruta
+from radar.coleta.pncp import Pagina
 from radar.comum import Outbox
 
 BRT = ZoneInfo("America/Sao_Paulo")
@@ -279,18 +281,59 @@ def test_excecao_inesperada_marca_so_aquela_janela(sessao: Session) -> None:
     assert (resumo.concluidas, resumo.falhas) == (1, 1)
 
 
-def test_coletor_ja_ativo_noutro_processo_nao_coleta(sessao: Session, engine: Engine) -> None:
+def test_coletor_ja_ativo_noutro_processo_nao_coleta(sessao: Session) -> None:
     planejar_janelas(sessao, "publicacao", D1, D1, [6])
     falso = ClienteFalso({_chave(1): pagina(1, 1)})
-    with engine.connect() as outra:
-        assert outra.scalar(text("select pg_try_advisory_lock(:k)"), {"k": CHAVE_COLETOR})
+    with trava_fonte(sessao, TRAVA_COLETOR) as obtida:  # outro coletor com o lease vivo
+        assert obtida
         resumo = coletar_pendentes(sessao, como_cliente(falso), AGORA)
-        outra.scalar(text("select pg_advisory_unlock(:k)"), {"k": CHAVE_COLETOR})
     assert falso.chamadas == []
     assert resumo == ResumoColeta()
     assert _unica(sessao).status == "pendente"
-    coletar_pendentes(sessao, como_cliente(falso), AGORA)  # lock liberado: coleta normal
+    coletar_pendentes(sessao, como_cliente(falso), AGORA)  # lease liberado: coleta normal
     assert _unica(sessao).status == "concluida"
+
+
+class ClienteQueTomaATrava(ClienteFalso):
+    """Na primeira busca o lease do coletor passa para outro processo."""
+
+    def __init__(self, roteiro: dict[Chave, Pagina | Exception], engine: Engine) -> None:
+        super().__init__(roteiro)
+        self.engine = engine
+
+    def buscar(
+        self, endpoint: str, data_ini: date, data_fim: date, modalidade: int, pagina: int
+    ) -> Pagina:
+        if not self.chamadas:
+            with self.engine.begin() as conexao:
+                conexao.execute(
+                    text("UPDATE trava_fonte SET dono = gen_random_uuid() WHERE fonte = :f"),
+                    {"f": TRAVA_COLETOR},
+                )
+        return super().buscar(endpoint, data_ini, data_fim, modalidade, pagina)
+
+
+def test_coletor_perde_o_lease_no_meio_da_janela(sessao: Session, engine: Engine) -> None:
+    d2 = date(2026, 11, 2)
+    planejar_janelas(sessao, "publicacao", D1, d2, [6])
+    roteiro: dict[Chave, Pagina | Exception] = {
+        _chave(1): pagina(1, 2),
+        _chave(2): pagina(2, 2),
+        _chave(1, d2): pagina(1, 1),
+    }
+    falso = ClienteQueTomaATrava(roteiro, engine)
+
+    resumo = coletar_pendentes(sessao, como_cliente(falso), AGORA)
+
+    assert falso.chamadas == [_chave(1)]  # renovou depois da página 1 e parou
+    janelas = sessao.scalars(select(ColetaJanela).order_by(ColetaJanela.data_ini)).all()
+    assert [(j.status, j.erro) for j in janelas] == [
+        ("falha", "perdeu a trava do coletor"),
+        ("pendente", None),
+    ]
+    assert (resumo.concluidas, resumo.falhas) == (0, 1)  # a perda conta como falha
+    with engine.connect() as conexao:  # o lease do outro continua lá
+        assert conexao.scalar(text("SELECT count(*) FROM trava_fonte")) == 1
 
 
 def test_excluir_pula_paginas_na_leitura(sessao: Session) -> None:
