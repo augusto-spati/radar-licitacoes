@@ -1,13 +1,27 @@
-"""Texto por página de um PDF (pypdf; OCR fica fora desta etapa)."""
+"""Texto por página de um PDF (pypdf; OCR fica fora desta etapa).
+
+Limite de tempo da extração: um PDF patológico pode prender o pypdf por muito tempo. O limite
+usa `signal.setitimer`/SIGALRM, que só existe em POSIX e só vale na thread principal; é o caso
+da produção (task Linux do ECS rodando `radar analisar`). No Windows e fora da thread
+principal a extração roda sem limite (a rodada ainda tem o orçamento de tempo do `analisar`).
+Subprocesso daria o limite em toda plataforma, mas custa um processo por documento e o fork
+de um processo com threads (boto3) não é seguro.
+"""
 
 import io
 import logging
+import signal
+import sys
+import threading
+from collections.abc import Callable
 from dataclasses import dataclass
+from types import FrameType
 from typing import Literal
 
 logger = logging.getLogger(__name__)
 
 MINIMO_CARACTERES = 200
+PRAZO_EXTRACAO_S = 120.0
 
 
 @dataclass(frozen=True)
@@ -24,8 +38,34 @@ def eh_pdf(dados: bytes) -> bool:
     return dados[:4] == b"%PDF"
 
 
-def extrair_paginas(dados: bytes) -> TextoExtraido:
-    """Uma string por página. Página que falha vira texto vazio (e conta como sem texto)."""
+def com_prazo[T](funcao: Callable[[], T], prazo_s: float) -> T:
+    """Roda `funcao`; passou de `prazo_s` → `ErroExtracao`. Sem SIGALRM: sem limite."""
+    if sys.platform == "win32":  # sem SIGALRM
+        return funcao()
+    if threading.current_thread() is not threading.main_thread():
+        return funcao()
+
+    def estourou(_sinal: int, _quadro: FrameType | None) -> None:
+        raise ErroExtracao(f"extração passou do prazo de {prazo_s:g} s")
+
+    anterior = signal.signal(signal.SIGALRM, estourou)
+    signal.setitimer(signal.ITIMER_REAL, prazo_s)
+    try:
+        return funcao()
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, anterior)
+
+
+def extrair_paginas(dados: bytes, prazo_s: float = PRAZO_EXTRACAO_S) -> TextoExtraido:
+    """Uma string por página. Página que falha vira texto vazio (e conta como sem texto).
+
+    Passou de `prazo_s` (onde há SIGALRM) → `ErroExtracao`.
+    """
+    return com_prazo(lambda: _extrair(dados), prazo_s)
+
+
+def _extrair(dados: bytes) -> TextoExtraido:
     import pypdf  # só quem extrai paga o import
 
     try:
@@ -33,12 +73,16 @@ def extrair_paginas(dados: bytes) -> TextoExtraido:
         if leitor.is_encrypted:
             leitor.decrypt("")
         paginas_pdf = list(leitor.pages)
+    except ErroExtracao:
+        raise
     except Exception as erro:  # pypdf levanta tipos variados para PDF corrompido
         raise ErroExtracao(f"{type(erro).__name__}: {erro}") from erro
     paginas: list[str] = []
     for numero, pagina in enumerate(paginas_pdf, start=1):
         try:
             paginas.append(pagina.extract_text() or "")
+        except ErroExtracao:
+            raise
         except Exception as erro:  # uma página ruim não derruba o documento
             logger.warning("pagina_sem_extracao", extra={"pagina": numero, "erro": str(erro)})
             paginas.append("")

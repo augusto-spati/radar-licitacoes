@@ -3,6 +3,7 @@
 import logging
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -27,6 +28,11 @@ USER_AGENT = "radar-licitacoes-estudo (github.com/augusto-spati/radar-licitacoes
 STATUS_RETENTAVEIS = frozenset({429, 500, 502, 503, 504})
 LIMITE_BYTES = 20_000_000
 MAX_DOCUMENTOS = 3
+# Prazo do download inteiro: o timeout do httpx vale por leitura, e um servidor que pinga
+# bytes devagar o renova para sempre.
+PRAZO_DOWNLOAD_S = 180.0
+MAX_REDIRECTS = 5
+ORIGEM_PERMITIDA = ("https", "pncp.gov.br")
 _TIPOS_ANALISADOS = ("edital", "termo de referencia")
 _ID_PNCP = re.compile(r"^(\d{14})-\d+-(\d+)/(\d{4})$")
 
@@ -60,6 +66,11 @@ class _FalhaTransitoria(Exception):
     pass
 
 
+def _exigir_pncp(url: httpx.URL) -> None:
+    if (url.scheme, url.host) != ORIGEM_PERMITIDA or url.userinfo:
+        raise ErroArquivos(f"documento fora do PNCP recusado: {url.scheme}://{url.host}")
+
+
 def criar_http_arquivos() -> httpx.Client:
     return httpx.Client(
         base_url=URL_BASE,
@@ -86,12 +97,16 @@ class ClienteArquivosPNCP:
         pausa_s: float = 1.0,
         tentativas: int = 3,
         espera_base: float = 5.0,
+        prazo_download_s: float = PRAZO_DOWNLOAD_S,
+        relogio: Callable[[], float] = time.monotonic,
     ) -> None:
         self._http = http
         self._pausa = pausa_s
         self._tentativas = tentativas
         self._espera = wait_exponential(multiplier=espera_base, max=60)
         self._ultima: float | None = None
+        self._prazo_download = prazo_download_s
+        self._relogio = relogio
 
     def fechar(self) -> None:
         self._http.close()
@@ -173,22 +188,37 @@ class ClienteArquivosPNCP:
             raise ErroArquivos(f"resposta não é JSON: {resposta.text[:200]!r}") from erro
 
     def _baixar(self, url: str, limite_bytes: int) -> bytes:
+        """Só de https://pncp.gov.br/, inclusive cada redirect (seguido à mão, até 5)."""
         self._pausar()
+        inicio = self._relogio()
+        atual = httpx.URL(url)
         try:
-            with self._http.stream("GET", url) as resposta:
-                self._verificar(resposta)
-                declarado = resposta.headers.get("Content-Length")
-                if declarado and declarado.isdigit() and int(declarado) > limite_bytes:
-                    raise GrandeDemais(f"{declarado} bytes (limite {limite_bytes})")
-                partes: list[bytes] = []
-                total = 0
-                for parte in resposta.iter_bytes():
-                    total += len(parte)
-                    if total > limite_bytes:
-                        raise GrandeDemais(f"mais de {limite_bytes} bytes")
-                    partes.append(parte)
+            for _ in range(MAX_REDIRECTS + 1):
+                _exigir_pncp(atual)
+                with self._http.stream("GET", atual, follow_redirects=False) as resposta:
+                    if resposta.is_redirect:
+                        destino = resposta.headers.get("Location", "")
+                        atual = atual.join(destino)
+                        continue
+                    self._verificar(resposta)
+                    return self._ler_corpo(resposta, limite_bytes, inicio)
         except httpx.TransportError as erro:
             raise _FalhaTransitoria(f"{type(erro).__name__}: {erro}") from erro
+        raise ErroArquivos(f"mais de {MAX_REDIRECTS} redirects: {url}")
+
+    def _ler_corpo(self, resposta: httpx.Response, limite_bytes: int, inicio: float) -> bytes:
+        declarado = resposta.headers.get("Content-Length")
+        if declarado and declarado.isdigit() and int(declarado) > limite_bytes:
+            raise GrandeDemais(f"{declarado} bytes (limite {limite_bytes})")
+        partes: list[bytes] = []
+        total = 0
+        for parte in resposta.iter_bytes():
+            if self._relogio() - inicio > self._prazo_download:
+                raise ErroArquivos(f"download passou do prazo de {self._prazo_download:.0f} s")
+            total += len(parte)
+            if total > limite_bytes:
+                raise GrandeDemais(f"mais de {limite_bytes} bytes")
+            partes.append(parte)
         return b"".join(partes)
 
     def _registrar_retentativa(self, estado: RetryCallState) -> None:

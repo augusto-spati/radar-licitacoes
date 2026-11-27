@@ -155,3 +155,60 @@ def test_301_e_erro() -> None:
     cliente, _ = _cliente([httpx.Response(301, json={"status": "301"})])
     with pytest.raises(ErroArquivos):
         cliente.listar("1", 2026, 1)
+
+
+def test_baixar_estoura_prazo_total_mesmo_recebendo_aos_poucos() -> None:
+    # Servidor que pinga bytes devagar: o timeout de leitura nunca dispara, o prazo total sim.
+    instantes = iter(float(t) for t in range(0, 10_000, 100))
+
+    def relogio() -> float:
+        return next(instantes)
+
+    def aos_poucos() -> object:
+        for _ in range(10):
+            yield b"x" * 10
+
+    http = httpx.Client(
+        base_url=BASE,
+        transport=httpx.MockTransport(lambda r: httpx.Response(200, content=aos_poucos())),
+    )
+    cliente = ClienteArquivosPNCP(http, pausa_s=0, espera_base=0, prazo_download_s=180,
+                                  relogio=relogio)  # fmt: skip
+    with pytest.raises(ErroArquivos, match="prazo"):
+        cliente.baixar(f"{BASE}/x/1")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://pncp.gov.br/pncp-api/v1/x/1",
+        "https://pncp.gov.br.evil.example/x/1",
+        "https://evil.example/pncp.gov.br/x",
+        "https://usuario@evil.example/x",
+    ],
+)
+def test_baixar_so_de_https_pncp(url: str) -> None:
+    cliente, chamadas = _cliente([httpx.Response(200, content=b"%PDF")])
+    with pytest.raises(ErroArquivos, match="fora do PNCP"):
+        cliente.baixar(url)
+    assert chamadas == []
+
+
+def test_redirect_para_fora_do_pncp_nao_e_seguido() -> None:
+    cliente, chamadas = _cliente(
+        [httpx.Response(302, headers={"Location": "https://evil.example/edital.pdf"})]
+    )
+    with pytest.raises(ErroArquivos, match="fora do PNCP"):
+        cliente.baixar(f"{BASE}/x/1")
+    assert [str(c.url.host) for c in chamadas] == ["pncp.gov.br"]
+
+
+def test_redirect_dentro_do_pncp_e_seguido() -> None:
+    cliente, chamadas = _cliente(
+        [
+            httpx.Response(301, headers={"Location": "https://pncp.gov.br/pncp-api/v1/y/1"}),
+            httpx.Response(200, content=b"%PDF-1.7 abc"),
+        ]
+    )
+    assert cliente.baixar(f"{BASE}/x/1") == b"%PDF-1.7 abc"
+    assert [c.url.path for c in chamadas] == ["/pncp-api/v1/x/1", "/pncp-api/v1/y/1"]
