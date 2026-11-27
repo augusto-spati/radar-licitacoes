@@ -1,6 +1,6 @@
 import type {Fonte, Filtros} from './fonte';
 import {obterToken, sair} from './sessao';
-import type {Analise, EditalDetalhe} from './tipos';
+import type {Analise, EditalDetalhe, Historico} from './tipos';
 
 export class ErroFonte extends Error {
   status?: number;
@@ -64,4 +64,6 @@ export const fonteApi: Fonte = {
   obter: id => lerOuNulo<EditalDetalhe>(`/api/editais/${caminhoDoId(id)}`),
   // 404: edital ainda não analisado; 503: a API está sem modelo de IA configurado.
   analise: id => lerOuNulo<Analise>(`/api/analises/${caminhoDoId(id)}`, [404, 503]),
+  // 404: edital não encontrado; órgão sem contratações vem vazio (200).
+  historico: id => lerOuNulo<Historico>(`/api/historicos/${caminhoDoId(id)}`),
 };

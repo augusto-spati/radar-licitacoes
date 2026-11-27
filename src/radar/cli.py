@@ -24,15 +24,20 @@ from radar import __version__
 from radar.coleta import (
     ClienteEducado,
     ClientePNCP,
+    ClienteResultadosPNCP,
+    ErroResultados,
     FonteRetrato,
+    carregar_historico,
     coletar_pendentes,
     criar_http,
     criar_http_educado,
+    criar_http_resultados,
     executar_retrato,
     frescor_por_fonte,
     janelas_com_lease_vivo,
     janelas_paradas,
     liberar_trava,
+    meses_ate,
     obter_trava,
     paginas_publicadas_sem_processar,
     planejar_janelas,
@@ -61,9 +66,13 @@ from radar.comum.telemetria import telemetria_do_processo, tracer
 from radar.editais import (
     Criterios,
     EditalResumo,
+    alvos_resultado,
     bruto_do_edital,
     carregar_criterios,
+    gravar_resultados,
+    interpretar_itens,
     obter_edital,
+    registrar,
     separar_id_publico,
 )
 from radar.editais import filtrar as filtrar_editais
@@ -93,6 +102,10 @@ app_avaliar = typer.Typer(
     help="Evals da extração com IA (gabarito em evals/).", no_args_is_help=True
 )
 app.add_typer(app_avaliar, name="avaliar")
+app_historico = typer.Typer(help="Carga histórica do PNCP.", no_args_is_help=True)
+app.add_typer(app_historico, name="historico")
+app_resultados = typer.Typer(help="Resultados das contratações (PNCP).", no_args_is_help=True)
+app.add_typer(app_resultados, name="resultados")
 
 FUSO = ZoneInfo("America/Sao_Paulo")
 IDADE_MAXIMA_RETRATO = timedelta(hours=36)
@@ -124,6 +137,10 @@ def _criar_sessao() -> Session:
 
 def _criar_cliente() -> ClientePNCP:
     return ClientePNCP(criar_http())
+
+
+def _criar_cliente_resultados() -> ClienteResultadosPNCP:
+    return ClienteResultadosPNCP(criar_http_resultados())
 
 
 def _criar_cliente_retrato(fonte: FonteRetrato) -> ClienteEducado:
@@ -915,6 +932,129 @@ def analisar(
         f"US$ {provedor.custo_usd:.4f}, {sem_documentos} sem documentos"
     )
     _sair_sem_resultado(falhas + int(teto))
+
+
+def _gravar_registros(sessao: Session, registros: list[dict[str, Any]]) -> int:
+    """`gravar` da carga histórica: registra (sem commit) e conta inseridos + atualizados."""
+    resultado = registrar(sessao, registros)
+    return resultado.inseridos + resultado.atualizados
+
+
+def _meses_a_refazer(valores: list[str]) -> set[date]:
+    meses: set[date] = set()
+    for valor in valores:
+        try:
+            ano, mes = valor.split("-")
+            meses.add(date(int(ano), int(mes), 1))
+        except ValueError:
+            typer.echo(f"mês inválido (use AAAA-MM): {valor}", err=True)
+            raise typer.Exit(code=2) from None
+    return meses
+
+
+@app_historico.command("carregar")
+def historico_carregar(
+    meses: Annotated[int, typer.Option(min=1, help="Quantos meses para trás.")] = 12,
+    refazer_mes: Annotated[
+        list[str] | None, typer.Option("--refazer-mes", help="Reabre este mês (AAAA-MM).")
+    ] = None,
+    config: OpcaoConfig = ARQUIVO_CONFIG,
+) -> None:
+    """Carrega o histórico de editais do PNCP, só o que casa com o filtro. Retomável."""
+    configurar_logs()
+    criterios = carregar_criterios(config)
+    termos = sorted({t for lista in criterios.linhas.values() for t in lista})
+    refazer = _meses_a_refazer(refazer_mes or [])
+    with telemetria_do_processo("radar-historico"), _criar_sessao() as sessao:
+        try:
+            resumo = carregar_historico(
+                sessao,
+                _criar_cliente(),
+                criterios.ufs,
+                criterios.modalidades,
+                meses_ate(_agora().date(), meses),
+                termos,
+                _gravar_registros,
+                refazer=refazer,
+            )
+        except RuntimeError as erro:  # trava: outra carga em andamento
+            typer.echo(f"historico: {erro}", err=True)
+            raise typer.Exit(code=1) from None
+    # Nunca "resultado:": o log group é o do coletor.
+    typer.echo(
+        f"historico: {resumo.combinacoes} combinações ({resumo.concluidas} concluídas, "
+        f"{resumo.falhas} falhas), {resumo.paginas} páginas, {resumo.lidos} lidos, "
+        f"{resumo.gravados} gravados"
+    )
+    _sair_sem_resultado(resumo.falhas)
+
+
+FALHAS_SEGUIDAS_PNCP = 5
+
+
+@app_resultados.command("atualizar")
+def resultados_atualizar(
+    limite: Annotated[int, typer.Option(min=1, help="Máximo de editais da rodada.")] = 300,
+    config: OpcaoConfig = ARQUIVO_CONFIG,
+) -> None:
+    """Busca no PNCP os itens e vencedores dos editais encerrados que casam com o filtro."""
+    configurar_logs()
+    criterios = carregar_criterios(config)
+    editais = itens_total = homologadas = falhas = seguidas = 0
+    interrompida = False
+    with telemetria_do_processo("radar-resultados"), _criar_sessao() as sessao:
+        alvos = alvos_resultado(sessao, criterios, _agora(), limite)
+        sessao.rollback()  # só leitura: nada aberto durante a rede
+        cliente = _criar_cliente_resultados()
+        try:
+            for alvo in alvos:
+                try:
+                    brutos = cliente.itens_com_resultados(alvo.cnpj, alvo.ano, alvo.sequencial)
+                    resumo = gravar_resultados(
+                        sessao,
+                        alvo.fonte,
+                        alvo.id_na_fonte,
+                        interpretar_itens(brutos),
+                        _agora(),
+                    )
+                    sessao.commit()
+                except Exception as erro:  # um edital ruim não para a rodada
+                    sessao.rollback()
+                    logger.exception(
+                        "resultados_falhou",
+                        extra={"fonte": alvo.fonte, "id_na_fonte": alvo.id_na_fonte},
+                    )
+                    falhas += 1
+                    # Marca como buscado (sem itens): um edital que falha sempre não volta ao topo
+                    # dos "nunca buscados" todo dia; a regra dos 7 dias o tenta de novo. Se já
+                    # havia itens gravados, a lista vazia não apaga nada (gravar_resultados).
+                    try:
+                        gravar_resultados(sessao, alvo.fonte, alvo.id_na_fonte, [], _agora())
+                        sessao.commit()
+                    except Exception:
+                        sessao.rollback()
+                    # Disjuntor: PNCP fora do ar não vira 300 requisições com retentativas.
+                    seguidas = seguidas + 1 if isinstance(erro, ErroResultados) else 0
+                    if seguidas >= FALHAS_SEGUIDAS_PNCP:
+                        interrompida = True
+                        break
+                    continue
+                seguidas = 0
+                editais += 1
+                itens_total += len(brutos)
+                homologadas += int(resumo.situacao == "homologada")
+        finally:
+            cliente.fechar()
+    typer.echo(
+        f"resultados: {editais} editais, {itens_total} itens, {homologadas} homologadas, "
+        f"{falhas} falhas"
+        + (
+            f" (interrompida após {FALHAS_SEGUIDAS_PNCP} falhas seguidas do PNCP)"
+            if interrompida
+            else ""
+        )
+    )
+    _sair_sem_resultado(falhas)
 
 
 OpcaoRaizEvals = Annotated[Path, typer.Option("--raiz", help="Pasta do corpus de evals.")]

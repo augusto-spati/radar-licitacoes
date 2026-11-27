@@ -297,6 +297,49 @@ resource "aws_scheduler_schedule" "atualizar_diario" {
   }
 }
 
+# Agenda dos resultados: 05:00, antes da coleta das 06:00, para nao rodar junto com ela
+# contra o pncp.gov.br. Busca vencedores e valores das contratacoes ja encerradas, para o
+# historico. Mesmo alvo e role do atualizar_diario.
+resource "aws_scheduler_schedule" "resultados_diario" {
+  name                         = "radar-resultados-diario"
+  schedule_expression          = "cron(0 5 * * ? *)"
+  schedule_expression_timezone = "America/Sao_Paulo"
+
+  flexible_time_window {
+    mode = "OFF"
+  }
+
+  target {
+    arn      = aws_ecs_cluster.radar.arn
+    role_arn = aws_iam_role.scheduler_coletor.arn
+
+    input = jsonencode({
+      containerOverrides = [{
+        name    = "coletor"
+        command = ["resultados", "atualizar"]
+      }]
+    })
+
+    ecs_parameters {
+      task_definition_arn = local.arn_familia_coletor
+      launch_type         = "FARGATE"
+      task_count          = 1
+      platform_version    = "LATEST"
+
+      network_configuration {
+        subnets          = data.aws_subnets.padrao.ids
+        security_groups  = [aws_security_group.coletor.id]
+        assign_public_ip = true
+      }
+    }
+
+    retry_policy {
+      maximum_retry_attempts       = 1
+      maximum_event_age_in_seconds = 3600
+    }
+  }
+}
+
 # ---------- Alarmes (nada de falha em silencio) ----------
 
 # (a) task parou com erro: exitCode != 0, ou nao chegou a iniciar (imagem, segredo).

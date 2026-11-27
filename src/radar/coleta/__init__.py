@@ -9,6 +9,12 @@ from radar.coleta.fatias import (
     coletar_fatia,
 )
 from radar.coleta.frescor import SEM_DADO_H, frescor_por_fonte
+from radar.coleta.historico import (
+    ResumoHistorico,
+    carregar_historico,
+    meses_ate,
+    prefiltrar,
+)
 from radar.coleta.janelas import (
     Auditoria,
     JanelaParada,
@@ -26,7 +32,13 @@ from radar.coleta.janelas import (
     planejar_janelas,
     ultima_atualizacao,
 )
+from radar.coleta.modelos import HistoricoCarga
 from radar.coleta.pncp import ClientePNCP, ErroPNCP, criar_http
+from radar.coleta.resultados_pncp import (
+    ClienteResultadosPNCP,
+    ErroResultados,
+    criar_http_resultados,
+)
 from radar.coleta.retratos import (
     ClienteEducado,
     ErroFonte,
@@ -56,25 +68,31 @@ __all__ = [
     "Auditoria",
     "ClienteEducado",
     "ClientePNCP",
+    "ClienteResultadosPNCP",
     "DesfechoFatia",
     "ErroFonte",
     "ErroPNCP",
+    "ErroResultados",
     "EstadoRetrato",
     "FonteCompesa",
     "FonteRetrato",
     "FonteSanepar",
+    "HistoricoCarga",
     "InfoRetrato",
     "JanelaParada",
     "PaginaColetada",
     "PaginaPNCP",
     "ResultadoFatia",
     "ResumoColeta",
+    "ResumoHistorico",
     "ResumoRetrato",
     "auditar",
+    "carregar_historico",
     "coletar_fatia",
     "coletar_pendentes",
     "criar_http",
     "criar_http_educado",
+    "criar_http_resultados",
     "enfileirar_elegiveis",
     "estado_retrato",
     "frescor_por_fonte",
@@ -87,12 +105,14 @@ __all__ = [
     "liberar_trava",
     "limpar_brutos",
     "marcar_processada",
+    "meses_ate",
     "marcar_retrato_falha",
     "marcar_retrato_processado",
     "obter_trava",
     "paginas_do_retrato",
     "paginas_publicadas_sem_processar",
     "planejar_janelas",
+    "prefiltrar",
     "retratos_sem_processar",
     "trava_fonte",
     "ultima_atualizacao",

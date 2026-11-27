@@ -117,3 +117,28 @@ class TravaFonte(Base):
     dono: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     expira_em: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     obtida_em: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class HistoricoCarga(Base):
+    """Checkpoint da carga histórica: uma linha por UF, modalidade e mês (1º dia)."""
+
+    __tablename__ = "historico_carga"
+    __table_args__ = (
+        UniqueConstraint("uf", "modalidade", "mes", name="uq_historico_carga_chave"),
+        CheckConstraint(
+            "status IN ('pendente', 'em_andamento', 'concluida', 'falha')",
+            name="ck_historico_carga_status",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    uf: Mapped[str] = mapped_column(Text)
+    modalidade: Mapped[int] = mapped_column(Integer)
+    mes: Mapped[date] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(Text)  # pendente | em_andamento | concluida | falha
+    proxima_pagina: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    total_paginas: Mapped[int | None] = mapped_column(Integer)
+    registros_lidos: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    registros_gravados: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    erro: Mapped[str | None] = mapped_column(Text)
+    atualizada_em: Mapped[datetime] = mapped_column(DateTime(timezone=True))

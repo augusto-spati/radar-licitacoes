@@ -28,11 +28,29 @@ export function formatarPrazo(iso: string | null, agora: Date): string {
   return `encerra em ${dias} dias · ${diaMes(parede)}`;
 }
 
+const diaMesAno = (d: Date) => `${diaMes(d)}/${d.getUTCFullYear()}`;
+
 /** "dd/mm/aaaa HH:MM" no relógio de Brasília; nulo vira travessão. */
 export function formatarDataHora(iso: string | null): string {
   if (iso === null) return '—';
   const parede = paredeBrasilia(instante(iso));
-  return `${diaMes(parede)}/${parede.getUTCFullYear()} ${horaMinuto(parede)}`;
+  return `${diaMesAno(parede)} ${horaMinuto(parede)}`;
+}
+
+/** "dd/mm/aaaa" no relógio de Brasília; nulo vira travessão. */
+export const formatarData = (iso: string | null): string =>
+  iso === null ? '—' : diaMesAno(paredeBrasilia(instante(iso)));
+
+// Folga contra o erro de ponto flutuante: 0.285 * 100 dá 28.499999999999996.
+const FOLGA_ARREDONDAMENTO = 1e-9;
+
+/**
+ * Fração da API ("0.2415") em percentual inteiro ("24%"), meio para cima
+ * ("0.285" → "29%"); nulo ou inválido vira travessão.
+ */
+export function formatarPercentual(fracao: string | null): string {
+  const n = fracao === null || fracao.trim() === '' ? NaN : Number(fracao);
+  return Number.isFinite(n) ? `${Math.round(n * 100 + FOLGA_ARREDONDAMENTO)}%` : '—';
 }
 
 /** "HH:MM" no relógio de Brasília. */

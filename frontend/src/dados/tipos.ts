@@ -12,3 +12,8 @@ export type UF = components['schemas']['UF'];
 export type Analise = components['schemas']['AnaliseOut'];
 export type ItemAnalise = components['schemas']['ItemAnaliseOut'];
 export type DocumentoAnalise = components['schemas']['DocumentoAnaliseOut'];
+// Histórico do órgão do edital (etapa 7a): contagens, vencedores, últimas e régua de desconto.
+export type Historico = components['schemas']['HistoricoOut'];
+export type ContratacaoPassada = components['schemas']['ContratacaoPassadaOut'];
+export type Vencedor = components['schemas']['VencedorOut'];
+export type Regua = components['schemas']['ReguaOut'];

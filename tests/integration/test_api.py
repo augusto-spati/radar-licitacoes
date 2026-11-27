@@ -370,3 +370,77 @@ def test_analise_com_teto_nao_decimal_da_503_e_o_resto_funciona(
 
     assert cliente.get("/api/analises/pncp~1-1-1/2026").status_code == 503
     assert cliente.get("/api/status").status_code == 200
+
+
+def _gravar_resultado(sessao: Session, id_na_fonte: str, desconto: str | None = "0.2") -> None:
+    from decimal import Decimal
+
+    from radar.editais import ResultadoBusca
+
+    sessao.add(
+        ResultadoBusca(
+            fonte="pncp",
+            id_na_fonte=id_na_fonte,
+            buscado_em=AGORA,
+            itens=1,
+            situacao="homologada",
+            desconto=None if desconto is None else Decimal(desconto),
+            valor_estimado_considerado=Decimal("100"),
+            valor_homologado_considerado=Decimal("80"),
+            vencedor_ni="111",
+            vencedor_nome="Acme Ltda",
+            vencedor_porte="ME",
+        )
+    )
+    sessao.flush()
+
+
+def test_historico_do_orgao(cliente: TestClient, sessao: Session) -> None:
+    registrar(
+        sessao,
+        [
+            _registro("alvo/2026", "Conserto de vazamento", encerramento="2026-12-11T10:00:00"),
+            _registro("velho/2025", "Troca de hidrometro", encerramento="2026-09-10T10:00:00"),
+        ],
+    )
+    _gravar_resultado(sessao, "velho/2025")
+
+    resposta = cliente.get("/api/historicos/pncp~alvo/2026")
+
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert corpo["contagens"] == {"homologada": 1}
+    assert corpo["total"] == 1
+    assert corpo["limite_inexequivel"] == "0.75"
+    [passada] = corpo["ultimas"]
+    assert passada["id_publico"] == "pncp~velho/2025"
+    assert passada["data"] == "2026-09-10T10:00:00-03:00"
+    assert passada["desconto"] == "0.2"
+    assert passada["valor_estimado"] == "100"
+    assert passada["vencedor_nome"] == "Acme Ltda"
+    assert corpo["vencedores"][0]["nome"] == "Acme Ltda"
+    assert corpo["vencedores"][0]["vitorias"] == 1
+    assert corpo["reguas"][0]["poucos_casos"] is True
+    codificado = cliente.get("/api/historicos/pncp~alvo%2F2026")
+    assert codificado.json() == corpo
+
+
+def test_historico_vazio_devolve_200(cliente: TestClient, sessao: Session) -> None:
+    registrar(sessao, [_registro("alvo/2026", "Conserto de vazamento")])
+
+    resposta = cliente.get("/api/historicos/pncp~alvo/2026")
+
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert (corpo["total"], corpo["contagens"], corpo["ultimas"], corpo["vencedores"]) == (
+        0,
+        {},
+        [],
+        [],
+    )
+    assert corpo["reguas"][0]["casos"] == 0
+
+
+def test_historico_404_para_edital_inexistente(cliente: TestClient) -> None:
+    assert cliente.get("/api/historicos/pncp~nao/existe").status_code == 404
+    assert cliente.get("/api/historicos/sem-fonte").status_code == 404

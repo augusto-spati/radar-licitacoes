@@ -141,6 +141,23 @@ describe('fonteApi', () => {
     const erro = await fonteApi.analise('pncp~1-1-1/2025').catch((e: unknown) => e);
     expect((erro as ErroFonte).status).toBe(500);
   });
+  it('historico lê /api/historicos com a barra do id preservada', async () => {
+    const mock = simular(resposta({total: 0}));
+    expect(await fonteApi.historico('pncp~13127340000120-1-000036/2025')).toEqual({total: 0});
+    expect(mock).toHaveBeenCalledWith('/api/historicos/pncp~13127340000120-1-000036/2025');
+  });
+  it('historico com 404 (edital não encontrado) devolve null', async () => {
+    simular(resposta({detail: 'edital não encontrado'}, 404));
+    expect(await fonteApi.historico('pncp~1-1-1/2025')).toBeNull();
+  });
+  it('historico com 500 vira ErroFonte', async () => {
+    simular(resposta({detail: 'x'}, 500));
+    const erro = await fonteApi.historico('pncp~1-1-1/2025').catch((e: unknown) => e);
+    expect((erro as ErroFonte).status).toBe(500);
+  });
+  it('fonteExemplo não traz histórico', async () => {
+    expect(await fonteExemplo.historico('pncp~1-1-1/2025')).toBeNull();
+  });
   it('fonteExemplo não traz análise', async () => {
     expect(await fonteExemplo.analise('pncp~1-1-1/2025')).toBeNull();
   });

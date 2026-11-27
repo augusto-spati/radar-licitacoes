@@ -1,4 +1,4 @@
-import type {Analise, EditalDetalhe, Linha, Lista, Status, UF} from './tipos';
+import type {Analise, EditalDetalhe, Historico, Linha, Lista, Status, UF} from './tipos';
 import {fonteApi} from './fonteApi';
 import {fonteExemplo} from './fonteExemplo';
 
@@ -9,6 +9,8 @@ export interface Fonte {
   obter(id: string): Promise<EditalDetalhe | null>;
   /** Análise por IA do edital; null quando ele ainda não foi analisado. */
   analise(id: string): Promise<Analise | null>;
+  /** Histórico do órgão do edital (vazio sem contratações); null se o edital não existe. */
+  historico(id: string): Promise<Historico | null>;
   status(): Promise<Status>;
 }
 

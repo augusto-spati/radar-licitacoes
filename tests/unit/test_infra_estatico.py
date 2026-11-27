@@ -224,6 +224,17 @@ def test_coletor_so_retratos() -> None:
     assert "aws_sqs_queue.janelas.arn" in _tf("fila.tf")  # o relay do coletor pode enviar
 
 
+def test_resultados_tem_agenda_diaria_0500_antes_da_coleta() -> None:
+    coletor = _tf("coletor.tf")
+    bloco = re.sub(r"\s+", " ", coletor)
+    assert 'name = "radar-resultados-diario"' in bloco
+    # 05:00, antes da coleta das 06:00: as duas não disputam o pncp.gov.br.
+    assert 'schedule_expression = "cron(0 5 * * ? *)"' in bloco
+    assert 'schedule_expression_timezone = "America/Sao_Paulo"' in bloco
+    assert 'command = ["resultados", "atualizar"]' in coletor
+    assert "pncp" not in "".join(re.findall(r"command\s*=\s*\[[^\]]*\]", coletor))
+
+
 def test_coletor_sai_pela_porta_do_portal_da_compesa() -> None:
     # Sem esta regra o security group descarta a saída para portalscl.compesa.com.br:8743.
     regra = re.sub(r"\s+", " ", _tf("coletor.tf"))

@@ -2,7 +2,7 @@
 import {cleanup, fireEvent, screen} from '@testing-library/react';
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import type {Fonte} from '../dados/fonte';
-import type {Analise} from '../dados/tipos';
+import type {Analise, Historico} from '../dados/tipos';
 import {edital, fonteFalsa, renderizar} from '../testes/apoio';
 import {Detalhe} from './Detalhe';
 
@@ -245,6 +245,227 @@ describe('Detalhe: aderência (análise por IA)', () => {
     expect(screen.getByText('Execução de rede de esgoto no bairro Centro')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', {name: 'Tentar de novo'}));
     expect(await screen.findByText(/Este edital ainda não foi analisado/)).toBeTruthy();
+    expect(pedir).toHaveBeenCalledTimes(2);
+  });
+});
+
+const historico = (parcial: Partial<Historico> = {}): Historico => ({
+  orgao_cnpj: '13127340000120',
+  orgao_nome: 'SERVIÇO AUTÔNOMO DE ÁGUA E ESGOTO',
+  contagens: {homologada: 7, parcial: 1, fracassada: 2, deserta: 1, em_andamento: 1},
+  total: 12,
+  ultimas: [
+    {
+      id_publico: 'pncp~13127340000120-1-000010/2025',
+      objeto: 'Rede de água no bairro Norte',
+      data: '2026-05-10T08:00:00',
+      situacao: 'homologada',
+      valor_estimado: '2000000',
+      valor_homologado: '1520000',
+      desconto: '0.24',
+      parcial: false,
+      vencedor_nome: 'Construtora X',
+      vencedor_porte: 'ME',
+    },
+    {
+      id_publico: 'pncp~13127340000120-1-000011/2025',
+      objeto: 'Ligações prediais de esgoto',
+      data: null,
+      situacao: 'parcial',
+      valor_estimado: '500000',
+      valor_homologado: null,
+      desconto: null,
+      parcial: true,
+      vencedor_nome: null,
+      vencedor_porte: null,
+    },
+  ],
+  vencedores: [
+    {nome: 'Construtora X', porte: 'ME', vitorias: 3, desconto_mediano: '0.2415'},
+    {nome: 'Y Engenharia', porte: null, vitorias: 1, desconto_mediano: null},
+  ],
+  reguas: [
+    {
+      linha: 'redes',
+      uf: 'SP',
+      faixa: '1m_a_5m',
+      casos: 14,
+      p25: '0.18',
+      mediana: '0.24',
+      p75: '0.31',
+      poucos_casos: false,
+    },
+  ],
+  limite_inexequivel: '0.75',
+  ...parcial,
+});
+
+const regua = (parcial: Partial<Historico['reguas'][number]>) => ({
+  linha: 'perdas',
+  uf: null,
+  faixa: null,
+  casos: 0,
+  p25: null,
+  mediana: null,
+  p75: null,
+  poucos_casos: true,
+  ...parcial,
+});
+
+describe('Detalhe: histórico do órgão', () => {
+  const abrirCom = (historicoFn: Fonte['historico']) =>
+    renderizar(<Detalhe />, {
+      fonte: fonteFalsa({obter: async () => edital(), historico: historicoFn}),
+      endereco: `/edital/${encodeURIComponent(ID)}`,
+      padrao: '/edital/:id',
+    });
+
+  it('com histórico mostra contagens, quem vence, últimas, régua e limite', async () => {
+    const pedir = vi.fn(async () => historico());
+    abrirCom(pedir);
+    expect(
+      await screen.findByText(
+        '12 licitações · 7 homologadas · 3 fracassadas ou desertas · 2 em andamento',
+      ),
+    ).toBeTruthy();
+    expect(pedir).toHaveBeenCalledWith(ID);
+    expect(screen.getByRole('heading', {level: 2, name: 'Histórico do órgão'})).toBeTruthy();
+    expect(screen.getByRole('heading', {level: 3, name: 'Quem vence'})).toBeTruthy();
+    expect(screen.getByText('ME · 3 vitórias · desconto mediano 24%')).toBeTruthy();
+    expect(screen.getByText('Y Engenharia')).toBeTruthy();
+    expect(screen.getByText('1 vitória')).toBeTruthy();
+    expect(screen.getByText('Rede de água no bairro Norte')).toBeTruthy();
+    expect(
+      screen.getByText('10/05/2026 · estimado R$ 2,00 mi · homologado R$ 1,52 mi · desconto 24%'),
+    ).toBeTruthy();
+    expect(screen.getByText('Vencedor: Construtora X (ME)')).toBeTruthy();
+    // Sem data, homologado nem desconto: só o que veio, sem pares de travessão.
+    expect(screen.getByText('estimado R$ 500 mil')).toBeTruthy();
+    expect(screen.getByText('parcial')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Faixa de referência do desconto dos vencedores (Redes, SP, R$ 1–5 mi): ' +
+          '18% a 31% (mediana 24%), 14 casos',
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        'É o que os vencedores deram em licitações parecidas, não o preço que ganha.',
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText('poucos casos')).toBeNull();
+    expect(
+      screen.getByText('Abaixo de 75% do estimado a proposta é presumida inexequível.'),
+    ).toBeTruthy();
+  });
+
+  it('poucos casos é marcado, a régua de todas as UFs vem junto e o limite de estatal', async () => {
+    abrirCom(async () =>
+      historico({
+        reguas: [
+          regua({uf: 'PR', faixa: 'acima_5m', casos: 3, p25: '0.1', mediana: '0.12', p75: '0.2'}),
+          regua({}),
+        ],
+        limite_inexequivel: '0.70',
+      }),
+    );
+    expect(
+      await screen.findByText(
+        'Faixa de referência do desconto dos vencedores (Perdas, PR, acima de R$ 5 mi): ' +
+          '10% a 20% (mediana 12%), 3 casos',
+      ),
+    ).toBeTruthy();
+    expect(screen.getAllByText('poucos casos')).toHaveLength(1);
+    expect(
+      screen.getByText(
+        'Faixa de referência do desconto dos vencedores ' +
+          '(Perdas, todas as UFs, qualquer valor): nenhum caso',
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText('Abaixo de 70% do estimado a proposta é presumida inexequível.'),
+    ).toBeTruthy();
+  });
+
+  it('fracassada mostra só data e estimado; régua sem quartis não mostra "— a —"', async () => {
+    const [primeira] = historico().ultimas;
+    abrirCom(async () =>
+      historico({
+        ultimas: [
+          {
+            ...primeira,
+            situacao: 'fracassada',
+            data: '2026-05-20T08:00:00',
+            valor_estimado: '450000',
+            valor_homologado: null,
+            desconto: null,
+            vencedor_nome: null,
+            vencedor_porte: null,
+          },
+        ],
+        reguas: [regua({casos: 6, poucos_casos: false})],
+      }),
+    );
+    expect(await screen.findByText('20/05/2026 · estimado R$ 450 mil')).toBeTruthy();
+    expect(screen.getByText('fracassada')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Faixa de referência do desconto dos vencedores ' +
+          '(Perdas, todas as UFs, qualquer valor): 6 casos, sem desconto calculável',
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/— a —/)).toBeNull();
+  });
+
+  it('com contagens mas sem últimas nem vencedores, mostra as contagens sem listas vazias', async () => {
+    abrirCom(async () => historico({ultimas: [], vencedores: []}));
+    expect(
+      await screen.findByText(
+        '12 licitações · 7 homologadas · 3 fracassadas ou desertas · 2 em andamento',
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByRole('heading', {name: 'Quem vence'})).toBeNull();
+    expect(screen.queryByRole('heading', {name: 'Últimas contratações'})).toBeNull();
+    expect(screen.getByText(/Abaixo de 75% do estimado/)).toBeTruthy();
+  });
+
+  it('mais de um vencedor "Pessoa física" aparece sem chave repetida', async () => {
+    const erro = vi.spyOn(console, 'error').mockImplementation(() => {});
+    abrirCom(async () =>
+      historico({
+        vencedores: [
+          {nome: 'Pessoa física', porte: null, vitorias: 1, desconto_mediano: '0.10'},
+          {nome: 'Pessoa física', porte: null, vitorias: 1, desconto_mediano: '0.20'},
+        ],
+      }),
+    );
+    expect(await screen.findByText('1 vitória · desconto mediano 10%')).toBeTruthy();
+    expect(screen.getByText('1 vitória · desconto mediano 20%')).toBeTruthy();
+    expect(screen.getAllByText('Pessoa física')).toHaveLength(2);
+    const chaves = erro.mock.calls.filter(chamada => String(chamada[0]).includes('same key'));
+    erro.mockRestore();
+    expect(chaves).toEqual([]);
+  });
+
+  it('órgão sem contratações mostra a frase de vazio', async () => {
+    abrirCom(async () =>
+      historico({contagens: {}, total: 0, ultimas: [], vencedores: [], reguas: []}),
+    );
+    expect(await screen.findByText('Sem histórico deste órgão no recorte.')).toBeTruthy();
+    expect(screen.queryByText('Quem vence')).toBeNull();
+  });
+
+  it('erro no histórico não derruba o edital e oferece tentar de novo', async () => {
+    const pedir = vi
+      .fn<Fonte['historico']>()
+      .mockRejectedValueOnce(new Error('A API respondeu 500'))
+      .mockResolvedValueOnce(historico());
+    abrirCom(pedir);
+    expect(await screen.findByText('Não foi possível carregar o histórico')).toBeTruthy();
+    expect(screen.getByText('Execução de rede de esgoto no bairro Centro')).toBeTruthy();
+    expect(screen.getByRole('heading', {level: 2, name: 'Aderência à FR'})).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', {name: 'Tentar de novo'}));
+    expect(await screen.findByText(/^12 licitações/)).toBeTruthy();
     expect(pedir).toHaveBeenCalledTimes(2);
   });
 });

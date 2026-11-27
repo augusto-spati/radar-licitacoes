@@ -7,8 +7,10 @@ import {
   ehUF,
   estaDesatualizado,
   formatarCnpj,
+  formatarData,
   formatarDataHora,
   formatarHora,
+  formatarPercentual,
   formatarPrazo,
   formatarValor,
   localidade,
@@ -91,6 +93,28 @@ describe('formatarDataHora', () => {
   });
   it('nulo vira travessão', () => {
     expect(formatarDataHora(null)).toBe('—');
+  });
+});
+
+describe('formatarData', () => {
+  it('mostra dd/mm/aaaa no relógio de Brasília', () => {
+    expect(formatarData('2026-11-26T01:30:00Z')).toBe('25/11/2026');
+    expect(formatarData(null)).toBe('—');
+  });
+});
+
+describe('formatarPercentual', () => {
+  it('fração vira percentual inteiro arredondado', () => {
+    expect(formatarPercentual('0.2415')).toBe('24%');
+    expect(formatarPercentual('0.3149')).toBe('31%');
+    expect(formatarPercentual('0.75')).toBe('75%');
+    expect(formatarPercentual('0.70')).toBe('70%');
+  });
+  it('meio arredonda para cima, sem erro de ponto flutuante', () => {
+    expect(formatarPercentual('0.285')).toBe('29%');
+    expect(formatarPercentual('0.245')).toBe('25%');
+    expect(formatarPercentual(null)).toBe('—');
+    expect(formatarPercentual('x')).toBe('—');
   });
 });
 
