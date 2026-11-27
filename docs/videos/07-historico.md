@@ -32,6 +32,13 @@ Roteiro em tópicos. Material de apoio: `docs/etapas/07-historico.md`.
 
 - Ficha de um edital real: contagens, quem vence, últimas, faixa com casos e linha de inexequibilidade.
 
+## Preço unitário pelo TCE-PE (3 min)
+
+- Por que não o PNCP: o contrato de obra cita a proposta e não a anexa (0 de 11).
+- A sonda na AWS antes de construir; as armadilhas da API (filtro ignorado, número por substring).
+- BDI já incluso no unitário (a soma bate com o global); lote repetido com preços diferentes fica sem contratado.
+- Mostrar "Preços de referência" numa ficha de Pernambuco.
+
 ## Fechamento (30 s)
 
 - Próximo: preço unitário (planilha do edital com IA; TCE-PE em Pernambuco).
