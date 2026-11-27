@@ -523,7 +523,9 @@ def test_so_obra_entra_compra_e_projeto_ficam_fora(
     _popular(fabrica)
     fora = {
         "44444444000144-1-000004/2026": "Aquisição de tubos de PVC para rede de água",
-        "55555555000155-1-000005/2026": "Registro de preço para aquisição de hidrômetros da rede de água",
+        "55555555000155-1-000005/2026": (
+            "Registro de preço para aquisição de hidrômetros da rede de água"
+        ),
         "66666666000166-1-000006/2026": "Elaboração de projeto executivo de rede de água",
         "77777777000177-1-000007/2026": "Calibração de macromedidores da rede de água",
     }
