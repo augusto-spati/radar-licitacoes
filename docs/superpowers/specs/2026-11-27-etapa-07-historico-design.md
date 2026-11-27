@@ -77,10 +77,10 @@ Para a carga do histórico:
 
 ### 7a.4 API
 
-- `GET /api/editais/{id}/historico` → para o órgão do edital (CNPJ; Sanepar/Compesa pelo órgão fixo) e a linha de serviço do edital:
+- `GET /api/historicos/{id}` (rota separada: o conversor `path` de `/api/editais/{id}` engoliria um sufixo `/historico`) → para o órgão do edital (CNPJ; Sanepar/Compesa pelo órgão fixo) e a linha de serviço do edital:
   - `orgao`: contratações passadas do órgão no recorte (até 24 meses): contagem por situação agregada; últimas 10 com objeto, data, valor estimado, valor homologado, desconto, vencedor (razão social, porte);
   - `vencedores`: top 5 vencedores no órgão com número de vitórias e desconto mediano;
-  - `regua`: para a linha × UF do edital (e faixa de valor do edital, se houver: até 1 mi, 1–5 mi, acima de 5 mi): n, mediana, p25, p75 do desconto global; se n < 5, devolve também a régua só por linha (todas as UFs) e marca `poucos_casos`.
+  - `reguas` (lista, uma por linha do edital): para a linha × UF do edital (e faixa de valor do edital, se houver: até 1 mi, 1–5 mi, acima de 5 mi): n, mediana, p25, p75 do desconto global; se n < 5, devolve também a régua só por linha (todas as UFs) e marca `poucos_casos`.
   - `limite_inexequivel`: 0,75 (Lei 14.133) ou 0,70 (estatal 13.303: Sanepar, Compesa) do estimado, para a tela mostrar a linha de corte.
 - Mesmo autorizador JWT; `openapi.json` e `api.d.ts` regenerados.
 

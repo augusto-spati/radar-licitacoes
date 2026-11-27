@@ -17,7 +17,7 @@ Cada item marcado aponta para o arquivo e o commit onde está implementado e par
 - [x] Auditoria de cobertura, separada da coleta, com código de saída. `src/radar/coleta/janelas.py` (função `auditar`), `src/radar/cli.py` (commits `ef44208`, `5dca21a`, `24bc7a6`). Vídeo: a gravar.
 - [x] Logs JSON estruturados na coleta. `src/radar/comum/logs.py` (commit `b80006d`). Vídeo: a gravar.
 - [x] Contrato de API versionado e conferido por teste. `src/radar/api/`, `frontend/openapi.json`, `tests/unit/test_openapi_atualizado.py` (commits `7d380eb`, `72581ec`, `12a954b`). Vídeo: a gravar.
-- [ ] Agendamento diário da atualização no Agendador de Tarefas (`scripts/agendar-atualizacao.ps1`).
+- [x] ~~Agendamento diário da atualização no Agendador de Tarefas (`scripts/agendar-atualizacao.ps1`).~~ Superado: a coleta diária roda na AWS (EventBridge Scheduler + Fargate/Lambda, `infra/prod/coletor.tf` e `janelas.tf`).
 
 ## Eventos e AWS
 
@@ -51,6 +51,15 @@ Filas ficam como futuro, no tema 2: outbox + SQS (etapa 4a; o pgmq não existe n
 - [x] Harness de evals com precisão e recall por campo e replay sem rede no CI. `evals/`, `src/radar/analise/evals.py`. Vídeo: a gravar.
 - [ ] Gabaritos conferidos pelo Augusto (12 rascunhos com `conferido: false` em `evals/gabarito/`), seguidos da rodada real comparando modelos.
 - [x] Tela das exigências (etapa 6b).
+
+## Histórico de resultados (etapa 7)
+
+- [x] Carga histórica de 12 meses do PNCP por UF, retomável por checkpoint, gravando só o que casa com o filtro (Neon de 0,5 GB). `src/radar/coleta/historico.py`, `radar historico carregar`. `docs/etapas/07-historico.md`. Vídeo: a gravar (`docs/videos/07-historico.md`).
+- [x] Resultados por item do PNCP (vencedor, valores homologados), desconto calculado e resposta instável que não apaga dado bom. `src/radar/coleta/resultados_pncp.py`, `src/radar/editais/resultados.py`, agenda às 07:30. Vídeo: a gravar.
+- [x] Histórico do órgão, vencedores e régua de desconto por linha, UF e faixa de valor na ficha do edital. `src/radar/editais/historico.py`, `GET /api/historicos/{id}`, `frontend/src/componentes/HistoricoOrgao.tsx`, `ReguaDesconto.tsx`. Vídeo: a gravar.
+- [ ] Carga histórica rodada em produção e números reais na doc da etapa.
+- [ ] Preço unitário (7b): planilha estimada do edital com IA e preço contratado do TCE-PE.
+- [ ] Resultados da Compesa pelo TCE-PE.
 
 ## Front com IA
 
