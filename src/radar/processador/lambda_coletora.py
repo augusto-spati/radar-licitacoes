@@ -7,8 +7,12 @@ lease é o `aws_request_id`.
 
 Confirmam a mensagem: `concluida`, `continua`, `dividida`, `ocupada`, `obsoleta`,
 `inexistente` e `lease_perdida`. Voltam (`batchItemFailures`): `falha`, corpo inválido,
-exceção e relay do fim que falhou ou foi recusado (a reentrega publica no começo e sai
-`obsoleta`).
+exceção e a mensagem cuja própria continuação (o `outbox_id` que a fatia gravou) não foi
+publicada pelo relay do fim (a reentrega publica no começo e sai `obsoleta`). Recusa de
+outras linhas da outbox não devolve ninguém: o próximo relay as tenta de novo.
+
+Orçamento da fatia: min(540 s, tempo restante − 360 s), para a última página (até 3 x 90 s
+com esperas) e o relay do fim caberem antes do timeout.
 
 O engine, a fila e o cliente do PNCP são criados no primeiro uso, uma vez por container.
 Importar este módulo não abre conexão nem lê o SSM.
@@ -18,11 +22,13 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from radar.coleta import ORCAMENTO_LAMBDA_S, ClientePNCP, criar_http
 from radar.comum import (
     Fila,
+    Outbox,
     configurar_logs,
     criar_engine,
     de_corpo,
@@ -37,6 +43,7 @@ from radar.processador.fila_local import criar_fila
 logger = logging.getLogger(__name__)
 
 TENTATIVAS_PNCP = 3  # 3 x 90 s + esperas cabem entre os 540 s do orçamento e os 900 s
+RESERVA_S = 360  # tempo que sobra depois do orçamento: a última página e o relay do fim
 
 _fabrica: sessionmaker[Session] | None = None
 _fila: Fila | None = None
@@ -71,15 +78,27 @@ def _criar_cliente() -> ClientePNCP:
 
 
 def _publicar(momento: str) -> None:
-    """Relay da outbox; recusa conta como erro (a continuação ficaria parada na outbox)."""
+    """Relay da outbox. Recusa só é logada: quem confere a continuação é o handler."""
     with _criar_sessao() as sessao:
         resumo = publicar_outbox(sessao, _criar_fila())
     logger.info(
         "relay",
         extra={"momento": momento, "publicadas": resumo.publicadas, "recusadas": resumo.recusadas},
     )
-    if resumo.recusadas:
-        raise RuntimeError(f"relay do {momento}: {resumo.recusadas} mensagens recusadas")
+
+
+def _nao_publicadas(ids: set[int]) -> set[int]:
+    """Das linhas da outbox pedidas, as que ainda não foram publicadas."""
+    with _criar_sessao() as sessao:
+        publicadas = sessao.scalars(
+            select(Outbox.id).where(Outbox.id.in_(ids), Outbox.publicada_em.is_not(None))
+        ).all()
+    return ids - set(publicadas)
+
+
+def _orcamento(contexto: Any) -> float:
+    restante_s = float(contexto.get_remaining_time_in_millis()) / 1000
+    return max(0.0, min(ORCAMENTO_LAMBDA_S, restante_s - RESERVA_S))
 
 
 def handler(evento: dict[str, Any], contexto: Any) -> dict[str, list[dict[str, str]]]:
@@ -93,7 +112,8 @@ def handler(evento: dict[str, Any], contexto: Any) -> dict[str, list[dict[str, s
         logger.exception("relay_erro", extra={"momento": "começo"})
     token: str = contexto.aws_request_id
     falhas: list[dict[str, str]] = []
-    confirmadas: list[dict[str, str]] = []
+    # Mensagens confirmadas só se as continuações que gravaram forem publicadas.
+    aguardando: list[tuple[dict[str, str], tuple[int, ...]]] = []
     for registro in evento.get("Records", []):
         message_id: str = registro["messageId"]
         item = {"itemIdentifier": message_id}
@@ -105,18 +125,35 @@ def handler(evento: dict[str, Any], contexto: Any) -> dict[str, list[dict[str, s
                 **{k: str(v) for k, v in mensagem.carga.items()},
             }
             with _criar_sessao() as sessao:
-                desfecho = processar_janela(
-                    sessao, mensagem, _criar_cliente(), token, ORCAMENTO_LAMBDA_S
+                resultado = processar_janela(
+                    sessao, mensagem, _criar_cliente(), token, _orcamento(contexto)
                 )
-            logger.info("mensagem_processada", extra={**dados, "desfecho": desfecho})
+            logger.info("mensagem_processada", extra={**dados, "desfecho": resultado.desfecho})
         except Exception:
             logger.exception("mensagem_erro", extra=dados)
             falhas.append(item)
             continue
-        (falhas if desfecho == "falha" else confirmadas).append(item)
+        if resultado.desfecho == "falha":
+            falhas.append(item)
+        elif resultado.continuacoes:
+            aguardando.append((item, resultado.continuacoes))
     try:
-        _publicar("fim")
-    except Exception:  # a mensagem volta; a reentrega publica no começo e sai obsoleta
+        _publicar("fim")  # as páginas desta fatia e as continuações
+    except Exception:  # a conferência abaixo decide quem volta
         logger.exception("relay_erro", extra={"momento": "fim"})
-        falhas.extend(confirmadas)
+    if not aguardando:
+        return {"batchItemFailures": falhas}
+    pedidas = {outbox_id for _, ids in aguardando for outbox_id in ids}
+    try:
+        pendentes = _nao_publicadas(pedidas)
+    except Exception:  # sem saber, volta quem tem continuação; a reentrega sai obsoleta
+        logger.exception("conferencia_erro")
+        pendentes = pedidas
+    for item, ids in aguardando:
+        if pendentes & set(ids):
+            logger.warning(
+                "continuacao_nao_publicada",
+                extra={"message_id": item["itemIdentifier"], "continuacoes": list(ids)},
+            )
+            falhas.append(item)
     return {"batchItemFailures": falhas}

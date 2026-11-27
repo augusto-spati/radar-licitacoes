@@ -23,6 +23,7 @@ from radar.coleta import (
     criar_http,
     criar_http_educado,
     executar_retrato,
+    janelas_com_lease_vivo,
     janelas_paradas,
     paginas_publicadas_sem_processar,
     planejar_janelas,
@@ -103,7 +104,7 @@ def _criar_cliente_sqs(url: str) -> Any:
 
 def _coletora_local(sessao: Session, mensagem: Mensagem) -> str:
     """`coletar_janela` na fila local: a fatia vai até o fim da janela (sem orçamento)."""
-    return processar_janela(sessao, mensagem, _criar_cliente(), uuid4().hex, None)
+    return processar_janela(sessao, mensagem, _criar_cliente(), uuid4().hex, None).desfecho
 
 
 def _criar_fila(fontes: dict[str, FonteRetrato], coletar_janelas: bool = False) -> Fila:
@@ -139,9 +140,14 @@ def _escolher_fontes(opcao: str | None, disponiveis: list[str]) -> list[str]:
 
 
 def _publicar(sessao: Session, fila: Fila) -> int:
-    """Relay da outbox para a fila; devolve as recusas (erro inesperado conta 1)."""
+    """Relay da outbox para a fila; devolve as recusas (erro inesperado conta 1).
+
+    Com a fila local, publica só os tipos que ela consome neste comando: uma
+    `coletar_janela` (da Lambda coletora) fica pendente, intocada, fora do `planejar`.
+    """
+    tipos = fila.tipos if isinstance(fila, FilaLocal) else None
     try:
-        resumo = publicar_outbox(sessao, fila, agora=_agora)
+        resumo = publicar_outbox(sessao, fila, agora=_agora, tipos=tipos)
     except Exception:  # a outbox continua pendente; a próxima execução publica
         sessao.rollback()
         logger.exception("relay_erro_inesperado")
@@ -193,6 +199,24 @@ def _rodar_retrato(sessao: Session, fonte: FonteRetrato) -> int:
         return 1
     typer.echo(f"retrato {fonte.nome}: {resumo.registros} registros coletados")
     return 0
+
+
+def _recusar_pncp_com_lease_vivo() -> None:
+    """A coleta local do PNCP não roda enquanto alguém tem o lease de uma janela.
+
+    Lease vivo é a Lambda coletora (ou outro processo) coletando agora: o PNCP local não
+    deve rodar contra o banco de produção, onde a cadeia de fatias é da Lambda.
+    """
+    with _criar_sessao() as sessao:
+        vivas = janelas_com_lease_vivo(sessao)
+    if vivas:
+        typer.echo(
+            f"pncp: {vivas} janelas com lease vivo (a Lambda coletora ou outro processo está"
+            " coletando); a coleta local do PNCP não roda contra o banco de produção."
+            " Use --fontes sem pncp ou espere o lease vencer.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
 
 
 def _rodar_pncp(sessao: Session, criterios: Criterios, hoje: date, lookback: int) -> int:
@@ -247,9 +271,14 @@ def carga_inicial(
     dias: Annotated[int, typer.Option(min=1, help="Quantos dias anteriores a hoje coletar.")] = 30,
     config: OpcaoConfig = ARQUIVO_CONFIG,
 ) -> None:
-    """Planeja janelas de publicação dos últimos dias, coleta e publica na fila."""
+    """Planeja janelas de publicação dos últimos dias, coleta e publica na fila.
+
+    Coleta o PNCP aqui mesmo: não rode contra o banco de produção (sai com 2 se alguma
+    janela tem lease vivo).
+    """
     configurar_logs()
     criterios = carregar_criterios(config)
+    _recusar_pncp_com_lease_vivo()
     hoje = _agora().date()
     fila = _criar_fila(fontes_retrato())
     with _criar_sessao() as sessao:
@@ -277,11 +306,18 @@ def atualizar(
         ),
     ] = None,
 ) -> None:
-    """Atualiza o PNCP (janelas do recuo até hoje) e lê o retrato das outras fontes."""
+    """Atualiza o PNCP (janelas do recuo até hoje) e lê o retrato das outras fontes.
+
+    O PNCP é coletado aqui mesmo (laço local): não o inclua contra o banco de produção, onde
+    quem coleta é a Lambda (`radar planejar`). Com o PNCP incluído e alguma janela com lease
+    vivo, sai com 2 sem coletar nada.
+    """
     retratos = fontes_retrato()
     escolhidas = _escolher_fontes(fontes, ["pncp", *retratos])
     configurar_logs()
     criterios = carregar_criterios(config)
+    if "pncp" in escolhidas:
+        _recusar_pncp_com_lease_vivo()
     hoje = _agora().date()
     fila = _criar_fila(retratos)
     with _criar_sessao() as sessao:
@@ -301,8 +337,12 @@ def atualizar(
 
 @app.command()
 def processar() -> None:
-    """Coleta as janelas pendentes e publica a outbox na fila (o consumidor registra)."""
+    """Coleta as janelas pendentes e publica a outbox na fila (o consumidor registra).
+
+    Coleta o PNCP aqui mesmo: sai com 2 se alguma janela tem lease vivo.
+    """
     configurar_logs()
+    _recusar_pncp_com_lease_vivo()
     fila = _criar_fila(fontes_retrato())
     with _criar_sessao() as sessao:
         falhas = _com_fila(sessao, fila, lambda: _coletar(sessao, _criar_cliente()))

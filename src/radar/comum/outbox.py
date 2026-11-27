@@ -41,9 +41,11 @@ class Outbox(Base):
     erro: Mapped[str | None] = mapped_column(Text)
 
 
-def enfileirar(sessao: Session, tipo: TipoMensagem, carga: dict[str, int]) -> None:
-    """Adiciona a mensagem à sessão. Não faz commit: quem coleta decide quando."""
-    sessao.add(Outbox(tipo=tipo, carga=carga))
+def enfileirar(sessao: Session, tipo: TipoMensagem, carga: dict[str, int]) -> Outbox:
+    """Adiciona a mensagem à sessão e a devolve. Não faz commit: quem coleta decide quando."""
+    linha = Outbox(tipo=tipo, carga=carga)
+    sessao.add(linha)
+    return linha
 
 
 def pendencias_outbox(sessao: Session) -> tuple[int, datetime | None]:

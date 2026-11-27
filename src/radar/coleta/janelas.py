@@ -24,6 +24,9 @@ from radar.comum import Outbox, enfileirar
 logger = logging.getLogger(__name__)
 
 FUSO = "America/Sao_Paulo"  # as datas do PNCP são em horário de Brasília
+# Falha com tantas reivindicações não volta à fila pelo planejador: fica para o laço local
+# (`radar processar`) ou para uma decisão manual. Cada fatia conta uma reivindicação.
+MAXIMO_TENTATIVAS = 5
 
 
 @dataclass
@@ -135,13 +138,14 @@ def coletar_pendentes(
 def enfileirar_elegiveis(sessao: Session, endpoint: str) -> int:
     """Reabre as concluídas cedo demais e enfileira `coletar_janela` das elegíveis; um commit.
 
-    Elegível: pendente, falha ou em_andamento, com o lease livre. A mensagem leva o `lote`
-    atual. Uma mensagem a mais para janela que já tem continuação na fila é inofensiva: uma
-    das duas sai `ocupada` ou `obsoleta`. Devolve quantas mensagens.
+    Elegível: pendente, falha ou em_andamento, com o lease livre; falha com
+    `MAXIMO_TENTATIVAS` ou mais fica de fora (log `janela_desistida`). A mensagem leva o
+    `lote` atual. Uma mensagem a mais para janela que já tem continuação na fila é
+    inofensiva: uma das duas sai `ocupada` ou `obsoleta`. Devolve quantas mensagens.
     """
     _reabrir(sessao, ColetaJanela.endpoint == endpoint)
-    elegiveis = sessao.execute(
-        select(ColetaJanela.id, ColetaJanela.lote)
+    candidatas = sessao.execute(
+        select(ColetaJanela.id, ColetaJanela.lote, ColetaJanela.status, ColetaJanela.tentativas)
         .where(
             ColetaJanela.endpoint == endpoint,
             ColetaJanela.status.in_(("pendente", "falha", "em_andamento")),
@@ -149,14 +153,30 @@ def enfileirar_elegiveis(sessao: Session, endpoint: str) -> int:
         )
         .order_by(ColetaJanela.data_ini, ColetaJanela.modalidade, ColetaJanela.id)
     ).all()
-    for janela_id, lote in elegiveis:
+    enfileiradas = 0
+    for janela_id, lote, status, tentativas in candidatas:
+        if status == "falha" and tentativas >= MAXIMO_TENTATIVAS:
+            logger.warning(
+                "janela_desistida", extra={"janela_id": janela_id, "tentativas": tentativas}
+            )
+            continue
         enfileirar(sessao, "coletar_janela", {"janela_id": janela_id, "lote": lote})
+        enfileiradas += 1
     sessao.commit()
-    return len(elegiveis)
+    return enfileiradas
 
 
-def janelas_paradas(sessao: Session, iniciadas_antes_de: datetime) -> list[JanelaParada]:
-    """Janelas em_andamento começadas antes do corte: a cadeia de fatias parou no caminho."""
+def janelas_paradas(sessao: Session, parada_desde: datetime) -> list[JanelaParada]:
+    """Janelas em_andamento, sem lease vivo, sem página nova desde o corte: a cadeia parou.
+
+    O progresso é a página mais recente (o checkpoint); sem página, o início da janela. Uma
+    retentativa saudável de janela antiga não aparece.
+    """
+    ultima_pagina = (
+        select(func.max(PaginaBruta.coletada_em))
+        .where(PaginaBruta.janela_id == ColetaJanela.id)
+        .scalar_subquery()
+    )
     linhas = sessao.execute(
         select(
             ColetaJanela.data_ini,
@@ -166,11 +186,18 @@ def janelas_paradas(sessao: Session, iniciadas_antes_de: datetime) -> list[Janel
         )
         .where(
             ColetaJanela.status == "em_andamento",
-            ColetaJanela.iniciada_em < iniciadas_antes_de,
+            lease_livre(),
+            func.coalesce(ultima_pagina, ColetaJanela.iniciada_em) < parada_desde,
         )
         .order_by(ColetaJanela.data_ini, ColetaJanela.modalidade, ColetaJanela.id)
     ).all()
     return [JanelaParada(*linha) for linha in linhas]
+
+
+def janelas_com_lease_vivo(sessao: Session) -> int:
+    """Quantas janelas alguém (a Lambda coletora ou outro processo) está coletando agora."""
+    quantas = sessao.scalar(select(func.count()).where(~lease_livre()))
+    return int(quantas or 0)
 
 
 def ler_paginas_nao_processadas(

@@ -1,6 +1,8 @@
+import logging
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import pytest
 from fakes import VAZIA, Chave, ClienteFalso, como_cliente, pagina
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -11,6 +13,7 @@ from radar.coleta import (
     auditar,
     coletar_pendentes,
     enfileirar_elegiveis,
+    janelas_com_lease_vivo,
     janelas_paradas,
     ler_paginas_nao_processadas,
     marcar_processada,
@@ -473,3 +476,79 @@ def test_auditar_mostra_onde_a_falha_parou(sessao: Session) -> None:
     aud = auditar(sessao, "publicacao", D1, D1, [6])
 
     assert aud.falhas == [(D1, 6, "HTTP 500", 3, 5)]
+
+
+def test_enfileirar_desiste_de_falha_com_tentativas_demais(
+    sessao: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    desistida = janela(
+        sessao, endpoint="atualizacao", data_ini=HOJE, data_fim=HOJE, status="falha", tentativas=5
+    )
+    tenta = janela(
+        sessao,
+        endpoint="atualizacao",
+        data_ini=HOJE - timedelta(days=1),
+        data_fim=HOJE - timedelta(days=1),
+        status="falha",
+        tentativas=4,
+    )
+
+    with caplog.at_level(logging.INFO, logger="radar.coleta.janelas"):
+        assert enfileirar_elegiveis(sessao, "atualizacao") == 1
+
+    assert _coletar_janela(sessao) == [{"janela_id": tenta.id, "lote": 0}]
+    desistencias = [r for r in caplog.records if r.getMessage() == "janela_desistida"]
+    assert [getattr(r, "janela_id", None) for r in desistencias] == [desistida.id]
+
+
+def test_janelas_paradas_conta_o_checkpoint_e_o_lease(sessao: Session) -> None:
+    corte = datetime(2026, 11, 10, 6, 0, tzinfo=BRT)
+    antes = corte - timedelta(hours=10)
+    # Retentativa saudável: começou há muito, mas a última página é recente.
+    andando = janela(sessao, status="em_andamento", iniciada_em=antes, tentativas=3)
+    sessao.add(
+        PaginaBruta(
+            janela_id=andando.id,
+            numero_pagina=1,
+            conteudo={"data": []},
+            coletada_em=corte + timedelta(minutes=10),
+        )
+    )
+    # Com o lease vivo alguém está coletando agora.
+    janela(
+        sessao,
+        modalidade=8,
+        status="em_andamento",
+        iniciada_em=antes,
+        travada_por="lambda",
+        travada_ate=datetime.now(UTC) + timedelta(minutes=10),
+    )
+    # Parada de verdade: a última página é velha.
+    parada = janela(sessao, modalidade=9, status="em_andamento", iniciada_em=antes)
+    sessao.add(
+        PaginaBruta(
+            janela_id=parada.id,
+            numero_pagina=1,
+            conteudo={"data": []},
+            coletada_em=corte - timedelta(hours=1),
+        )
+    )
+    sessao.flush()
+
+    assert janelas_paradas(sessao, corte) == [JanelaParada(D1, 9, 1, None)]
+
+
+def test_janelas_com_lease_vivo(sessao: Session) -> None:
+    janela(sessao, travada_por="x", travada_ate=datetime.now(UTC) - timedelta(minutes=1))
+    janela(sessao, modalidade=8)
+    assert janelas_com_lease_vivo(sessao) == 0
+
+    janela(
+        sessao,
+        modalidade=9,
+        status="em_andamento",
+        travada_por="lambda",
+        travada_ate=datetime.now(UTC) + timedelta(minutes=10),
+    )
+
+    assert janelas_com_lease_vivo(sessao) == 1

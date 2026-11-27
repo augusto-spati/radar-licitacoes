@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from radar.coleta import (
     ClientePNCP,
-    DesfechoFatia,
+    ResultadoFatia,
     coletar_fatia,
     enfileirar_elegiveis,
     planejar_janelas,
@@ -29,11 +29,14 @@ def processar_janela(
     cliente: ClientePNCP,
     token: str,
     orcamento_s: float | None,
-) -> DesfechoFatia:
-    """Uma fatia da janela da mensagem; `ValueError` se a mensagem não é `coletar_janela`."""
+) -> ResultadoFatia:
+    """Uma fatia da janela da mensagem; `ValueError` se a mensagem não é `coletar_janela`.
+
+    O resultado traz o `outbox_id` das continuações que a fatia gravou (`continuacoes`).
+    """
     if mensagem.tipo != "coletar_janela":
         raise ValueError(f"a coletora só recebe coletar_janela, não {mensagem.tipo!r}")
-    resultado = coletar_fatia(
+    return coletar_fatia(
         sessao,
         cliente,
         mensagem.carga["janela_id"],
@@ -41,7 +44,6 @@ def processar_janela(
         token=token,
         orcamento_s=orcamento_s,
     )
-    return resultado.desfecho
 
 
 def planejar_e_enfileirar(

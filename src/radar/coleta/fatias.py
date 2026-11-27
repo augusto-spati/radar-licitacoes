@@ -56,6 +56,9 @@ class ResultadoFatia:
     paginas: int  # desta fatia
     registros: int  # desta fatia
     erro: str | None = None
+    # `outbox_id` das `coletar_janela` que esta fatia gravou (continuação ou metades): quem
+    # recebeu a mensagem só a confirma depois de o relay publicá-las.
+    continuacoes: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -406,7 +409,9 @@ def _continuar(
     )
     if not resultado.rowcount:  # type: ignore[attr-defined]
         raise _LeasePerdida()
-    enfileirar(sessao, "coletar_janela", {"janela_id": janela.id, "lote": janela.lote + 1})
+    linha = enfileirar(sessao, "coletar_janela", {"janela_id": janela.id, "lote": janela.lote + 1})
+    sessao.flush()
+    continuacao = linha.id
     sessao.commit()
     logger.info(
         "janela_continua",
@@ -417,7 +422,7 @@ def _continuar(
             "registros_fatia": registros,
         },
     )
-    return ResultadoFatia("continua", paginas, registros)
+    return ResultadoFatia("continua", paginas, registros, continuacoes=(continuacao,))
 
 
 def _falhar(
@@ -487,15 +492,18 @@ def _dividir(
         .on_conflict_do_nothing(constraint="uq_coleta_janela_chave")
         .returning(ColetaJanela.id)
     ).all()
-    if modo_mensagem:
-        for nova in sorted(novas):
-            enfileirar(sessao, "coletar_janela", {"janela_id": nova, "lote": 0})
+    linhas = [
+        enfileirar(sessao, "coletar_janela", {"janela_id": nova, "lote": 0})
+        for nova in (sorted(novas) if modo_mensagem else [])
+    ]
+    sessao.flush()
+    continuacoes = tuple(linha.id for linha in linhas)
     sessao.commit()
     logger.warning(
         "janela_dividida",
         extra={**_dados_log(janela), "erro": erro, "data_fim": janela.data_fim.isoformat()},
     )
-    return ResultadoFatia("dividida", 0, 0, erro)
+    return ResultadoFatia("dividida", 0, 0, erro, continuacoes)
 
 
 def _dados_log(

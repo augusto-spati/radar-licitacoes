@@ -32,14 +32,23 @@ def _agora() -> datetime:
 _JANELA = Mensagem(7, "coletar_janela", {"janela_id": 3, "lote": 1})
 
 
-def test_fila_local_sem_coletora_recusa_coletar_janela() -> None:
+def test_fila_local_sem_coletora_nao_consome_coletar_janela() -> None:
     fila = FilaLocal(_fabrica, {}, _agora)
 
     resultado = fila.enviar_lote([_JANELA])
 
+    # O relay não a seleciona (`tipos`); se chegar, fica pendente para a Lambda, sem falha.
+    assert set(fila.tipos) == {"pagina_coletada", "retrato_coletado"}
     assert resultado.aceitas == set()
     assert resultado.recusadas == {7: "coletar_janela sem coletora local"}
-    assert fila.falhas == 1
+    assert fila.falhas == 0
+
+
+def test_fila_local_com_coletora_consome_todos_os_tipos() -> None:
+    fila = FilaLocal(_fabrica, {}, _agora, coletora=lambda _s, _m: "concluida")
+
+    assert set(fila.tipos) == {"pagina_coletada", "retrato_coletado", "coletar_janela"}
+    assert fila.consome_no_envio is True
 
 
 def test_fila_local_com_coletora_despacha() -> None:

@@ -840,3 +840,74 @@ def test_execucao_imprime_linha_resultado_que_o_alarme_conta(
     assert resultado.exit_code == codigo, resultado.output
     linhas = [x for x in resultado.output.splitlines() if x.startswith("resultado: ")]
     assert linhas == [linha]
+
+
+def _janela_com_lease_vivo(fabrica: sessionmaker[Session]) -> None:
+    with fabrica() as sessao:
+        sessao.add(
+            ColetaJanela(
+                endpoint="atualizacao",
+                data_ini=HOJE,
+                data_fim=HOJE,
+                modalidade=6,
+                status="em_andamento",
+                paginas=0,
+                registros=0,
+                travada_por="lambda",
+                travada_ate=datetime.now(ZoneInfo("UTC")) + timedelta(minutes=10),
+            )
+        )
+        sessao.commit()
+
+
+@pytest.mark.parametrize(
+    "args", [["atualizar", "--fontes", "pncp"], ["atualizar"], ["processar"], ["carga-inicial"]]
+)
+def test_pncp_local_com_lease_vivo_sai_com_2(
+    fabrica: sessionmaker[Session],
+    config_filtro: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    args: list[str],
+) -> None:
+    monkeypatch.setattr(cli, "fontes_retrato", lambda: {})
+    falso = ClienteFalso({})
+    monkeypatch.setattr(cli, "_criar_cliente", lambda: como_cliente(falso))
+    _janela_com_lease_vivo(fabrica)
+    extra = ["--config", str(config_filtro)] if args[0] != "processar" else []
+
+    resultado = runner.invoke(cli.app, [*args, *extra])
+
+    assert resultado.exit_code == 2, resultado.output
+    assert "lease vivo" in resultado.output
+    assert falso.chamadas == []
+    assert _contar(fabrica, ColetaJanela) == 1  # nada planejado
+
+
+def test_atualizar_so_retratos_ignora_lease_vivo_do_pncp(
+    fabrica: sessionmaker[Session], config_filtro: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli, "_rodar_retrato", lambda sessao, fonte: 0)
+    _janela_com_lease_vivo(fabrica)
+
+    resultado = runner.invoke(
+        cli.app, ["atualizar", "--fontes", "sanepar", "--config", str(config_filtro)]
+    )
+
+    assert resultado.exit_code == 0, resultado.output
+
+
+def test_publicar_local_deixa_coletar_janela_para_a_lambda(
+    fabrica: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli, "fontes_retrato", lambda: {})
+    with fabrica() as sessao:
+        enfileirar(sessao, "coletar_janela", {"janela_id": 1, "lote": 0})
+        sessao.commit()
+
+    resultado = runner.invoke(cli.app, ["publicar"])
+
+    assert resultado.exit_code == 0, resultado.output
+    assert _ultima_linha(resultado.output) == "resultado: sem falhas"
+    with fabrica() as sessao:
+        linha = sessao.scalars(select(Outbox)).one()
+    assert (linha.publicada_em, linha.tentativas, linha.erro) == (None, 0, None)

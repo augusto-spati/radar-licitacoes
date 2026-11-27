@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from radar.coleta import ResultadoFatia
 from radar.comum import Mensagem, ResumoPublicacao
 
 
@@ -27,7 +28,11 @@ class _SessaoFalsa:
         return None
 
 
-CONTEXTO = SimpleNamespace(aws_request_id="req-1")
+def _contexto(restante_ms: int = 900_000) -> SimpleNamespace:
+    return SimpleNamespace(aws_request_id="req-1", get_remaining_time_in_millis=lambda: restante_ms)
+
+
+CONTEXTO = _contexto()
 Vistas = list[tuple[Mensagem, str, float | None]]
 
 
@@ -41,7 +46,12 @@ def coletora(monkeypatch: pytest.MonkeyPatch) -> Iterator[ModuleType]:
     monkeypatch.setattr(recarregado, "_criar_sessao", lambda: _SessaoFalsa())
     monkeypatch.setattr(recarregado, "_criar_fila", lambda: object())
     monkeypatch.setattr(recarregado, "_criar_cliente", lambda: object())
+    monkeypatch.setattr(recarregado, "_nao_publicadas", lambda ids: set())
     yield recarregado
+
+
+def _continuacao(janela_id: int) -> int:
+    return 500 + janela_id
 
 
 class Relay:
@@ -65,13 +75,15 @@ class Relay:
 def _processar(desfechos: dict[int, Any], vistas: Vistas) -> Any:
     def processar(
         sessao: Any, mensagem: Mensagem, cliente: Any, token: str, orcamento_s: float | None
-    ) -> str:
+    ) -> ResultadoFatia:
         assert isinstance(sessao, _SessaoFalsa)
         vistas.append((mensagem, token, orcamento_s))
-        desfecho = desfechos[mensagem.carga["janela_id"]]
+        janela_id = mensagem.carga["janela_id"]
+        desfecho = desfechos[janela_id]
         if isinstance(desfecho, BaseException):
             raise desfecho
-        return str(desfecho)
+        continuacoes = (_continuacao(janela_id),) if desfecho in ("continua", "dividida") else ()
+        return ResultadoFatia(desfecho, 0, 0, continuacoes=continuacoes)
 
     return processar
 
@@ -139,6 +151,7 @@ def test_relay_do_fim_falha_e_a_reentrega_sai_obsoleta(
     relay = Relay(falhar_em={2})
     monkeypatch.setattr(coletora, "processar_janela", _processar(desfechos, []))
     monkeypatch.setattr(coletora, "publicar_outbox", relay)
+    monkeypatch.setattr(coletora, "_nao_publicadas", lambda ids: set(ids))
 
     primeira = coletora.handler({"Records": [_registro("m1", 1)]}, CONTEXTO)
 
@@ -153,15 +166,57 @@ def test_relay_do_fim_falha_e_a_reentrega_sai_obsoleta(
     assert relay.chamadas == 4
 
 
-def test_relay_do_fim_com_recusa_devolve_a_mensagem(
+def test_so_volta_a_mensagem_cuja_continuacao_nao_saiu(
     coletora: ModuleType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(coletora, "processar_janela", _processar({1: "continua"}, []))
+    pedidas: list[set[int]] = []
+
+    def nao_publicadas(ids: set[int]) -> set[int]:
+        pedidas.append(set(ids))
+        return {_continuacao(2)}
+
+    desfechos = {1: "continua", 2: "continua", 3: "concluida", 4: "dividida"}
+    monkeypatch.setattr(coletora, "processar_janela", _processar(desfechos, []))
     monkeypatch.setattr(coletora, "publicar_outbox", Relay(recusar_em={2}))
+    monkeypatch.setattr(coletora, "_nao_publicadas", nao_publicadas)
+    registros = [_registro(f"m{n}", n) for n in (1, 2, 3, 4)]
 
-    resposta = coletora.handler({"Records": [_registro("m1", 1)]}, CONTEXTO)
+    resposta = coletora.handler({"Records": registros}, CONTEXTO)
 
-    assert resposta == {"batchItemFailures": [{"itemIdentifier": "m1"}]}
+    assert resposta == {"batchItemFailures": [{"itemIdentifier": "m2"}]}
+    assert pedidas == [{_continuacao(1), _continuacao(2), _continuacao(4)}]
+
+
+def test_relay_do_fim_caido_confirma_quem_nao_tem_continuacao(
+    coletora: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def conferencia_caida(ids: set[int]) -> set[int]:
+        raise RuntimeError("banco fora do ar")
+
+    monkeypatch.setattr(
+        coletora, "processar_janela", _processar({1: "concluida", 2: "continua"}, [])
+    )
+    monkeypatch.setattr(coletora, "publicar_outbox", Relay(falhar_em={2}))
+    monkeypatch.setattr(coletora, "_nao_publicadas", conferencia_caida)
+
+    resposta = coletora.handler({"Records": [_registro("m1", 1), _registro("m2", 2)]}, CONTEXTO)
+
+    assert resposta == {"batchItemFailures": [{"itemIdentifier": "m2"}]}
+
+
+@pytest.mark.parametrize(
+    ("restante_ms", "orcamento"), [(900_000, 540), (600_000, 240), (300_000, 0)]
+)
+def test_orcamento_respeita_o_tempo_restante(
+    coletora: ModuleType, monkeypatch: pytest.MonkeyPatch, restante_ms: int, orcamento: float
+) -> None:
+    vistas: Vistas = []
+    monkeypatch.setattr(coletora, "processar_janela", _processar({1: "concluida"}, vistas))
+    monkeypatch.setattr(coletora, "publicar_outbox", Relay())
+
+    coletora.handler({"Records": [_registro("m1", 1)]}, _contexto(restante_ms))
+
+    assert [orc for *_, orc in vistas] == [orcamento]
 
 
 def test_relay_do_comeco_falhando_nao_impede_a_coleta(

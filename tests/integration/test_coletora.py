@@ -106,7 +106,7 @@ def test_cadeia_local_equivale_ao_laco(fabrica: sessionmaker[Session]) -> None:
     cadeia = ClienteFalso(_roteiro())
 
     def coletora(sessao: Session, mensagem: Mensagem) -> str:
-        return processar_janela(sessao, mensagem, como_cliente(cadeia), uuid4().hex, 0.0)
+        return processar_janela(sessao, mensagem, como_cliente(cadeia), uuid4().hex, 0.0).desfecho
 
     fila = FilaLocal(fabrica, {}, lambda: AGORA, coletora=coletora)
     with fabrica() as sessao:
@@ -138,3 +138,20 @@ def test_cadeia_local_equivale_ao_laco(fabrica: sessionmaker[Session]) -> None:
     assert {j[2] for j in pela_cadeia["janelas"]} == {"concluida"}
     assert pela_cadeia["outbox_pendente"] == 0
     assert len(pela_cadeia["filtrados"]) == pela_cadeia["editais"]
+
+
+def test_conferencia_da_continuacao_na_lambda(
+    fabrica: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import radar.processador.lambda_coletora as lambda_coletora
+
+    monkeypatch.setattr(lambda_coletora, "_criar_sessao", fabrica)
+    with fabrica() as sessao:
+        publicada = Outbox(tipo="coletar_janela", carga={}, publicada_em=AGORA)
+        pendente = Outbox(tipo="coletar_janela", carga={})
+        sessao.add_all([publicada, pendente])
+        sessao.commit()
+        ids = {publicada.id, pendente.id}
+        esperado = {pendente.id}
+
+    assert lambda_coletora._nao_publicadas(ids) == esperado

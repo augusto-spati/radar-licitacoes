@@ -3,12 +3,20 @@
 import logging
 from collections.abc import Callable, Mapping
 from datetime import datetime
-from typing import Any
+from typing import Any, get_args
 
 from sqlalchemy.orm import Session
 
 from radar.coleta import FonteRetrato
-from radar.comum import Config, Fila, FilaRoteada, FilaSQS, Mensagem, ResultadoEnvio
+from radar.comum import (
+    Config,
+    Fila,
+    FilaRoteada,
+    FilaSQS,
+    Mensagem,
+    ResultadoEnvio,
+    TipoMensagem,
+)
 from radar.processador.consumidor import processar_mensagem
 
 logger = logging.getLogger(__name__)
@@ -26,9 +34,15 @@ class FilaLocal:
 
     `coletar_janela` vai para a `coletora`, quando há uma: a fatia commita a continuação na
     outbox, e o mesmo relay a publica em seguida, até a cadeia acabar. O desfecho `falha`
-    conta como falha e confirma (o planejador enfileira a janela de novo). Sem coletora, a
-    mensagem é recusada e fica pendente na outbox.
+    conta como falha e confirma (o planejador enfileira a janela de novo). Sem coletora,
+    `tipos` não inclui `coletar_janela` (o relay nem a seleciona: ela é da Lambda); se chegar
+    mesmo assim, é recusada sem contar falha e fica pendente na outbox.
+
+    `consome_no_envio`: o relay não segura as linhas da outbox enquanto a mensagem é
+    consumida aqui (uma cadeia de fatias leva horas).
     """
+
+    consome_no_envio = True
 
     def __init__(
         self,
@@ -43,16 +57,22 @@ class FilaLocal:
         self._coletora = coletora
         self.falhas = 0
 
+    @property
+    def tipos(self) -> tuple[TipoMensagem, ...]:
+        """Os tipos que esta fila consome; o relay local publica só estes."""
+        if self._coletora is None:
+            return ("pagina_coletada", "retrato_coletado")
+        return get_args(TipoMensagem)
+
     def enviar_lote(self, mensagens: list[Mensagem]) -> ResultadoEnvio:
         resultado = ResultadoEnvio(aceitas=set(), recusadas={})
         for mensagem in mensagens:
             dados = {"outbox_id": mensagem.outbox_id, "tipo": mensagem.tipo}
             if mensagem.tipo == "coletar_janela" and self._coletora is None:
                 resultado.recusadas[mensagem.outbox_id] = "coletar_janela sem coletora local"
-                self.falhas += 1
                 continue
             try:
-                # Sessão própria: o consumidor faz rollback, e a do relay segura as linhas.
+                # Sessão própria: o consumidor faz rollback sem mexer na do relay.
                 with self._fabrica() as sessao:
                     desfecho = self._despachar(sessao, mensagem)
             except Exception as erro:  # Ctrl+C (BaseException) continua parando o processo

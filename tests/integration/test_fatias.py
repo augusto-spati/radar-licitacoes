@@ -123,6 +123,8 @@ def test_orcamento_corta_e_enfileira_continuacao(sessao: Session) -> None:
     assert (j.travada_por, j.travada_ate) == (None, None)
     assert mensagens(sessao) == [{"janela_id": j.id, "lote": 1}]
     assert len(mensagens(sessao, "pagina_coletada")) == 3
+    continuacao = sessao.scalars(select(Outbox.id).where(Outbox.tipo == "coletar_janela")).all()
+    assert r.continuacoes == tuple(continuacao)
 
 
 def test_continuacao_comeca_no_checkpoint(sessao: Session) -> None:
@@ -382,6 +384,10 @@ def test_divisao_no_modo_mensagem_enfileira_metades(sessao: Session) -> None:
     ).all()
     assert [(ini.day, fim_.day, lote) for _, ini, fim_, lote in metades] == [(1, 2, 0), (3, 4, 0)]
     assert mensagens(sessao) == [{"janela_id": m.id, "lote": 0} for m in metades]
+    ids = sessao.scalars(
+        select(Outbox.id).where(Outbox.tipo == "coletar_janela").order_by(Outbox.id)
+    ).all()
+    assert r.continuacoes == tuple(ids)
 
 
 def test_divisao_no_laco_nao_enfileira(sessao: Session) -> None:
@@ -389,7 +395,8 @@ def test_divisao_no_laco_nao_enfileira(sessao: Session) -> None:
     j = janela(sessao, data_fim=fim)
     falso = ClienteFalso({chave(1, D1, fim): ErroPNCP("HTTP 500", 500)})
 
-    assert fatia(sessao, falso, j.id, lote=None).desfecho == "dividida"
+    r = fatia(sessao, falso, j.id, lote=None)
+    assert (r.desfecho, r.continuacoes) == ("dividida", ())
     assert mensagens(sessao) == []
 
 
