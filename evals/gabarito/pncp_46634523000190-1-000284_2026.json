@@ -1,0 +1,68 @@
+{
+  "edital": "pncp~46634523000190-1-000284/2026",
+  "documentos": [
+    {
+      "sequencial": 1,
+      "url": "https://pncp.gov.br/pncp-api/v1/orgaos/46634523000190/compras/2026/284/arquivos/1",
+      "sha256": "f550bca5dbd2a1136ac6d7b98b11b5f38198f33a308907dcb0aeca2af83029bf"
+    }
+  ],
+  "conjunto": "ajuste",
+  "conferido": false,
+  "conferido_por": null,
+  "conferido_em": null,
+  "observacoes": "RASCUNHO DO CLAUDE, A CONFERIR PELO AUGUSTO: feito lendo o texto extraído (busca por palavras-chave nas seções de habilitação), sem rodar nenhum modelo avaliado. Exigência que a busca não achou pode estar faltando. São Manuel/SP, registro de preços de serviços (linha redes, R$ 56.924,00). Participação exclusiva de ME/EPP. Sem capital, patrimônio, garantia, visita ou atestado achados. Prazo: só vigência de 12 meses (p23), ficou nulo. Certidão municipal e balanço não achados pela busca: conferir.",
+  "exigencias": {
+    "me_epp": {
+      "valor": "exclusiva",
+      "trecho": "PARTICIPAÇÃO EXCLUSIVA",
+      "pagina": 1,
+      "conflito": false
+    },
+    "atestados": [],
+    "documentos": [
+      {
+        "valor": "declaracao_menor",
+        "trecho": "não emprega menor de 18 anos em trabalho noturno, perigoso ou insalubre",
+        "pagina": 4,
+        "conflito": false
+      },
+      {
+        "valor": "contrato_social",
+        "trecho": "inscrição do ato constitutivo, estatuto ou contrato social no Registro Público de Empresas Mercantis",
+        "pagina": 12,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_federal",
+        "trecho": "Certidão Conjunta Negativa de Débitos ou Positiva com efeito de Negativa, relativa a Tribu",
+        "pagina": 13,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_estadual",
+        "trecho": "Prova de Regularidade para com a Fazenda Estadual",
+        "pagina": 13,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_fgts",
+        "trecho": "Prova de regularidade relativa ao Fundo de Garantia por Tempo de Serviço – FGTS",
+        "pagina": 13,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_trabalhista",
+        "trecho": "Prova de Regularidade de Obrigações Trabalhistas",
+        "pagina": 13,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_falencia",
+        "trecho": "Certidão negativa de falência expedida pelo distribuidor da sede do licita",
+        "pagina": 14,
+        "conflito": false
+      }
+    ]
+  }
+}

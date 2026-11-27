@@ -1,0 +1,102 @@
+{
+  "edital": "pncp~45138070000149-1-000984/2026",
+  "documentos": [
+    {
+      "sequencial": 1,
+      "url": "https://pncp.gov.br/pncp-api/v1/orgaos/45138070000149/compras/2026/984/arquivos/1",
+      "sha256": "e08b3dbfde106258e3b41603764e5cbd04195a673fd3c58f06652bd67a23cb6d"
+    }
+  ],
+  "conjunto": "ajuste",
+  "conferido": false,
+  "conferido_por": null,
+  "conferido_em": null,
+  "observacoes": "RASCUNHO DO CLAUDE, A CONFERIR PELO AUGUSTO: feito lendo o texto extraído (busca por palavras-chave nas seções de habilitação), sem rodar nenhum modelo avaliado. Exigência que a busca não achou pode estar faltando. Revisão do Plano Municipal de Saneamento (consultoria). Sem capital nem patrimônio mínimo achados. Atestado exige serviços similares sem quantidade no trecho lido (p13): conferir se há quantitativo. Itens da qualificação econômico-financeira (10.1.4) não foram achados pela busca: conferir falência e balanço. Prazo de 12 meses de vigência e execução (p19).",
+  "exigencias": {
+    "garantia_contratual_percentual": {
+      "numero": "5",
+      "trecho": "correspondendo a 5% (cinco por cento) do seu valor global",
+      "pagina": 20,
+      "conflito": false,
+      "observacao": ""
+    },
+    "prazo_execucao_dias": {
+      "numero": "360",
+      "trecho": "O prazo de vigência do contrato assim como da execução dos serviços será de 12 meses",
+      "pagina": 19,
+      "conflito": false,
+      "observacao": ""
+    },
+    "visita_tecnica": {
+      "valor": "facultativa",
+      "trecho": "Vistoria: É opcional.",
+      "pagina": 2,
+      "conflito": false
+    },
+    "consorcio": {
+      "valor": "vedado",
+      "trecho": "3.4.9 pessoas jurídicas reunidas em consórcio",
+      "pagina": 4,
+      "conflito": false
+    },
+    "atestados": [
+      {
+        "descricao": "Serviços similares (plano de saneamento), com CAT do CREA",
+        "quantidade": null,
+        "unidade": null,
+        "trecho": "Certidão de Acervo Técnico - CAT regularmente emitida pelo CREA",
+        "pagina": 13
+      }
+    ],
+    "documentos": [
+      {
+        "valor": "contrato_social",
+        "trecho": "Ato constitutivo, estatuto ou contrato social em vigor",
+        "pagina": 12,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_federal",
+        "trecho": "relativa a Tributos Federais (inclusive às contribuições sociais)",
+        "pagina": 12,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_estadual",
+        "trecho": "Certidão de regularidade de débito com a Fazenda Estadual",
+        "pagina": 12,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_municipal",
+        "trecho": "Certidão de regularidade de débito com a Fazenda Municipal",
+        "pagina": 12,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_fgts",
+        "trecho": "Fundo de Garantia por Tempo de Serviço (CRF-FGTS)",
+        "pagina": 12,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_trabalhista",
+        "trecho": "Certidão Negativa de Débitos Trabalhistas - CNDT",
+        "pagina": 12,
+        "conflito": false
+      },
+      {
+        "valor": "registro_conselho",
+        "trecho": "Certidão de Acervo Técnico - CAT regularmente emitida pelo CREA",
+        "pagina": 13,
+        "conflito": false
+      },
+      {
+        "valor": "declaracao_menor",
+        "trecho": "não emprega menor de 18 anos em trabalho noturno, perigoso ou insalubre",
+        "pagina": 14,
+        "conflito": false
+      }
+    ]
+  }
+}

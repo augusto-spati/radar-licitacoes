@@ -1,0 +1,127 @@
+{
+  "edital": "pncp~17058108000138-1-000119/2026",
+  "documentos": [
+    {
+      "sequencial": 1,
+      "url": "https://pncp.gov.br/pncp-api/v1/orgaos/17058108000138/compras/2026/119/arquivos/1",
+      "sha256": "14dd9b6de937e1b73cedaa72f0d6d544747c99c2490ec711454e716c2a8029c7"
+    }
+  ],
+  "conjunto": "teste",
+  "conferido": false,
+  "conferido_por": null,
+  "conferido_em": null,
+  "observacoes": "RASCUNHO DO CLAUDE, A CONFERIR PELO AUGUSTO: feito lendo o texto extraído (busca por palavras-chave nas seções de habilitação), sem rodar nenhum modelo avaliado. Exigência que a busca não achou pode estar faltando. DAE João Monlevade/MG, obra de rede adutora (R$ 3.878.443,62). Capital OU patrimônio líquido de 10% do valor estimado só como alternativa para quem tiver índice < 1 (p22): os dois campos com 10% = R$ 387.844,36; decidir se isso conta como exigência. Atestados: as parcelas e quantitativos estão no Quadro do Anexo III, que a busca não achou: atestado sem quantidade, conferir. Garantia contratual 'quando exigida': ficou nula.",
+  "exigencias": {
+    "capital_social_minimo": {
+      "numero": "387844.36",
+      "trecho": "capital social mínimo ou patrimônio líquido mínimo equivalente a 10% (dez por cento) do valor estimado da contratação",
+      "pagina": 22,
+      "conflito": false,
+      "observacao": "10% do valor estimado; alternativa a índice < 1"
+    },
+    "patrimonio_liquido_minimo": {
+      "numero": "387844.36",
+      "trecho": "capital social mínimo ou patrimônio líquido mínimo equivalente a 10% (dez por cento) do valor estimado da contratação",
+      "pagina": 22,
+      "conflito": false,
+      "observacao": "10% do valor estimado; alternativa a índice < 1"
+    },
+    "prazo_execucao_dias": {
+      "numero": "300",
+      "trecho": "PRAZO DE EXECUÇÃO: 10 (dez) meses.",
+      "pagina": 1,
+      "conflito": false,
+      "observacao": ""
+    },
+    "visita_tecnica": {
+      "valor": "facultativa",
+      "trecho": "A vistoria técnica presencial, caso disponibilizada, terá caráter facultativo",
+      "pagina": 25,
+      "conflito": false
+    },
+    "consorcio": {
+      "valor": "vedado",
+      "trecho": "Não será admitida a participação nesta licitação de pessoas jurídicas reunidas em consórcio",
+      "pagina": 7,
+      "conflito": false
+    },
+    "me_epp": {
+      "valor": "ampla",
+      "trecho": "Este procedimento licitatório não será exclusivo para Microempresas e Empresas de Pequeno Porte",
+      "pagina": 4,
+      "conflito": false
+    },
+    "atestados": [
+      {
+        "descricao": "Parcelas de maior relevância do Quadro do Anexo III (implantação de adutora)",
+        "quantidade": null,
+        "unidade": null,
+        "trecho": "serão exigidos atestados de capacidade técnica relativos às parcelas do objeto expressamente identificadas no Quadro de Parcelas de Maior Relevância",
+        "pagina": 24
+      }
+    ],
+    "documentos": [
+      {
+        "valor": "declaracao_menor",
+        "trecho": "Que não emprega menor de 18 (dezoito) anos em trabalho noturno",
+        "pagina": 7,
+        "conflito": false
+      },
+      {
+        "valor": "contrato_social",
+        "trecho": "ato constitutivo, estatuto ou contrato social atualizado e devidamente registrado",
+        "pagina": 20,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_federal",
+        "trecho": "Prova de regularidade perante a Fazenda Nacional",
+        "pagina": 21,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_estadual",
+        "trecho": "Prova de regularidade perante a Fazenda Estadual",
+        "pagina": 21,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_municipal",
+        "trecho": "Prova de regularidade perante a Fazenda Municipal",
+        "pagina": 21,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_fgts",
+        "trecho": "Prova de regularidade perante o Fundo de Garantia do Tempo de Serviço – FGTS",
+        "pagina": 21,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_trabalhista",
+        "trecho": "Prova de inexistência de débitos inadimplidos perante a Justiça do Trabalho",
+        "pagina": 21,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_falencia",
+        "trecho": "Certidão negativa de feitos sobre falência",
+        "pagina": 21,
+        "conflito": false
+      },
+      {
+        "valor": "balanco_patrimonial",
+        "trecho": "Balanço patrimonial, demonstração do resultado do exercício – DRE",
+        "pagina": 21,
+        "conflito": false
+      },
+      {
+        "valor": "registro_conselho",
+        "trecho": "Apresentação de certidão de registro ou inscrição da pes",
+        "pagina": 23,
+        "conflito": false
+      }
+    ]
+  }
+}
