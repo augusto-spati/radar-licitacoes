@@ -22,6 +22,13 @@ _TERMO_REFERENCIA = re.compile(r"termo[\W_]*(de[\W_]*)?ref|(^|[\W_])tr([\W_]|$)"
 _TR_FORA = re.compile(r"seguranca|projeto|proj[\W_]*executivo")
 _HABILITACAO = re.compile(r"habilita|qualificacao[\W_]*(economic|tecnic)")
 _HABILITACAO_FORA = re.compile(r"declara|modelo|carta")
+# Edital publicado com o nome da modalidade e o número ("Pregão Eletrônico nº 034.2026 ...",
+# "Concorrência 03-2026"), sem dizer "edital"; planilha, planta e projeto ficam fora.
+_MODALIDADE = re.compile(
+    r"(pregao|concorrencia|tomada[\W_]*de[\W_]*precos?|dispensa|chamamento)[\W_]*"
+    r"(eletronic[oa][\W_]*|presencial[\W_]*|publica[\W_]*)?(n[o\W_]*)?\d"
+)
+_MODALIDADE_FORA = re.compile(r"planilha|plan[\W_]|folha|projeto|planta|memorial|orcament")
 _LIXO = re.compile(r"(^|/)(~\$|thumbs\.db$|__macosx/)")
 
 
@@ -46,8 +53,12 @@ def legivel(nome: str) -> str:
 
 
 def escolher_no_pacote(nomes: list[str], limite: int = MAX_DOCUMENTOS) -> list[Escolhido]:
-    """Editais, depois termos de referência, depois habilitação; PDF ou .docx; até `limite`."""
+    """Editais (pelo nome, depois pela modalidade e número), termos de referência, habilitação.
+
+    PDF ou .docx; até `limite`.
+    """
     editais: list[Escolhido] = []
+    pela_modalidade: list[Escolhido] = []
     termos: list[Escolhido] = []
     habilitacao: list[Escolhido] = []
     for nome in sorted(nomes):
@@ -58,11 +69,13 @@ def escolher_no_pacote(nomes: list[str], limite: int = MAX_DOCUMENTOS) -> list[E
             continue
         if _EDITAL.search(base) and not base.startswith("anexo"):
             editais.append(Escolhido(nome, "Edital"))
+        elif _MODALIDADE.search(base) and not _MODALIDADE_FORA.search(base):
+            pela_modalidade.append(Escolhido(nome, "Edital"))
         elif _TERMO_REFERENCIA.search(base) and not _TR_FORA.search(base):
             termos.append(Escolhido(nome, "Termo de referência"))
         elif _HABILITACAO.search(base) and not _HABILITACAO_FORA.search(base):
             habilitacao.append(Escolhido(nome, "Habilitação"))
-    return (editais + termos + habilitacao)[:limite]
+    return (editais + pela_modalidade + termos + habilitacao)[:limite]
 
 
 def ler_pacote(dados: bytes) -> zipfile.ZipFile | None:

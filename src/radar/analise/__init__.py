@@ -70,6 +70,7 @@ from radar.analise.pipeline import (
     AnaliseLida,
     Dependencias,
     SemDocumentos,
+    abrir_documento,
     analisar_edital,
     ja_analisado,
     obter_analise,
@@ -88,6 +89,7 @@ from radar.analise.provedor import (
 
 __all__ = [
     "FONTES_ANALISADAS",
+    "abrir_documento",
     "FONTES_PADRAO",
     "DocumentosCompesa",
     "SemDocumentos",

@@ -1307,10 +1307,9 @@ def avaliar_preparar(
     """
     from radar.analise import (
         TextoEval,
+        abrir_documento,
         chave_pncp,
-        eh_pdf,
         escolher_documentos,
-        extrair_paginas,
         mascarar_dados_pessoais,
         slug,
         status_do_texto,
@@ -1328,17 +1327,19 @@ def avaliar_preparar(
         documentos: list[dict[str, object]] = []
         paginas: list[str] = []
         for arquivo in escolher_documentos(cliente.listar(*chave)):
-            dados = cliente.baixar(arquivo.url)
+            baixado = cliente.baixar(arquivo.url)
+            # Mesma leitura do pipeline: ZIP aberto (edital de dentro) e Word, além de PDF.
+            dados, titulo, extrator = abrir_documento(baixado, arquivo.titulo)
             item: dict[str, object] = {
                 "sequencial": arquivo.sequencial,
-                "titulo": arquivo.titulo,
+                "titulo": titulo,
                 "url": arquivo.url,
-                "sha256": hashlib.sha256(dados).hexdigest(),
+                "sha256": hashlib.sha256(baixado).hexdigest(),
             }
-            if not eh_pdf(dados):
+            if extrator is None:
                 item["status"] = "nao_pdf"
             else:
-                texto = extrair_paginas(dados)
+                texto = extrator(dados)
                 item.update(status=status_do_texto(texto), paginas=len(texto.paginas))
                 item["pagina_inicial"] = len(paginas) + 1
                 if item["status"] == "extraido":
