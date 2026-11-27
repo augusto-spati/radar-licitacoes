@@ -23,6 +23,7 @@ from radar.coleta import (
     criar_http,
     criar_http_educado,
     executar_retrato,
+    frescor_por_fonte,
     janelas_com_lease_vivo,
     janelas_paradas,
     paginas_publicadas_sem_processar,
@@ -41,11 +42,13 @@ from radar.comum import (
     criar_engine,
     fabrica_sessao,
     limpar_outbox,
+    metricas,
     obter_config,
     pendencias_outbox,
     publicar_outbox,
     regiao_da_url,
 )
+from radar.comum.telemetria import telemetria_do_processo
 from radar.editais import Criterios, EditalResumo, carregar_criterios
 from radar.editais import filtrar as filtrar_editais
 from radar.processador import (
@@ -246,6 +249,23 @@ def _coletar(sessao: Session, cliente: ClientePNCP) -> int:
     return resumo.falhas
 
 
+def _medir_frescor(sessao: Session, fontes: list[str]) -> None:
+    """`FrescorHoras` de cada fonte (a fonte é propriedade, não dimensão) e o log por fonte.
+
+    Medir nunca derruba a execução: erro vira log e a sessão volta limpa.
+    """
+    try:
+        horas = frescor_por_fonte(sessao, _agora(), fontes)
+        sessao.rollback()  # só leitura: não deixa transação aberta durante a coleta
+    except Exception:
+        sessao.rollback()
+        logger.exception("frescor_erro")
+        return
+    for fonte, valor in horas.items():
+        logger.info("frescor_medido", extra={"fonte": fonte, "horas": valor})
+        metricas.registrar("FrescorHoras", valor, propriedades={"fonte": fonte})
+
+
 def _encerrar(coleta: int = 0, relay: int = 0, fila: int = 0) -> None:
     """Imprime a única linha `resultado:` da execução, por último, e sai com 1 se houve falha.
 
@@ -283,7 +303,7 @@ def carga_inicial(
     _recusar_pncp_com_lease_vivo()
     hoje = _agora().date()
     fila = _criar_fila(fontes_retrato())
-    with _criar_sessao() as sessao:
+    with telemetria_do_processo("radar-coletor"), _criar_sessao() as sessao:
 
         def coletar() -> int:
             novas = planejar_janelas(
@@ -322,18 +342,30 @@ def atualizar(
         _recusar_pncp_com_lease_vivo()
     hoje = _agora().date()
     fila = _criar_fila(retratos)
-    with _criar_sessao() as sessao:
+    # Frescor do PNCP sempre (quem coleta é a Lambda; medir daqui não depende dela) e das
+    # fontes de retrato escolhidas: uma fonte fora da nuvem (a Compesa) mediria 9999 h todo
+    # dia e o alarme de frescor dispararia sem nada errado.
+    medidas = ["pncp", *(nome for nome in escolhidas if nome != "pncp")]
+    with telemetria_do_processo("radar-coletor"):
+        ok = False
+        try:
+            with _criar_sessao() as sessao:
 
-        def coletar() -> int:
-            falhas = 0
-            if "pncp" in escolhidas:
-                falhas += _rodar_pncp(sessao, criterios, hoje, lookback)
-            for nome in escolhidas:
-                if nome != "pncp":
-                    falhas += _rodar_retrato(sessao, retratos[nome])
-            return falhas
+                def coletar() -> int:
+                    falhas = 0
+                    if "pncp" in escolhidas:
+                        falhas += _rodar_pncp(sessao, criterios, hoje, lookback)
+                    for nome in escolhidas:
+                        if nome != "pncp":
+                            falhas += _rodar_retrato(sessao, retratos[nome])
+                    return falhas
 
-        falhas = _com_fila(sessao, fila, coletar)
+                _medir_frescor(sessao, medidas)
+                falhas = _com_fila(sessao, fila, coletar)
+                _medir_frescor(sessao, medidas)
+            ok = not sum(falhas)
+        finally:
+            metricas.registrar("ExecucaoOk", 1 if ok else 0)
     _encerrar(*falhas)
 
 
@@ -346,7 +378,7 @@ def processar() -> None:
     configurar_logs()
     _recusar_pncp_com_lease_vivo()
     fila = _criar_fila(fontes_retrato())
-    with _criar_sessao() as sessao:
+    with telemetria_do_processo("radar-coletor"), _criar_sessao() as sessao:
         falhas = _com_fila(sessao, fila, lambda: _coletar(sessao, _criar_cliente()))
     _encerrar(*falhas)
 
@@ -447,7 +479,8 @@ def auditar(
     fim = hoje if endpoint == "atualizacao" else hoje - timedelta(days=1)
     inicio = hoje - timedelta(days=dias)
     agora = _agora()
-    with _criar_sessao() as sessao:
+    with telemetria_do_processo("radar-coletor"), _criar_sessao() as sessao:
+        _medir_frescor(sessao, ["pncp", *fontes_retrato()])
         auditoria = auditar_cobertura(sessao, endpoint, inicio, fim, criterios.modalidades)
         retratos = [(f.nome, ultimo_retrato(sessao, f.nome)) for f in fontes_retrato().values()]
         pendentes, mais_velha = pendencias_outbox(sessao)

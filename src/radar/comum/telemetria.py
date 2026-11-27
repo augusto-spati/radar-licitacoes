@@ -209,8 +209,11 @@ def com_telemetria(servico: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
 def telemetria_do_processo(servico: str) -> Iterator[None]:
     """Ciclo de vida da CLI: configura e, na saída, descarrega métricas e encerra (≤ 5 s).
 
-    Encerra só o provedor que ligou (um provedor de teste continua ligado). Nunca levanta.
+    Desliga só o que ligou (um provedor ou emissor de teste continua ligado). Nunca levanta.
     """
+    from radar.comum import metricas
+
+    tinha_emissor = metricas.emissor_atual() is not None
     ligou = _configurar_tudo(servico)
     try:
         yield
@@ -219,6 +222,8 @@ def telemetria_do_processo(servico: str) -> Iterator[None]:
             _descarregar_metricas()
         except Exception:
             logger.warning("telemetria_erro", extra={"etapa": "metricas"}, exc_info=True)
+        if not tinha_emissor:
+            metricas.usar_emissor(None)
         if ligou:
             encerrar(5.0)
         else:
