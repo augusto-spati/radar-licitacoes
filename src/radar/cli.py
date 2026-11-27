@@ -6,6 +6,7 @@ from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import typer
@@ -22,6 +23,7 @@ from radar.coleta import (
     criar_http,
     criar_http_educado,
     executar_retrato,
+    janelas_paradas,
     paginas_publicadas_sem_processar,
     planejar_janelas,
     retratos_sem_processar,
@@ -33,6 +35,7 @@ from radar.coleta import (
 from radar.comum import (
     Fila,
     FilaSQS,
+    Mensagem,
     configurar_logs,
     criar_engine,
     fabrica_sessao,
@@ -44,7 +47,13 @@ from radar.comum import (
 )
 from radar.editais import Criterios, EditalResumo, carregar_criterios
 from radar.editais import filtrar as filtrar_editais
-from radar.processador import FilaLocal, criar_fila, fontes_retrato
+from radar.processador import (
+    FilaLocal,
+    criar_fila,
+    fontes_retrato,
+    planejar_e_enfileirar,
+    processar_janela,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +63,8 @@ FUSO = ZoneInfo("America/Sao_Paulo")
 IDADE_MAXIMA_RETRATO = timedelta(hours=36)
 # Mensagem publicada e página ainda parada depois disto: o consumidor não está dando conta.
 ATRASO_MAXIMO_FILA = timedelta(hours=1)
+# Janela em_andamento começada antes disto: a cadeia de fatias parou (a coleta leva ~2 h).
+IDADE_MAXIMA_JANELA = timedelta(hours=6)
 # Padrão de RADAR_CONFIG_FILTRO (config/filtro.toml da raiz, sem depender do cwd).
 ARQUIVO_CONFIG = obter_config().config_filtro
 
@@ -90,8 +101,16 @@ def _criar_cliente_sqs(url: str) -> Any:
     return boto3.client("sqs", region_name=regiao_da_url(url))
 
 
-def _criar_fila(fontes: dict[str, FonteRetrato]) -> Fila:
-    """A fila de `RADAR_FILA`: local (consome aqui mesmo) ou SQS."""
+def _coletora_local(sessao: Session, mensagem: Mensagem) -> str:
+    """`coletar_janela` na fila local: a fatia vai até o fim da janela (sem orçamento)."""
+    return processar_janela(sessao, mensagem, _criar_cliente(), uuid4().hex, None)
+
+
+def _criar_fila(fontes: dict[str, FonteRetrato], coletar_janelas: bool = False) -> Fila:
+    """A fila de `RADAR_FILA`: local (consome aqui mesmo) ou SQS (roteada por tipo).
+
+    `coletar_janelas`: a fila local também coleta as `coletar_janela` (o `planejar` local).
+    """
     config = obter_config()
     if config.fila == "sqs" and not (config.fila_url and config.fila_janelas_url):
         typer.echo("RADAR_FILA=sqs exige RADAR_FILA_URL e RADAR_FILA_JANELAS_URL", err=True)
@@ -99,7 +118,8 @@ def _criar_fila(fontes: dict[str, FonteRetrato]) -> Fila:
     cliente = None
     if config.fila == "sqs" and config.fila_url:
         cliente = _criar_cliente_sqs(config.fila_url)
-    return criar_fila(config, _criar_sessao, fontes, _agora, cliente)
+    coletora = _coletora_local if coletar_janelas else None
+    return criar_fila(config, _criar_sessao, fontes, _agora, cliente, coletora)
 
 
 def _escolher_fontes(opcao: str | None, disponiveis: list[str]) -> list[str]:
@@ -201,6 +221,8 @@ def _coletar(sessao: Session, cliente: ClientePNCP) -> int:
 
 
 def _encerrar(falhas: int) -> None:
+    """Última linha da execução; o alarme `radar-coletor-nao-rodou` conta `resultado:`."""
+    typer.echo(f"resultado: {falhas} falhas" if falhas else "resultado: sem falhas")
     if falhas:
         raise typer.Exit(code=1)
 
@@ -290,14 +312,40 @@ def publicar() -> None:
     _encerrar(falhas + _falhas_da_fila(fila))
 
 
+@app.command()
+def planejar(
+    recuo: Annotated[int, typer.Option(min=0, help="Dias de recuo até hoje.")] = 10,
+    config: OpcaoConfig = ARQUIVO_CONFIG,
+) -> None:
+    """Planeja as janelas de atualização do PNCP e enfileira a coleta (como o planejador).
+
+    Com a fila local, a cadeia inteira de fatias roda aqui mesmo, janela por janela.
+    """
+    configurar_logs()
+    criterios = carregar_criterios(config)
+    fila = _criar_fila(fontes_retrato(), coletar_janelas=True)
+    with _criar_sessao() as sessao:
+        novas, enfileiradas = planejar_e_enfileirar(sessao, criterios, _agora().date(), recuo)
+        typer.echo(f"janelas novas: {novas}, enfileiradas: {enfileiradas}")
+        falhas = _publicar(sessao, fila)
+    _encerrar(falhas + _falhas_da_fila(fila))
+
+
 def _atributos_da_fila(cliente: Any, url: str, *nomes: str) -> dict[str, str]:
     resposta = cliente.get_queue_attributes(QueueUrl=url, AttributeNames=["QueueArn", *nomes])
     return dict(resposta["Attributes"])
 
 
 @app.command("reprocessar-falhas")
-def reprocessar_falhas() -> None:
+def reprocessar_falhas(
+    fila: Annotated[
+        str, typer.Option("--fila", help="editais (radar-editais) ou janelas (radar-janelas).")
+    ] = "editais",
+) -> None:
     """Devolve as mensagens da fila de falhas (DLQ) para a fila principal. Só com SQS."""
+    if fila not in ("editais", "janelas"):
+        typer.echo(f"fila inválida: {fila!r}; use editais ou janelas", err=True)
+        raise typer.Exit(code=2)
     configurar_logs()
     config = obter_config()
     if config.fila != "sqs":
@@ -306,17 +354,24 @@ def reprocessar_falhas() -> None:
             err=True,
         )
         raise typer.Exit(code=2)
-    if not config.fila_url or not config.fila_falhas_url:
-        typer.echo("defina RADAR_FILA_URL e RADAR_FILA_FALHAS_URL", err=True)
+    if fila == "janelas":
+        principal, dlq_url = config.fila_janelas_url, config.fila_janelas_falhas_url
+        variaveis = "RADAR_FILA_JANELAS_URL e RADAR_FILA_JANELAS_FALHAS_URL"
+    else:
+        principal, dlq_url = config.fila_url, config.fila_falhas_url
+        variaveis = "RADAR_FILA_URL e RADAR_FILA_FALHAS_URL"
+    if not principal or not dlq_url:
+        typer.echo(f"defina {variaveis}", err=True)
         raise typer.Exit(code=2)
-    cliente = _criar_cliente_sqs(config.fila_url)
-    dlq = _atributos_da_fila(cliente, config.fila_falhas_url, "ApproximateNumberOfMessages")
+    cliente = _criar_cliente_sqs(principal)
+    dlq = _atributos_da_fila(cliente, dlq_url, "ApproximateNumberOfMessages")
     quantas = int(dlq.get("ApproximateNumberOfMessages", "0"))
     if quantas == 0:
         typer.echo("nenhuma mensagem na fila de falhas")
         return
-    destino = _atributos_da_fila(cliente, config.fila_url)["QueueArn"]
-    handle = FilaSQS(config.fila_url, cliente).mover_falhas(dlq["QueueArn"], destino)
+    destino = _atributos_da_fila(cliente, principal)["QueueArn"]
+    # Uma coletar_janela devolvida traz o lote dela: se a janela já andou, sai obsoleta.
+    handle = FilaSQS(principal, cliente).mover_falhas(dlq["QueueArn"], destino)
     typer.echo(f"{quantas} mensagens sendo movidas para a fila principal (tarefa {handle})")
 
 
@@ -347,6 +402,7 @@ def auditar(
         pendentes, mais_velha = pendencias_outbox(sessao)
         paradas = paginas_publicadas_sem_processar(sessao, agora - ATRASO_MAXIMO_FILA)
         sem_processar = retratos_sem_processar(sessao)
+        paradas_janela = janelas_paradas(sessao, agora - IDADE_MAXIMA_JANELA)
     typer.echo(f"esperadas: {auditoria.esperadas}")
     typer.echo(f"concluidas: {auditoria.concluidas}")
     typer.echo(f"faltando: {len(auditoria.faltando)}")
@@ -354,8 +410,12 @@ def auditar(
         typer.echo(f"  {dia:%Y-%m-%d} modalidade {modalidade}")
     typer.echo(f"falhas: {len(auditoria.falhas)}")
     for dia, modalidade, erro, proxima, total in auditoria.falhas:
+        typer.echo(f"  {dia:%Y-%m-%d} modalidade {modalidade} ({_onde(proxima, total)}): {erro}")
+    typer.echo(f"janelas em andamento há mais de 6 h: {len(paradas_janela)}")
+    for parada in paradas_janela:
         typer.echo(
-            f"  {dia:%Y-%m-%d} modalidade {modalidade} (página {proxima}/{total or '?'}): {erro}"
+            f"  {parada.dia:%Y-%m-%d} modalidade {parada.modalidade}"
+            f" ({_onde(parada.proxima_pagina, parada.total_paginas)})"
         )
     retratos_ruins = 0
     for nome, info in retratos:
@@ -381,9 +441,14 @@ def auditar(
     typer.echo(f"páginas publicadas sem processar há mais de 1 h: {paradas}")
     if retratos or sem_processar:  # sem fontes de retrato, a saída do PNCP não muda
         typer.echo(f"retratos concluídos sem processar: {sem_processar}")
-    fila_parada = pendentes or paradas or sem_processar
+    fila_parada = pendentes or paradas or sem_processar or paradas_janela
     if auditoria.faltando or auditoria.falhas or retratos_ruins or fila_parada:
         raise typer.Exit(code=1)
+
+
+def _onde(proxima: int, total: int | None) -> str:
+    """Onde a janela parou: a próxima página e o total (desconhecido antes da página 1)."""
+    return f"página {proxima}/{total if total is not None else '?'}"
 
 
 def _linha(edital: EditalResumo) -> str:

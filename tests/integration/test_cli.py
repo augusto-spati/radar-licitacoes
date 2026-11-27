@@ -49,7 +49,13 @@ def fabrica(engine: Engine, monkeypatch: pytest.MonkeyPatch) -> Iterator[session
     fabrica = fabrica_sessao(engine)
     monkeypatch.setattr(cli, "_criar_sessao", lambda: fabrica())
     monkeypatch.setattr(cli, "_agora", lambda: AGORA)
-    for variavel in ("RADAR_FILA", "RADAR_FILA_URL", "RADAR_FILA_FALHAS_URL"):
+    for variavel in (
+        "RADAR_FILA",
+        "RADAR_FILA_URL",
+        "RADAR_FILA_FALHAS_URL",
+        "RADAR_FILA_JANELAS_URL",
+        "RADAR_FILA_JANELAS_FALHAS_URL",
+    ):
         monkeypatch.delenv(variavel, raising=False)
     yield fabrica
     _truncar(engine)
@@ -160,10 +166,15 @@ def test_processar_isola_pagina_com_erro_e_sai_com_1(
     with fabrica() as sessao:
         sessao.add(
             ColetaJanela(
-                endpoint="publicacao", data_ini=HOJE, data_fim=HOJE, modalidade=6,
-                status="concluida", paginas=3, registros=3,
+                endpoint="publicacao",
+                data_ini=HOJE,
+                data_fim=HOJE,
+                modalidade=6,
+                status="concluida",
+                paginas=3,
+                registros=3,
             )
-        )  # fmt: skip
+        )
         sessao.flush()
         janela_id = sessao.scalars(select(ColetaJanela.id)).one()
         for numero in (1, 2, 3):
@@ -302,9 +313,14 @@ def _pagina_pendente(fabrica: sessionmaker[Session], numero: str, criada_em: dat
     modalidade = 100 + _contar(fabrica, ColetaJanela)  # uma janela nova a cada chamada
     with fabrica() as sessao:
         janela = ColetaJanela(
-            endpoint="atualizacao", data_ini=HOJE, data_fim=HOJE, modalidade=modalidade,
-            status="concluida", paginas=1, registros=1,
-        )  # fmt: skip
+            endpoint="atualizacao",
+            data_ini=HOJE,
+            data_fim=HOJE,
+            modalidade=modalidade,
+            status="concluida",
+            paginas=1,
+            registros=1,
+        )
         sessao.add(janela)
         sessao.flush()
         pagina = PaginaBruta(
@@ -349,9 +365,13 @@ def test_atualizar_publica_pendencias_antigas_no_comeco(
 def _retrato_sem_paginas(fabrica: sessionmaker[Session]) -> int:
     with fabrica() as sessao:
         retrato = ColetaRetrato(
-            fonte="sanepar", status="concluido", iniciado_em=AGORA, concluido_em=AGORA,
-            paginas=1, registros=5,
-        )  # fmt: skip
+            fonte="sanepar",
+            status="concluido",
+            iniciado_em=AGORA,
+            concluido_em=AGORA,
+            paginas=1,
+            registros=5,
+        )
         sessao.add(retrato)
         sessao.flush()
         enfileirar(sessao, "retrato_coletado", {"retrato_id": retrato.id})
@@ -383,10 +403,15 @@ def _cobrir_pncp(fabrica: sessionmaker[Session]) -> None:
                 dia = HOJE - timedelta(days=dias_atras)
                 sessao.add(
                     ColetaJanela(
-                        endpoint="publicacao", data_ini=dia, data_fim=dia,
-                        modalidade=modalidade, status="concluida", paginas=0, registros=0,
+                        endpoint="publicacao",
+                        data_ini=dia,
+                        data_fim=dia,
+                        modalidade=modalidade,
+                        status="concluida",
+                        paginas=0,
+                        registros=0,
                     )
-                )  # fmt: skip
+                )
         sessao.commit()
 
 
@@ -583,3 +608,205 @@ def test_fila_sqs_sem_url_de_janelas_sai_com_2(
 
     assert resultado.exit_code == 2
     assert "RADAR_FILA_JANELAS_URL" in resultado.output
+
+
+# --- etapa 4b: resultado de volta, planejar, janelas paradas, reprocessar --fila ---------
+
+
+def _ultima_linha(saida: str) -> str:
+    return saida.strip().splitlines()[-1]
+
+
+def test_atualizar_imprime_resultado(
+    fabrica: sessionmaker[Session], config_filtro: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli, "fontes_retrato", lambda: {})
+    falso = ClienteFalso(_roteiro_atualizacao())
+    monkeypatch.setattr(cli, "_criar_cliente", lambda: como_cliente(falso))
+
+    ok = runner.invoke(cli.app, ["atualizar", "--lookback", "1", "--config", str(config_filtro)])
+
+    assert ok.exit_code == 0, ok.output
+    assert _ultima_linha(ok.output) == "resultado: sem falhas"
+
+    _pagina_pendente(fabrica, "1/2026", AGORA)
+    monkeypatch.setattr(cli, "_publicar", lambda sessao, fila: 1)
+    ruim = runner.invoke(cli.app, ["atualizar", "--lookback", "1", "--config", str(config_filtro)])
+
+    assert ruim.exit_code == 1, ruim.output
+    assert _ultima_linha(ruim.output) == "resultado: 2 falhas"  # relay do começo e do fim
+
+
+@pytest.mark.parametrize("comando", [["processar"], ["carga-inicial", "--dias", "1"]])
+def test_processar_e_carga_inicial_imprimem_resultado(
+    fabrica: sessionmaker[Session],
+    config_filtro: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    comando: list[str],
+) -> None:
+    monkeypatch.setattr(cli, "fontes_retrato", lambda: {})
+    ontem = HOJE - timedelta(days=1)
+    roteiro: dict[tuple[str, date, date, int, int], Pagina | Exception] = {
+        ("publicacao", ontem, ontem, m, 1): Pagina([], 0, 1, {}) for m in (5, 6)
+    }
+    monkeypatch.setattr(cli, "_criar_cliente", lambda: como_cliente(ClienteFalso(roteiro)))
+    extra = ["--config", str(config_filtro)] if comando[0] == "carga-inicial" else []
+
+    resultado = runner.invoke(cli.app, [*comando, *extra])
+
+    assert resultado.exit_code == 0, resultado.output
+    assert _ultima_linha(resultado.output) == "resultado: sem falhas"
+
+
+def test_atualizar_so_retratos_nao_pede_o_pncp(
+    fabrica: sessionmaker[Session], config_filtro: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    falso = ClienteFalso({})
+    monkeypatch.setattr(cli, "_criar_cliente", lambda: como_cliente(falso))
+    rodados: list[str] = []
+    monkeypatch.setattr(
+        cli, "_rodar_retrato", lambda sessao, fonte: rodados.append(fonte.nome) or 0
+    )
+
+    resultado = runner.invoke(
+        cli.app, ["atualizar", "--fontes", "sanepar,compesa", "--config", str(config_filtro)]
+    )
+
+    assert resultado.exit_code == 0, resultado.output
+    assert falso.chamadas == []
+    assert rodados == ["sanepar", "compesa"]
+    assert _contar(fabrica, ColetaJanela) == 0
+    assert _ultima_linha(resultado.output) == "resultado: sem falhas"
+
+
+def test_planejar_local_coleta_tudo(
+    fabrica: sessionmaker[Session], config_filtro: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli, "fontes_retrato", lambda: {})
+    falso = ClienteFalso(_roteiro_atualizacao())
+    monkeypatch.setattr(cli, "_criar_cliente", lambda: como_cliente(falso))
+
+    resultado = runner.invoke(cli.app, ["planejar", "--recuo", "1", "--config", str(config_filtro)])
+
+    assert resultado.exit_code == 0, resultado.output
+    assert "janelas novas: 4, enfileiradas: 4" in resultado.output
+    assert _ultima_linha(resultado.output) == "resultado: sem falhas"
+    assert len(falso.chamadas) == 8
+    with fabrica() as sessao:
+        assert set(sessao.scalars(select(ColetaJanela.status))) == {"concluida"}
+        pendentes = sessao.scalar(
+            select(func.count()).select_from(Outbox).where(Outbox.publicada_em.is_(None))
+        )
+    assert pendentes == 0
+    assert _contar(fabrica, Edital) == 7  # o mesmo que o atualizar local
+
+
+def test_auditar_aponta_janela_parada(
+    fabrica: sessionmaker[Session], config_filtro: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli, "fontes_retrato", lambda: {})
+    _cobrir_pncp(fabrica)
+    with fabrica() as sessao:
+        sessao.add(
+            ColetaJanela(
+                endpoint="atualizacao",
+                data_ini=HOJE,
+                data_fim=HOJE,
+                modalidade=6,
+                status="em_andamento",
+                paginas=0,
+                registros=0,
+                proxima_pagina=7,
+                total_paginas=80,
+                iniciada_em=AGORA - timedelta(hours=7),
+            )
+        )
+        sessao.add(
+            ColetaJanela(
+                endpoint="atualizacao",
+                data_ini=HOJE,
+                data_fim=HOJE,
+                modalidade=5,
+                status="em_andamento",
+                paginas=0,
+                registros=0,
+                iniciada_em=AGORA - timedelta(hours=1),
+            )
+        )
+        sessao.commit()
+
+    resultado = _auditar(config_filtro)
+
+    assert resultado.exit_code == 1
+    assert "janelas em andamento há mais de 6 h: 1\n" in resultado.output
+    assert f"  {HOJE:%Y-%m-%d} modalidade 6 (página 7/80)" in resultado.output
+
+
+def test_auditar_falha_mostra_onde_parou(
+    fabrica: sessionmaker[Session], config_filtro: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli, "fontes_retrato", lambda: {})
+    _cobrir_pncp(fabrica)
+    ontem = HOJE - timedelta(days=1)
+    with fabrica() as sessao:
+        janela = sessao.scalars(
+            select(ColetaJanela).where(ColetaJanela.data_ini == ontem, ColetaJanela.modalidade == 6)
+        ).one()
+        janela.status, janela.erro = "falha", "HTTP 500"
+        janela.proxima_pagina, janela.total_paginas = 3, 5
+        sessao.commit()
+
+    resultado = _auditar(config_filtro)
+
+    assert resultado.exit_code == 1
+    assert f"  {ontem:%Y-%m-%d} modalidade 6 (página 3/5): HTTP 500" in resultado.output
+    assert "janelas em andamento há mais de 6 h: 0" in resultado.output
+
+
+def test_reprocessar_falhas_janelas_local_sai_com_2(fabrica: sessionmaker[Session]) -> None:
+    resultado = runner.invoke(cli.app, ["reprocessar-falhas", "--fila", "janelas"])
+
+    assert resultado.exit_code == 2
+    assert "RADAR_FILA=sqs" in resultado.output
+
+
+def test_reprocessar_falhas_fila_invalida_sai_com_2(fabrica: sessionmaker[Session]) -> None:
+    resultado = runner.invoke(cli.app, ["reprocessar-falhas", "--fila", "xpto"])
+
+    assert resultado.exit_code == 2
+    assert "fila inválida" in resultado.output
+
+
+def test_reprocessar_falhas_janelas_move_da_dlq_de_janelas(
+    fabrica: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RADAR_FILA", "sqs")
+    monkeypatch.setenv("RADAR_FILA_URL", _URL_FILA)
+    monkeypatch.setenv("RADAR_FILA_FALHAS_URL", _URL_FALHAS)
+    monkeypatch.setenv("RADAR_FILA_JANELAS_URL", _URL_JANELAS)
+    monkeypatch.setenv("RADAR_FILA_JANELAS_FALHAS_URL", _URL_JANELAS + "-falhas")
+    sqs = SQSFalso(na_dlq=2)
+    monkeypatch.setattr(cli, "_criar_cliente_sqs", lambda _url: sqs)
+
+    resultado = runner.invoke(cli.app, ["reprocessar-falhas", "--fila", "janelas"])
+
+    assert resultado.exit_code == 0, resultado.output
+    assert sqs.movimentos == [
+        {
+            "SourceArn": "arn:aws:sqs:us-east-2:123456789012:radar-janelas-falhas",
+            "DestinationArn": "arn:aws:sqs:us-east-2:123456789012:radar-janelas",
+        }
+    ]
+
+
+def test_reprocessar_falhas_janelas_sem_urls_sai_com_2(
+    fabrica: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RADAR_FILA", "sqs")
+    monkeypatch.setenv("RADAR_FILA_URL", _URL_FILA)
+    monkeypatch.setenv("RADAR_FILA_FALHAS_URL", _URL_FALHAS)
+
+    resultado = runner.invoke(cli.app, ["reprocessar-falhas", "--fila", "janelas"])
+
+    assert resultado.exit_code == 2
+    assert "RADAR_FILA_JANELAS_URL e RADAR_FILA_JANELAS_FALHAS_URL" in resultado.output
