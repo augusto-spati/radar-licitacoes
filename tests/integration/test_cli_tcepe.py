@@ -326,3 +326,36 @@ def test_processo_ja_casado_com_o_mesmo_homologado_nao_busca_contrato_de_novo(
     ]
     assert runner.invoke(cli.app, ["tcepe", "atualizar", "--anos", "2026"]).exit_code == 0
     assert contador.buscas == ["462/016"]
+
+
+def test_nao_segura_transacao_aberta_durante_a_rede(
+    fabrica: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """O Neon derruba transação ociosa: a 1ª coleta real caiu com `received 2 results from
+    command 'ROLLBACK'` depois de minutos buscando contratos com a leitura ainda aberta."""
+    sessoes: list[Session] = []
+
+    def criar() -> Session:
+        sessao = fabrica()
+        sessoes.append(sessao)
+        return sessao
+
+    abertas: list[str] = []
+
+    class Vigia(ClienteTcepeFalso):
+        def _conferir(self, onde: str) -> None:
+            abertas.extend(onde for s in sessoes if s.in_transaction())
+
+        def orcamento(self, processo_id: int | str) -> list[dict[str, Any]]:
+            self._conferir(f"orcamento {processo_id}")
+            return super().orcamento(processo_id)
+
+        def instrumentos(self, uj_id: int | str, numero: str, ano: int) -> list[dict[str, Any]]:
+            self._conferir(f"instrumentos {numero}")
+            return super().instrumentos(uj_id, numero, ano)
+
+    monkeypatch.setattr(cli, "_criar_sessao", criar)
+    monkeypatch.setattr(cli, "_criar_cliente_tcepe", Vigia)
+    resultado = runner.invoke(cli.app, ["tcepe", "atualizar"])
+    assert resultado.exit_code == 0, resultado.output
+    assert abertas == []
