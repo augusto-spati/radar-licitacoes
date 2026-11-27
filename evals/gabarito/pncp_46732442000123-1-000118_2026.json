@@ -11,61 +11,77 @@
   "conferido": false,
   "conferido_por": null,
   "conferido_em": null,
-  "observacoes": "RASCUNHO DO CLAUDE, A CONFERIR PELO AUGUSTO: feito lendo o texto extraído (busca por palavras-chave nas seções de habilitação), sem rodar nenhum modelo avaliado. Exigência que a busca não achou pode estar faltando. Descalvado/SP, fornecimento e instalação de hidrômetros. Capital OU patrimônio líquido ≥ R$ 42.327,78 (exigência alternativa: os dois campos com o mesmo valor). Atestado exige 50% da execução pretendida, sem número absoluto no trecho: quantidade nula (conferir no termo de referência). ME/EPP: p1 diz ampla concorrência, mas p8 fala em cota reservada (texto de modelo?). Prazo: p1 diz execução em 10 meses; p14 diz vigência e execução de 12 meses: ficou 300 dias, conferir.",
+  "observacoes": "VALIDAÇÃO CRUZADA (rascunho + leitura cega + juiz adversarial, todos Claude; falta a conferência humana): Pregão eletrônico 098/2026 de Descalvado/SP, fornecimento e instalação de 1.500 hidrômetros DN 3/4\" (Fase III, FEHIDRO), R$ 423.277,82, item único. Habilitação no item 8 (p. 9-12); TR (p. 23) repete atestados com CAT sem número. Capital OU patrimônio líquido de R$ 42.327,78 (10% do estimado, 8.2.4 b.3, p. 11): alternativos, os dois campos preenchidos (critério comum 3). Garantia contratual 5% (10.13, p. 14; extrato p. 1). Sem garantia de proposta e sem visita técnica. Prazo (critério comum 1): execução em 10 meses = 300 dias (11.2, p. 14; extrato p. 1; TR p. 25; minuta p. 31); vigência 12 meses não entra. ME/EPP: ampla concorrência (extrato p. 1). Atestado operacional (critério comum 2): 'quantitativo mínimo de 50% da execução pretendida' (8.2.3 b, p. 10), sem número escrito: quantidade null, unidade 'un' (hidrômetros); número derivado 50% de 1.500 = 750 un (TR p. 20; minuta p. 31). Atestado profissional (critério comum 4): CAT de profissional de nível superior (8.2.3 c, p. 10), quantidade null; o rascunho não o tinha. 'outro' = CNPJ e inscrição estadual/municipal (8.2.2 a-b, p. 9). A declaração 8.2.5 'i' (p. 12) sobre capital compatível com nº de empregados (Lei 6.019) não é capital mínimo do edital; não entra. DÚVIDA (p. 22): o TR diz 'Cada empresa deverá apresentar proposta isoladamente, como única responsável', o que pode sugerir vedação a consórcio, mas o edital não trata de consórcio; ficou null. DÚVIDA (p. 8): o item 6.8 fala em 'cota reservada', texto de modelo que contradiz a ampla concorrência do extrato (item único); ficou 'ampla'.",
   "exigencias": {
+    "atestados": [
+      {
+        "descricao": "Atestado de capacidade técnico-operacional (registrado no CREA) de fornecimento e instalação de hidrômetros DN 3/4\" residenciais, quantitativo mínimo de 50% da execução pretendida (1.500 hidrômetros)",
+        "quantidade": null,
+        "unidade": "un",
+        "trecho": "comprovando o quantitativo mínimo de 50% da execução pretendida nesta contratação",
+        "pagina": 10
+      },
+      {
+        "descricao": "Atestado de capacidade técnico-profissional com CAT de profissional de nível superior em obra ou serviço semelhante (itens de maior relevância)",
+        "quantidade": null,
+        "unidade": null,
+        "trecho": "detentor(es) de atestado(s) fornecido(s) por pessoa jurídica",
+        "pagina": 10
+      }
+    ],
     "capital_social_minimo": {
       "numero": "42327.78",
       "trecho": "Comprovação de Capital Registrado e Integralizado ou Patrimônio Líquido mínimo de R$ 42.327,78",
       "pagina": 11,
       "conflito": false,
-      "observacao": "alternativo: capital OU patrimônio líquido"
+      "observacao": "alternativos: capital OU patrimônio líquido"
     },
     "patrimonio_liquido_minimo": {
       "numero": "42327.78",
       "trecho": "Comprovação de Capital Registrado e Integralizado ou Patrimônio Líquido mínimo de R$ 42.327,78",
       "pagina": 11,
       "conflito": false,
-      "observacao": "alternativo: capital OU patrimônio líquido"
+      "observacao": "alternativos: capital OU patrimônio líquido"
     },
+    "garantia_proposta_percentual": null,
     "garantia_contratual_percentual": {
       "numero": "5",
-      "trecho": "Garantia/Caução: 5% (cinco por cento) do valor da contratação",
-      "pagina": 1,
+      "trecho": "correspondente a 5% (cinco por cento) do valor da contratação",
+      "pagina": 14,
       "conflito": false,
       "observacao": ""
     },
     "prazo_execucao_dias": {
       "numero": "300",
-      "trecho": "Do prazo de execução: 10 (dez) meses",
-      "pagina": 1,
+      "trecho": "A Contratada deverá executar os serviços em 10 (dez) meses",
+      "pagina": 14,
       "conflito": false,
-      "observacao": ""
+      "observacao": "10 meses de execução; vigência 12 meses"
     },
+    "visita_tecnica": null,
+    "consorcio": null,
     "me_epp": {
       "valor": "ampla",
-      "trecho": "Condição de Participação: Ampla concorrência",
+      "trecho": "3. Condição de Participação: Ampla concorrência.",
       "pagina": 1,
       "conflito": false
     },
-    "atestados": [
-      {
-        "descricao": "Fornecimento do objeto (hidrômetros), 50% da execução pretendida",
-        "quantidade": null,
-        "unidade": null,
-        "trecho": "comprovando o quantitativo mínimo de 50% da execução pretendida nesta contratação",
-        "pagina": 10
-      }
-    ],
     "documentos": [
       {
         "valor": "contrato_social",
-        "trecho": "ato constitutivo, estatuto ou contrato social em vigor",
+        "trecho": "ato constitutivo, estatuto ou contrato social em vigor, devidamente registrado",
+        "pagina": 9,
+        "conflito": false
+      },
+      {
+        "valor": "outro",
+        "trecho": "prova de inscrição no Cadastro Nacional de Pessoa Jurídica (C.N.P.J.)",
         "pagina": 9,
         "conflito": false
       },
       {
         "valor": "certidao_federal",
-        "trecho": "Certidão Negativa de Débitos Relativos aos Tributos Federais e à Dívida Ativa da União",
+        "trecho": "Certidão Negativa de Débitos Relativos aos Tributos Federais e à Dívida Ativa",
         "pagina": 9,
         "conflito": false
       },
@@ -77,7 +93,7 @@
       },
       {
         "valor": "certidao_fgts",
-        "trecho": "de Garantia Por Tempo de Serviço",
+        "trecho": "Certificado de Regularidade de Situação (C.R.F.) com o F.G.T.S.",
         "pagina": 9,
         "conflito": false
       },
@@ -89,25 +105,25 @@
       },
       {
         "valor": "certidao_municipal",
-        "trecho": "Certidão Negativa de Débitos, da Fazenda Municipal",
+        "trecho": "Certidão Negativa de Débitos, da Fazenda Municipal, referente a Tributos",
         "pagina": 9,
         "conflito": false
       },
       {
         "valor": "registro_conselho",
-        "trecho": "certidão de Registro da empresa no CREA",
+        "trecho": "certidão de Registro da empresa no CREA (Conselho Regional de Engenharia,",
         "pagina": 10,
         "conflito": false
       },
       {
         "valor": "certidao_falencia",
-        "trecho": "certidão negativa de falência expedida pelo distribuidor da sede da pessoa jurídica",
+        "trecho": "certidão negativa de falência expedida pelo distribuidor da sede da pessoa",
         "pagina": 10,
         "conflito": false
       },
       {
         "valor": "balanco_patrimonial",
-        "trecho": "balanço patrimonial e demonstração do resultado do exercício (DRE) dos 02 (dois) últimos",
+        "trecho": "balanço patrimonial e demonstração do resultado do exercício (DRE) dos 02",
         "pagina": 11,
         "conflito": false
       },

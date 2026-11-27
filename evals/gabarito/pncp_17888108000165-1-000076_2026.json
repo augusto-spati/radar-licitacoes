@@ -16,39 +16,51 @@
   "conferido": false,
   "conferido_por": null,
   "conferido_em": null,
-  "observacoes": "RASCUNHO DO CLAUDE, A CONFERIR PELO AUGUSTO: feito lendo o texto extraído (busca por palavras-chave nas seções de habilitação), sem rodar nenhum modelo avaliado. Exigência que a busca não achou pode estar faltando. Compra de 1 geofone (MG). Sem capital, patrimônio nem atestado com quantidade. Prazo: o texto só traz vigência de 12 meses (p24), não prazo de execução: ficou nulo. Habilitação jurídica 'Inscrição no Registro Público competente' mapeada para contrato_social.",
+  "observacoes": "VALIDAÇÃO CRUZADA (rascunho + leitura cega + juiz adversarial, todos Claude; falta a conferência humana): Aguanil/MG, PE 048/2026, compra de 1 geofone para o DMAE (R$ 9.000,00). O edital (7.1, p. 14) remete a habilitação ao TR item 8 (p. 29-31). Prazo: critério comum 1, prazo de entrega de 15 dias corridos (TR 4.1, p. 24; repetido em 5.1, p. 25); a vigência de 12 meses (TR 1.4, p. 24) não é prazo de execução. Atestado sem quantidade ('no mínimo, 01 atestado', p. 30). Sem capital, patrimônio, balanço ou registro em conselho. Garantia contratual expressamente dispensada (TR 4.6, p. 25); garantia de proposta só aparece em cláusula padrão de sanção (10.9, p. 20): nula. Visita não tratada: nula. Declaração de menor no sistema (3.3.2, p. 6) e na declaração conjunta (8.14-V, p. 30). 'outro' = inscrição no CNPJ (8.5, p. 29), critério comum 6. DÚVIDA (p. 29): o TR 8.12 pede 'Certidão emitida pela Junta Comercial ... atestando a condição de Microempresa ou Empresa de Pequeno Porte' como se fosse de todos, embora a licitação seja ampla; ficou coberta só por 'outro'. DÚVIDA (p. 16): o edital 7.16 adia a regularidade fiscal de ME/EPP para a contratação; não muda a lista.",
   "exigencias": {
-    "me_epp": {
-      "valor": "ampla",
-      "trecho": "O presente certame será processado sob o regime de AMPLA CONCORRÊNCIA para todos os itens",
-      "pagina": 4,
-      "conflito": false
-    },
-    "consorcio": {
-      "valor": "vedado",
-      "trecho": "pessoas jurídicas reunidas em consórcio, uma vez que existem empresas do ramo aptas a participar da licitação",
-      "pagina": 5,
-      "conflito": false
-    },
     "atestados": [
       {
-        "descricao": "Fornecimento pertinente e compatível com o objeto (sem quantidade)",
+        "descricao": "Atestado de capacidade técnica de fornecimento pertinente e compatível com o objeto (geofone), sem quantidade",
         "quantidade": null,
         "unidade": null,
         "trecho": "Apresentação de, no mínimo, 01 (um) atestado de capacidade técnica",
         "pagina": 30
       }
     ],
+    "capital_social_minimo": null,
+    "patrimonio_liquido_minimo": null,
+    "garantia_proposta_percentual": null,
+    "garantia_contratual_percentual": null,
+    "prazo_execucao_dias": {
+      "numero": 15,
+      "trecho": "O prazo máximo de entrega do equipamento é de 15 (quinze) dias corridos",
+      "pagina": 24,
+      "conflito": false,
+      "observacao": "prazo de entrega do bem"
+    },
+    "visita_tecnica": null,
+    "consorcio": {
+      "valor": "vedado",
+      "trecho": "pessoas jurídicas reunidas em consórcio, uma vez que existem empresas do ramo aptas a participar",
+      "pagina": 5,
+      "conflito": false
+    },
+    "me_epp": {
+      "valor": "ampla",
+      "trecho": "O presente certame será processado sob o regime de AMPLA CONCORRÊNCIA para todos os itens",
+      "pagina": 4,
+      "conflito": false
+    },
     "documentos": [
-      {
-        "valor": "declaracao_menor",
-        "trecho": "não emprega menor de 18 anos em trabalho noturno, perigoso ou insalubre",
-        "pagina": 6,
-        "conflito": false
-      },
       {
         "valor": "contrato_social",
         "trecho": "Inscrição no Registro Público competente de acordo com a natureza jurídica da empresa",
+        "pagina": 29,
+        "conflito": false
+      },
+      {
+        "valor": "outro",
+        "trecho": "Prova de inscrição no Cadastro Nacional de Pessoas Jurídicas",
         "pagina": 29,
         "conflito": false
       },
@@ -66,19 +78,19 @@
       },
       {
         "valor": "certidao_trabalhista",
-        "trecho": "Prova de inexistência de débitos inadimplidos perante a",
+        "trecho": "Prova de inexistência de débitos inadimplidos perante a Justiça do Trabalho",
         "pagina": 29,
         "conflito": false
       },
       {
         "valor": "certidao_estadual",
-        "trecho": "Prova de regularidade com a Fazenda Estadual",
+        "trecho": "Prova de regularidade com a Fazenda Estadual do domicílio ou sede do fornecedor",
         "pagina": 29,
         "conflito": false
       },
       {
         "valor": "certidao_municipal",
-        "trecho": "Prova de regularidade com a Fazenda Municipal",
+        "trecho": "Prova de regularidade com a Fazenda Municipal do domicílio ou sede do fornecedor",
         "pagina": 29,
         "conflito": false
       },
@@ -86,6 +98,12 @@
         "valor": "certidao_falencia",
         "trecho": "Certidão negativa de falência expedida pelo distribuidor da sede do fornecedor",
         "pagina": 31,
+        "conflito": false
+      },
+      {
+        "valor": "declaracao_menor",
+        "trecho": "não emprega menor de 18 anos em trabalho noturno, perigoso ou insalubre",
+        "pagina": 6,
         "conflito": false
       }
     ]

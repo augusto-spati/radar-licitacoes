@@ -11,15 +11,41 @@
   "conferido": false,
   "conferido_por": null,
   "conferido_em": null,
-  "observacoes": "RASCUNHO DO CLAUDE, A CONFERIR PELO AUGUSTO: feito lendo o texto extraído (busca por palavras-chave nas seções de habilitação), sem rodar nenhum modelo avaliado. Exigência que a busca não achou pode estar faltando. Pernambuco (CNPJ 11040912), compra de tubos, conexões, registros e bombas (R$ 1.984.522,15). Patrimônio líquido ≥ 5% do valor estimado = R$ 99.226,11 (p28). Itens com cota principal e cota reservada para ME/EPP. O texto extraído tem acentos quebrados em partes (pypdf: 'o rga o'): os trechos escolhidos evitam essas partes. Certidões municipal, FGTS, trabalhista, falência e atestados não foram lidos: conferir.",
+  "observacoes": "VALIDAÇÃO CRUZADA (rascunho + leitura cega + juiz adversarial, todos Claude; falta a conferência humana): Pregão eletrônico 038/2026 de Trindade/PE, menor preço por item, aquisição de tubos, conexões, registros e bombas (13 itens, R$ 1.984.522,15). Habilitação no item 16 do edital (p. 24-30), repetida no TR 8.2 (p. 64-69) sem divergência. Patrimônio líquido >= 5% do valor estimado = R$ 99.226,11 (16.6.1, p. 28). Garantia de proposta 1% do valor estimado, 'como requisito de pré-habilitação' (11.2.7, p. 14); o rascunho não a tinha. Sem garantia contratual (TR 4.6.1, p. 56). Sem visita técnica e sem capital social. Prazo (critério comum 1): entrega em até 15 dias após cada ordem de fornecimento (TR 5.1.1, p. 56-57; edital p. 38); vigência 12 meses (TR 1.4, p. 55) não entra. Atestado (critério comum 2): 'pelo menos 1% da quantidade ora citada no total do(s) item(ns) ofertado(s)' (16.5.1, p. 27; reforçado em 16.5.1.5, p. 28): quantidade null e unidade null, porque o percentual incide sobre cada item ofertado e os itens têm unidades diferentes (M, BARRA 6M, UND). Números derivados (TR p. 53-54): 1% de 4.962 m (item 1) = 49,62 m; 1% de 11.625 m (item 6) = 116,25 m etc. 'outro' = prova de inscrição no CNPJ (16.4.1, p. 25) e inscrição estadual/municipal (16.4.7, p. 26). declaracao_menor: declaração unificada (Anexo V, p. 97), exigida no envio (11.2.8.3, p. 14). DECISÃO DO AUGUSTO (me_epp, p. 6): edital misto. Itens 1, 3 e 6 são cota principal (ampla), itens 2, 4 e 7 cota reservada a ME/EPP (7.4.1) e 'os demais itens' (5, 8 a 13) exclusivos de ME/EPP (7.4.1.1). Ficou 'cota' (uma empresa de maior porte pode disputar parte dos itens); a junção do pipeline (exclusiva > cota) daria 'exclusiva' se o modelo achar o 7.4.1.1. DÚVIDA (p. 14): garantia de proposta de 1% num pregão de compra de bens é incomum (parece texto de modelo), mas está escrita e não há texto em contrário; mantida.",
   "exigencias": {
+    "atestados": [
+      {
+        "descricao": "Atestado de fornecimento de produtos da natureza e similares ao objeto, com pelo menos 1% da quantidade do(s) item(ns) ofertado(s)",
+        "quantidade": null,
+        "unidade": null,
+        "trecho": "deverá ser de pelo menos 1% da quantidade ora citada no total do(s) item(ns)",
+        "pagina": 27
+      }
+    ],
+    "capital_social_minimo": null,
     "patrimonio_liquido_minimo": {
-      "numero": "99226.11",
-      "trecho": "Comprovação de Patrimônio Líquido Mínimo (através de balanço patrimonial)",
+      "numero": "99226.1075",
+      "trecho": "5% (cinco por cento), do valor estimado da contratação;",
       "pagina": 28,
       "conflito": false,
       "observacao": "5% do valor estimado"
     },
+    "garantia_proposta_percentual": {
+      "numero": "1",
+      "trecho": "proposta, como requisito de pré-habilitação, no percentual de 1% (um por cento)",
+      "pagina": 14,
+      "conflito": false,
+      "observacao": ""
+    },
+    "garantia_contratual_percentual": null,
+    "prazo_execucao_dias": {
+      "numero": "15",
+      "trecho": "de 15 (quinze) dias após o recebimento, por parte da FORNECEDORA, da ordem de",
+      "pagina": 57,
+      "conflito": false,
+      "observacao": "entrega em até 15 dias por ordem de fornecimento; vigência 12 meses"
+    },
+    "visita_tecnica": null,
     "consorcio": {
       "valor": "permitido",
       "trecho": "Na licitação será admitida a possibilidade de Consórcio",
@@ -28,21 +54,26 @@
     },
     "me_epp": {
       "valor": "cota",
-      "trecho": "Não havendo vencedor para a COTA RESERVADA às microempresas",
+      "trecho": "SOMENTE PODERÃO OFERTAR PROPOSTA DE PREÇOS PARA A COTA",
       "pagina": 6,
       "conflito": false
     },
-    "atestados": [],
     "documentos": [
       {
         "valor": "contrato_social",
-        "trecho": "ATO CONSTITUTIVO, ESTATUTO OU CONTRATO SOCIAL CONSOLIDADO em vigor",
+        "trecho": "ato constitutivo, estatuto ou contrato social em vigor, devidamente",
         "pagina": 24,
         "conflito": false
       },
       {
+        "valor": "outro",
+        "trecho": "Prova de inscrição no Cadastro Nacional de Pessoas Jurídicas do Ministério",
+        "pagina": 25,
+        "conflito": false
+      },
+      {
         "valor": "certidao_federal",
-        "trecho": "PROVA DE REGULARIDADE com a FAZENDA FEDERAL",
+        "trecho": "RELATIVOS AOS TRIBUTOS FEDERAIS E À DÍVIDA ATIVA DA UNIÃO",
         "pagina": 25,
         "conflito": false
       },
@@ -53,9 +84,39 @@
         "conflito": false
       },
       {
+        "valor": "certidao_municipal",
+        "trecho": "PROVA DE REGULARIDADE para com a FAZENDA MUNICIPAL",
+        "pagina": 26,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_fgts",
+        "trecho": "perante o Gestor do Fundo de Garantia por Tempo de Serviço",
+        "pagina": 26,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_trabalhista",
+        "trecho": "CNDT- Certidão Negativa de Débitos",
+        "pagina": 26,
+        "conflito": false
+      },
+      {
         "valor": "balanco_patrimonial",
-        "trecho": "Apresentar balanço patrimonial",
+        "trecho": "Apresentar balanço patrimonial, com demonstração de resultado de",
         "pagina": 28,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_falencia",
+        "trecho": "Certidão negativa de falência ou recuperação judicial",
+        "pagina": 30,
+        "conflito": false
+      },
+      {
+        "valor": "declaracao_menor",
+        "trecho": "emprego menor de 18 (dezoito) anos, salvo menor",
+        "pagina": 97,
         "conflito": false
       }
     ]

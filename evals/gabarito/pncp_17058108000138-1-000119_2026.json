@@ -11,28 +11,51 @@
   "conferido": false,
   "conferido_por": null,
   "conferido_em": null,
-  "observacoes": "RASCUNHO DO CLAUDE, A CONFERIR PELO AUGUSTO: feito lendo o texto extraído (busca por palavras-chave nas seções de habilitação), sem rodar nenhum modelo avaliado. Exigência que a busca não achou pode estar faltando. DAE João Monlevade/MG, obra de rede adutora (R$ 3.878.443,62). Capital OU patrimônio líquido de 10% do valor estimado só como alternativa para quem tiver índice < 1 (p22): os dois campos com 10% = R$ 387.844,36; decidir se isso conta como exigência. Atestados: as parcelas e quantitativos estão no Quadro do Anexo III, que a busca não achou: atestado sem quantidade, conferir. Garantia contratual 'quando exigida': ficou nula.",
+  "observacoes": "VALIDAÇÃO CRUZADA (rascunho + leitura cega + juiz adversarial, todos Claude; falta a conferência humana): DAE João Monlevade/MG, obra de adutora FoFo DN 400 mm (~2.209,80 m), concorrência eletrônica 006/2026, R$ 3.878.443,62. Texto = edital (p. 1-56), modelos, minuta de contrato e declarações; TR, planilha (Anexo III), ETP etc. são arquivos independentes (p. 3) fora do texto. FORA DO TEXTO (p. 24): o atestado técnico-operacional remete às parcelas e quantitativos do 'Quadro de Parcelas de Maior Relevância Técnica ou Valor Significativo, integrante do Anexo III', que não está no texto; registrado sem quantidade e sem unidade (o quadro provavelmente traz metragem de adutora DN 400 FoFo, limitada a 50% das parcelas, 7.5.3.3.3). Atestado profissional (CAT, p. 23) entra sem quantidade (critério comum 4; 7.5.2.4 diz que não haverá quantitativos mínimos). DECISÃO DO AUGUSTO (p. 22-23): capital social OU patrimônio líquido de 10% = R$ 387.844,36 é alternativo entre si (7.4.4.3) e CONDICIONAL (só para quem tiver índice < 1, 7.4.4); pelo critério comum 3 os dois campos foram preenchidos com o mesmo trecho (o edital trata os dois na mesma frase). Garantia contratual de 5% (12.1, p. 32) incluída: o edital diz 'Será exigida da adjudicatária'; a garantia adicional do art. 59 §5º não tem percentual e não entra. Sem garantia de proposta. DÚVIDA (p. 25): visita 'caso disponibilizada, terá caráter facultativo'; o edital não oferece data de vistoria; registrei facultativa. 'outro' = inscrição no CNPJ (p. 21); também se exigem inscrição estadual/municipal, memorial de índices, declaração de responsabilidade técnica e de conhecimento das condições locais. Prazo de execução 10 meses = 300 dias (vigência 12 meses não entra, critério comum 1).",
   "exigencias": {
+    "atestados": [
+      {
+        "descricao": "Atestado técnico-operacional das parcelas de maior relevância do Quadro do Anexo III (implantação de adutora; quadro fora do texto)",
+        "quantidade": null,
+        "unidade": null,
+        "trecho": "serão exigidos atestados de capacidade técnica relativos às parcelas",
+        "pagina": 24
+      },
+      {
+        "descricao": "CAT com atestado do profissional com experiência em implantação de sistemas de adução ou redes de abastecimento de água (sem quantitativo mínimo)",
+        "quantidade": null,
+        "unidade": null,
+        "trecho": "Certidão de Acervo Técnico – CAT, acompanhada do respectivo atestado",
+        "pagina": 23
+      }
+    ],
     "capital_social_minimo": {
       "numero": "387844.36",
-      "trecho": "capital social mínimo ou patrimônio líquido mínimo equivalente a 10% (dez por cento) do valor estimado da contratação",
+      "trecho": "o percentual de 10% corresponde a R$ 387.844,36",
       "pagina": 22,
       "conflito": false,
-      "observacao": "10% do valor estimado; alternativa a índice < 1"
+      "observacao": "10% do valor estimado; alternativo ao patrimônio líquido e condicionado a índice < 1"
     },
     "patrimonio_liquido_minimo": {
       "numero": "387844.36",
-      "trecho": "capital social mínimo ou patrimônio líquido mínimo equivalente a 10% (dez por cento) do valor estimado da contratação",
+      "trecho": "o percentual de 10% corresponde a R$ 387.844,36",
       "pagina": 22,
       "conflito": false,
-      "observacao": "10% do valor estimado; alternativa a índice < 1"
+      "observacao": "10% do valor estimado; alternativo ao capital social e condicionado a índice < 1"
+    },
+    "garantia_contratual_percentual": {
+      "numero": "5",
+      "trecho": "garantia contratual correspondente a 5% (cinco por cento) do valor inicial do contrato",
+      "pagina": 32,
+      "conflito": false,
+      "observacao": ""
     },
     "prazo_execucao_dias": {
       "numero": "300",
-      "trecho": "PRAZO DE EXECUÇÃO: 10 (dez) meses.",
-      "pagina": 1,
+      "trecho": "O prazo de execução da obra será de 10 (dez) meses",
+      "pagina": 4,
       "conflito": false,
-      "observacao": ""
+      "observacao": "10 meses"
     },
     "visita_tecnica": {
       "valor": "facultativa",
@@ -52,26 +75,17 @@
       "pagina": 4,
       "conflito": false
     },
-    "atestados": [
-      {
-        "descricao": "Parcelas de maior relevância do Quadro do Anexo III (implantação de adutora)",
-        "quantidade": null,
-        "unidade": null,
-        "trecho": "serão exigidos atestados de capacidade técnica relativos às parcelas do objeto expressamente identificadas no Quadro de Parcelas de Maior Relevância",
-        "pagina": 24
-      }
-    ],
     "documentos": [
-      {
-        "valor": "declaracao_menor",
-        "trecho": "Que não emprega menor de 18 (dezoito) anos em trabalho noturno",
-        "pagina": 7,
-        "conflito": false
-      },
       {
         "valor": "contrato_social",
         "trecho": "ato constitutivo, estatuto ou contrato social atualizado e devidamente registrado",
         "pagina": 20,
+        "conflito": false
+      },
+      {
+        "valor": "outro",
+        "trecho": "Prova de inscrição no Cadastro Nacional da Pessoa Jurídica – CNPJ",
+        "pagina": 21,
         "conflito": false
       },
       {
@@ -82,13 +96,13 @@
       },
       {
         "valor": "certidao_estadual",
-        "trecho": "Prova de regularidade perante a Fazenda Estadual",
+        "trecho": "Prova de regularidade perante a Fazenda Estadual do domicílio ou da sede do licitante",
         "pagina": 21,
         "conflito": false
       },
       {
         "valor": "certidao_municipal",
-        "trecho": "Prova de regularidade perante a Fazenda Municipal",
+        "trecho": "Prova de regularidade perante a Fazenda Municipal do domicílio ou da sede do licitante",
         "pagina": 21,
         "conflito": false
       },
@@ -106,7 +120,7 @@
       },
       {
         "valor": "certidao_falencia",
-        "trecho": "Certidão negativa de feitos sobre falência",
+        "trecho": "Certidão negativa de feitos sobre falência, expedida pelo distribuidor da sede do licitante",
         "pagina": 21,
         "conflito": false
       },
@@ -118,8 +132,14 @@
       },
       {
         "valor": "registro_conselho",
-        "trecho": "Apresentação de certidão de registro ou inscrição da pes",
+        "trecho": "certidão de registro ou inscrição da pessoa jurídica licitante perante o",
         "pagina": 23,
+        "conflito": false
+      },
+      {
+        "valor": "declaracao_menor",
+        "trecho": "Declaração de que não empregam menor de 18 (dezoito) anos em trabalho noturno",
+        "pagina": 25,
         "conflito": false
       }
     ]

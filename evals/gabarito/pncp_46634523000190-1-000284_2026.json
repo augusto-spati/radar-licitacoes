@@ -11,22 +11,23 @@
   "conferido": false,
   "conferido_por": null,
   "conferido_em": null,
-  "observacoes": "RASCUNHO DO CLAUDE, A CONFERIR PELO AUGUSTO: feito lendo o texto extraído (busca por palavras-chave nas seções de habilitação), sem rodar nenhum modelo avaliado. Exigência que a busca não achou pode estar faltando. São Manuel/SP, registro de preços de serviços (linha redes, R$ 56.924,00). Participação exclusiva de ME/EPP. Sem capital, patrimônio, garantia, visita ou atestado achados. Prazo: só vigência de 12 meses (p23), ficou nulo. Certidão municipal e balanço não achados pela busca: conferir.",
+  "observacoes": "VALIDAÇÃO CRUZADA (rascunho + leitura cega + juiz adversarial, todos Claude; falta a conferência humana): São Manuel/SP, PE 90025/2026 (Edital 29/2026), registro de preços de 200 horas de caminhão hidrojato/alto vácuo para limpeza de redes de esgoto e galerias (R$ 56.924,00). Habilitação no item 7 do edital (p. 12-14); o TR 8.3 (p. 30) remete ao edital. Sem qualificação técnica nem atestado; o CADRI/licença ambiental (TR 4.1, p. 24) é entregue na assinatura do contrato e não entrou. Sem balanço, capital ou patrimônio: a econômico-financeira só pede falência (7.4.1, p. 14). Garantia contratual dispensada (TR 4.4, p. 24); garantia de proposta só na cláusula padrão de sanção (10.9, p. 19): nula. Visita e consórcio não tratados (só o impedimento padrão 2.5.3): nulos. Prazo: critério comum 1. É SRP com vigência de 12 meses (TR 1.5, p. 23) e início do serviço em 48 horas após cada solicitação (TR 5.2, p. 25), que é prazo de início e não de execução; ficou null (a leitura cega tinha posto 360 dias pela vigência). 'outro' = inscrição no CNPJ (7.3.1), critério comum 6. DÚVIDA (p. 1): a capa diz só 'PARTICIPAÇÃO EXCLUSIVA', sem dizer de quem; o corpo usa texto padrão ('item exclusivo para participação de microempresas', 3.5.1, p. 4) e concede preferência regional de 10% a ME/EPP (2.4.5, p. 2). Lido como exclusiva para ME/EPP (valor abaixo de R$ 80 mil, art. 48, I, da LC 123).",
   "exigencias": {
+    "atestados": [],
+    "capital_social_minimo": null,
+    "patrimonio_liquido_minimo": null,
+    "garantia_proposta_percentual": null,
+    "garantia_contratual_percentual": null,
+    "prazo_execucao_dias": null,
+    "visita_tecnica": null,
+    "consorcio": null,
     "me_epp": {
       "valor": "exclusiva",
-      "trecho": "PARTICIPAÇÃO EXCLUSIVA",
+      "trecho": "CÓDIGO UASG: 987103 PARTICIPAÇÃO EXCLUSIVA",
       "pagina": 1,
       "conflito": false
     },
-    "atestados": [],
     "documentos": [
-      {
-        "valor": "declaracao_menor",
-        "trecho": "não emprega menor de 18 anos em trabalho noturno, perigoso ou insalubre",
-        "pagina": 4,
-        "conflito": false
-      },
       {
         "valor": "contrato_social",
         "trecho": "inscrição do ato constitutivo, estatuto ou contrato social no Registro Público de Empresas Mercantis",
@@ -34,14 +35,20 @@
         "conflito": false
       },
       {
+        "valor": "outro",
+        "trecho": "Prova de inscrição no Cadastro Nacional da Pessoa Jurídica (CNPJ);",
+        "pagina": 13,
+        "conflito": false
+      },
+      {
         "valor": "certidao_federal",
-        "trecho": "Certidão Conjunta Negativa de Débitos ou Positiva com efeito de Negativa, relativa a Tribu",
+        "trecho": "Certidão Conjunta Negativa de Débitos ou Positiva com efeito de Negativa, relativa a Tributos",
         "pagina": 13,
         "conflito": false
       },
       {
         "valor": "certidao_estadual",
-        "trecho": "Prova de Regularidade para com a Fazenda Estadual",
+        "trecho": "Prova de Regularidade para com a Fazenda Estadual do domicílio ou sede do licitante",
         "pagina": 13,
         "conflito": false
       },
@@ -53,13 +60,25 @@
       },
       {
         "valor": "certidao_trabalhista",
-        "trecho": "Prova de Regularidade de Obrigações Trabalhistas",
+        "trecho": "Prova de Regularidade de Obrigações Trabalhistas, de acordo com a Lei 12.440/11",
+        "pagina": 13,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_municipal",
+        "trecho": "Certidão Municipal referente aos tributos mobiliários (ISS e taxa de funcionamento)",
+        "pagina": 13,
+        "conflito": false
+      },
+      {
+        "valor": "declaracao_menor",
+        "trecho": "Declaração quanto ao cumprimento do disposto no inciso XXXIII do artigo 7° da Constituição",
         "pagina": 13,
         "conflito": false
       },
       {
         "valor": "certidao_falencia",
-        "trecho": "Certidão negativa de falência expedida pelo distribuidor da sede do licita",
+        "trecho": "Certidão negativa de falência expedida pelo distribuidor da sede do licitante",
         "pagina": 14,
         "conflito": false
       }

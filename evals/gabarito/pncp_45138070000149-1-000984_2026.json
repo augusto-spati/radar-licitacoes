@@ -11,8 +11,17 @@
   "conferido": false,
   "conferido_por": null,
   "conferido_em": null,
-  "observacoes": "RASCUNHO DO CLAUDE, A CONFERIR PELO AUGUSTO: feito lendo o texto extraído (busca por palavras-chave nas seções de habilitação), sem rodar nenhum modelo avaliado. Exigência que a busca não achou pode estar faltando. Revisão do Plano Municipal de Saneamento (consultoria). Sem capital nem patrimônio mínimo achados. Atestado exige serviços similares sem quantidade no trecho lido (p13): conferir se há quantitativo. Itens da qualificação econômico-financeira (10.1.4) não foram achados pela busca: conferir falência e balanço. Prazo de 12 meses de vigência e execução (p19).",
+  "observacoes": "VALIDAÇÃO CRUZADA (rascunho + leitura cega + juiz adversarial, todos Claude; falta a conferência humana): Santa Fé do Sul/SP, PE 048/2026, revisão do Plano Municipal de Saneamento Básico (FEHIDRO), R$ 336.622,80. Habilitação no item 10 (p. 11-14). Econômico-financeira só com certidão de falência (10.1.4, p. 12): não pede balanço nem capital/PL. Técnica 10.1.5 (p. 13): CAT do CREA acompanhada de atestados de serviços similares, sem quantidade (um atestado, quantidade e unidade null); registro da PJ no CREA; equipe técnica mínima. FORA DO TEXTO (p. 13): o edital remete ao item 12 do Termo de Referência (Anexo I) para a equipe técnica, e o TR não está no texto (o texto tem edital, modelos e minuta de contrato); se o TR trouxer atestado com quantidade ou CAT por profissional, falta aqui. DÚVIDA (p. 13): a equipe técnica mínima (engenheiro sanitarista com experiência etc.) não foi registrada como atestado porque o edital não pede CAT por profissional, só 'documentos comprobatórios' do vínculo e da qualificação. Garantia contratual 5% (19.1, p. 20; repetida na minuta 9.1); a garantia adicional de proposta inexequível (9.9.1, p. 11) não tem percentual e não entra; sem garantia de proposta. Prazo 12 meses = 360 dias (17.10, p. 19: 'vigência do contrato assim como da execução dos serviços'). Visita facultativa (p. 2 e 20.1, p. 20). Consórcio vedado (3.4.9, p. 4). ME/EPP: tratamento favorecido sem exclusividade nem cota (3.3, p. 3) = ampla. 'outro' = inscrição no CNPJ (p. 12).",
   "exigencias": {
+    "atestados": [
+      {
+        "descricao": "CAT do CREA acompanhada de atestados de execução de serviços similares (plano de saneamento), sem quantidade mínima",
+        "quantidade": null,
+        "unidade": null,
+        "trecho": "Certidão de Acervo Técnico - CAT regularmente emitida pelo CREA",
+        "pagina": 13
+      }
+    ],
     "garantia_contratual_percentual": {
       "numero": "5",
       "trecho": "correspondendo a 5% (cinco por cento) do seu valor global",
@@ -22,15 +31,15 @@
     },
     "prazo_execucao_dias": {
       "numero": "360",
-      "trecho": "O prazo de vigência do contrato assim como da execução dos serviços será de 12 meses",
+      "trecho": "O prazo de vigência do contrato assim como da execução dos serviços será de 12",
       "pagina": 19,
       "conflito": false,
-      "observacao": ""
+      "observacao": "12 meses"
     },
     "visita_tecnica": {
       "valor": "facultativa",
-      "trecho": "Vistoria: É opcional.",
-      "pagina": 2,
+      "trecho": "A visita técnica NÃO será obrigatória",
+      "pagina": 20,
       "conflito": false
     },
     "consorcio": {
@@ -39,19 +48,22 @@
       "pagina": 4,
       "conflito": false
     },
-    "atestados": [
-      {
-        "descricao": "Serviços similares (plano de saneamento), com CAT do CREA",
-        "quantidade": null,
-        "unidade": null,
-        "trecho": "Certidão de Acervo Técnico - CAT regularmente emitida pelo CREA",
-        "pagina": 13
-      }
-    ],
+    "me_epp": {
+      "valor": "ampla",
+      "trecho": "Será concedido tratamento favorecido para as microempresas e empresas de",
+      "pagina": 3,
+      "conflito": false
+    },
     "documentos": [
       {
         "valor": "contrato_social",
         "trecho": "Ato constitutivo, estatuto ou contrato social em vigor",
+        "pagina": 12,
+        "conflito": false
+      },
+      {
+        "valor": "outro",
+        "trecho": "Prova de inscrição no Cadastro Nacional de Pessoas Jurídicas",
         "pagina": 12,
         "conflito": false
       },
@@ -86,8 +98,14 @@
         "conflito": false
       },
       {
+        "valor": "certidao_falencia",
+        "trecho": "Certidão negativa de Falência e Concordata expedida pelo distribuidor",
+        "pagina": 12,
+        "conflito": false
+      },
+      {
         "valor": "registro_conselho",
-        "trecho": "Certidão de Acervo Técnico - CAT regularmente emitida pelo CREA",
+        "trecho": "Certidão de Registro de Pessoa Jurídica da empresa licitante no CREA",
         "pagina": 13,
         "conflito": false
       },

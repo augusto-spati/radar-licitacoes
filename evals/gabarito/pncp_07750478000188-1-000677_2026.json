@@ -11,9 +11,115 @@
   "conferido": false,
   "conferido_por": null,
   "conferido_em": null,
-  "observacoes": "RASCUNHO DO CLAUDE, A CONFERIR PELO AUGUSTO: feito lendo o texto extraído (busca por palavras-chave nas seções de habilitação), sem rodar nenhum modelo avaliado. Exigência que a busca não achou pode estar faltando. Caso sem texto: o único documento do edital é um .zip (status nao_pdf), então o pipeline não chama o modelo e a análise vai para 'verificar'. O gabarito vazio aqui mede a ausência de alucinação, não as exigências reais do edital (que estão dentro do zip). Substitui o 'PDF escaneado' do desenho: nenhum dos 14 editais baixados tinha PDF escaneado.",
+  "observacoes": "VALIDAÇÃO CRUZADA (rascunho + leitura cega + juiz adversarial, todos Claude; falta a conferência humana): o RASCUNHO foi feito quando o texto estava vazio (.zip sem extração) e foi tratado como ausente; este gabarito vem da leitura cega conferida pelo juiz no texto agora extraído (74 p.). SAEMAS Sertãozinho, PE 034/2026, rede de esgoto PVC dupla parede DN 250 mm na Rua José Mermejo, com materiais, valor estimado R$ 56.003,75. O edital (7.1, p. 17) remete a habilitação ao Projeto Básico (Anexo I), item 12 (p. 42-47). Econômico-financeira: só certidão de falência (12.3.1, p. 44), sem balanço, capital ou PL. DECISÃO DO AUGUSTO (critério comum 4): o atestado técnico-profissional (12.4.4, p. 45-46) repete o serviço do operacional, mas a tabela dele só tem a unidade (M), sem quantidade: entra com quantidade null e unidade m. O operacional é 75,74 m (12.4.3: 50% do quantitativo). DECISÃO DO AUGUSTO (critério comum 6): 'outro' = prova de inscrição no CNPJ (12.2.1, p. 43); cobre também a inscrição estadual/municipal e as declarações do 12.5. DECISÃO DO AUGUSTO (critério comum 1): prazo de execução 30 dias (contrato, cláusula 2.1, p. 55: 'a execução deve ser realizada em até 30 (trinta) dias'); a vigência de 12 meses (PB 4.3.1, p. 36) não conta. DÚVIDA (p. 35): o PB 3.2.1 diz que os serviços devem ter INÍCIO em até 30 dias após a ordem de serviço, o que não é prazo de execução; o número coincide. DÚVIDA (p. 30 x p. 46): o PB 3.1.2.12 diz que as licitantes 'deverão vistoriar o local' para cotação realística, mas o item próprio de habilitação 12.4.5.1 diz 'A visita técnica poderá ser realizada' e não exige atestado de visita entre os documentos; registrei facultativa. ME/EPP: capa diz 'PREFERÊNCIA ME/EPP/EQUIPARADAS NÃO' (p. 1), mas 2.5 dá o tratamento favorecido da LC 123 (p. 3); sem exclusividade nem cota = ampla. Garantia contratual 5% (PB 11.1.1, p. 41); garantia de proposta null (p. 23 é texto padrão de sanção; 6.9.4 é garantia adicional de inexequibilidade). Consórcio: null (só o texto padrão 'Quando permitida a participação de consórcio', 7.4, p. 18). Declaração de menor no sistema (3.4.2, p. 5) e no 12.5.1 (p. 46).",
   "exigencias": {
-    "atestados": [],
-    "documentos": []
+    "atestados": [
+      {
+        "descricao": "Técnico-operacional: tubo de PVC corrugado de dupla parede para rede coletora de esgoto, DN 250 mm, junta elástica, fornecimento e assentamento",
+        "quantidade": "75.74",
+        "unidade": "m",
+        "trecho": "ELÁSTICA -FORNECIMENTO E ASSENTAMENTO. AF_01/2021 M 75,74",
+        "pagina": 45
+      },
+      {
+        "descricao": "Técnico-profissional (responsável técnico): tubo de PVC corrugado de dupla parede para rede coletora de esgoto, DN 250 mm, sem quantidade mínima",
+        "quantidade": null,
+        "unidade": "m",
+        "trecho": "atestado de capacidade técnica fornecido por pessoa jurídica de direito público ou privado em nome do profissional responsável técnico",
+        "pagina": 45
+      }
+    ],
+    "capital_social_minimo": null,
+    "patrimonio_liquido_minimo": null,
+    "garantia_proposta_percentual": null,
+    "garantia_contratual_percentual": {
+      "numero": "5",
+      "trecho": "o montante de 5% (cinco por cento) do valor global do",
+      "pagina": 41,
+      "conflito": false,
+      "observacao": ""
+    },
+    "prazo_execucao_dias": {
+      "numero": "30",
+      "trecho": "a execução deve ser realizada em até 30 (trinta) dias",
+      "pagina": 55,
+      "conflito": false,
+      "observacao": ""
+    },
+    "visita_tecnica": {
+      "valor": "facultativa",
+      "trecho": "A visita técnica poderá ser realizada, visando garantir que a empresa tome",
+      "pagina": 46,
+      "conflito": false
+    },
+    "consorcio": null,
+    "me_epp": {
+      "valor": "ampla",
+      "trecho": "Será concedido tratamento favorecido para as microempresas e empresas de pequeno porte",
+      "pagina": 3,
+      "conflito": false
+    },
+    "documentos": [
+      {
+        "valor": "contrato_social",
+        "trecho": "Ato constitutivo, estatuto ou contrato social atualizado e registrado na Junta",
+        "pagina": 43,
+        "conflito": false
+      },
+      {
+        "valor": "outro",
+        "trecho": "Prova de inscrição no Cadastro Nacional de Pessoas Jurídicas do Ministério da",
+        "pagina": 43,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_federal",
+        "trecho": "Prova de regularidade para com a Fazenda Federal",
+        "pagina": 43,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_estadual",
+        "trecho": "Prova de regularidade para com a Fazenda Estadual",
+        "pagina": 43,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_municipal",
+        "trecho": "Prova de regularidade para com a Fazenda Municipal",
+        "pagina": 43,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_fgts",
+        "trecho": "Certidão de regularidade de débito perante o Fundo de Garantia por Tempo de",
+        "pagina": 44,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_trabalhista",
+        "trecho": "Certidão Negativa de Débitos Trabalhistas (CNDT)",
+        "pagina": 44,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_falencia",
+        "trecho": "Certidão Negativa de Falência, recuperação judicial ou extrajudicial",
+        "pagina": 44,
+        "conflito": false
+      },
+      {
+        "valor": "registro_conselho",
+        "trecho": "Prova de inscrição ou registro da empresa e de seu responsável técnico junto",
+        "pagina": 45,
+        "conflito": false
+      },
+      {
+        "valor": "declaracao_menor",
+        "trecho": "não emprega menor de 18 anos em trabalho noturno, perigoso ou insalubre",
+        "pagina": 5,
+        "conflito": false
+      }
+    ]
   }
 }

@@ -11,111 +11,132 @@
   "conferido": false,
   "conferido_por": null,
   "conferido_em": null,
-  "observacoes": "RASCUNHO DO CLAUDE, A CONFERIR PELO AUGUSTO: feito lendo o texto extraído (busca por palavras-chave nas seções de habilitação), sem rodar nenhum modelo avaliado. Exigência que a busca não achou pode estar faltando. SAAE São Carlos, pesquisa e reparo de vazamentos. Capital e patrimônio são exigência alternativa (PL OU capital social ≥ R$ 139.756,60): os dois campos levam o mesmo valor; decidir se o gabarito deve ter só um. Atestados do edital (p14) repetem os do termo de referência (p53).",
+  "observacoes": "VALIDAÇÃO CRUZADA (rascunho + leitura cega + juiz adversarial, todos Claude; falta a conferência humana): SAAE São Carlos, PE 053/2026 retificado, pesquisa e reparo de vazamentos e macromedidores (FEHIDRO), valor estimado R$ 1.397.565,97. Habilitação no item 10.4 do edital (p. 13-17); o TR (p. 52-53) repete as três parcelas de relevância com os mesmos números. DECISÃO DO AUGUSTO (critério comum 3): o 10.4.4 c (p. 17) pede 'patrimônio líquido ou capital social' de R$ 139.756,60 (10% do estimado); alternativos, os dois campos preenchidos com o mesmo trecho. DECISÃO DO AUGUSTO (critério comum 4): o atestado técnico-profissional (CAT do RT, 10.4.3 c, p. 15) entra sem quantidade e sem unidade (o edital não dá número nem unidade para ele). DECISÃO DO AUGUSTO (critério comum 6): 'outro' = prova de inscrição no CNPJ (10.4.2 a, p. 13); cobre também inscrição estadual/municipal, atestado de visita ou declaração substitutiva (10.4.3 f) e as declarações do Anexo III. DECISÃO DO AUGUSTO (critério comum 1): prazo de execução 6 meses = 180 dias (6.2.6, p. 8; TR p. 47; a vigência do TR p. 52 também é 6 meses). DÚVIDA (p. 14): o caput do 10.4.3 b diz 'no mínimo 50% do pretendido', mas o reparo diz '150 unidades (correspondente a 34%)'; os números absolutos (2 un, 90 km, 150 un) estão escritos no edital e no TR (p. 53), e foram usados. Garantia de proposta: null (p. 23 só cita a perda dela em texto padrão de sanção; 8.1.2.1 é garantia adicional de inexequibilidade). Consórcio: null (o edital não trata; o 3.2.4 é o impedimento padrão do autor do projeto). ME/EPP: participação ampla (capa e item 3), com preferência da LC 123 (5.8). Visita técnica facultativa (6.5, p. 8; TR p. 46).",
   "exigencias": {
+    "atestados": [
+      {
+        "descricao": "Técnico-operacional: fornecimento, instalação, montagem, configuração, implantação e comissionamento de macromedidores para medição de vazão em redes de abastecimento de água (>= 300 mm)",
+        "quantidade": "2",
+        "unidade": "un",
+        "trecho": "Quantidade mínima de 2 unidades maiores ou iguais a 300mm.",
+        "pagina": 14
+      },
+      {
+        "descricao": "Técnico-operacional: pesquisa, localização e detecção de vazamentos não visíveis de água sob pressão em redes de distribuição e ramais prediais enterrados",
+        "quantidade": "90",
+        "unidade": "km",
+        "trecho": "Quantidade mínima de 90 km (correspondente a 50%).",
+        "pagina": 14
+      },
+      {
+        "descricao": "Técnico-operacional: reparo de vazamentos em redes e ou ramais de água para abastecimento público",
+        "quantidade": "150",
+        "unidade": "un",
+        "trecho": "Quantidade mínima de 150 unidades (correspondente a 34%).",
+        "pagina": 14
+      },
+      {
+        "descricao": "Técnico-profissional: atestado acervado no CREA/CAU do profissional nas parcelas de maior relevância (macromedidores/pitometria, pesquisa de vazamentos não visíveis, reparo de vazamentos), sem quantidade",
+        "quantidade": null,
+        "unidade": null,
+        "trecho": "Atestado acervado pelo CREA/CAU, em nome do profissional pertencente ao quadro da empresa, para fins de comprovação de capacidade técnico-profissional",
+        "pagina": 15
+      }
+    ],
     "capital_social_minimo": {
-      "numero": "139756.6",
-      "trecho": "patrimônio líquido ou capital social superior ou equivalente a R$ 139.756,60",
+      "numero": "139756.60",
+      "trecho": "possui patrimônio líquido ou capital social superior ou equivalente a R$ 139.756,60",
       "pagina": 17,
       "conflito": false,
-      "observacao": "alternativo: patrimônio líquido OU capital social"
+      "observacao": "alternativo ao patrimônio líquido; 10% do valor estimado"
     },
     "patrimonio_liquido_minimo": {
-      "numero": "139756.6",
-      "trecho": "patrimônio líquido ou capital social superior ou equivalente a R$ 139.756,60",
+      "numero": "139756.60",
+      "trecho": "possui patrimônio líquido ou capital social superior ou equivalente a R$ 139.756,60",
       "pagina": 17,
       "conflito": false,
-      "observacao": "alternativo: patrimônio líquido OU capital social"
+      "observacao": "alternativo ao capital social; 10% do valor estimado"
     },
+    "garantia_proposta_percentual": null,
     "garantia_contratual_percentual": {
       "numero": "5",
-      "trecho": "prestar uma caução equivalente a 5% (cinco por cento) sobre o valor do contrato",
+      "trecho": "Fica a Contratada obrigada a prestar uma caução equivalente a 5% (cinco por cento) sobre o valor do contrato",
       "pagina": 19,
       "conflito": false,
       "observacao": ""
     },
     "prazo_execucao_dias": {
       "numero": "180",
-      "trecho": "Prazo de execução da obra: até 06 (seis) meses",
+      "trecho": "Prazo de execução da obra: até 06 (seis) meses contados da data constante da emissão da ordem de Serviços",
       "pagina": 8,
       "conflito": false,
-      "observacao": ""
+      "observacao": "6 meses"
     },
     "visita_tecnica": {
       "valor": "facultativa",
-      "trecho": "A avaliação prévia do local de execução dos serviços é FACULTATIVA",
-      "pagina": 46,
+      "trecho": "Para elaboração da proposta, é facultada realização de visita ao SAAE de São Carlos",
+      "pagina": 8,
       "conflito": false
     },
-    "atestados": [
-      {
-        "descricao": "Fornecimento, instalação e comissionamento de macromedidores (≥ 300 mm)",
-        "quantidade": "2",
-        "unidade": "un",
-        "trecho": "Quantidade mínima de 2 unidades maiores ou iguais a 300mm",
-        "pagina": 14
-      },
-      {
-        "descricao": "Pesquisa, localização e detecção de vazamentos não visíveis",
-        "quantidade": "90",
-        "unidade": "km",
-        "trecho": "Quantidade mínima de 90 km (correspondente a 50%)",
-        "pagina": 14
-      },
-      {
-        "descricao": "Reparo de vazamentos em redes e ramais de água",
-        "quantidade": "150",
-        "unidade": "un",
-        "trecho": "Quantidade mínima de 150 unidades (correspondente a 34%)",
-        "pagina": 14
-      }
-    ],
+    "consorcio": null,
+    "me_epp": {
+      "valor": "ampla",
+      "trecho": "3. CONDIÇÕES DE PARTICIPAÇÃO - PARTICIPAÇÃO AMPLA:",
+      "pagina": 3,
+      "conflito": false
+    },
     "documentos": [
       {
         "valor": "contrato_social",
-        "trecho": "Ato constitutivo, estatuto ou contrato social em vigor",
+        "trecho": "Ato constitutivo, estatuto ou contrato social em vigor, devidamente registrado na Junta",
+        "pagina": 13,
+        "conflito": false
+      },
+      {
+        "valor": "outro",
+        "trecho": "Prova de inscrição no Cadastro Nacional de Pessoas Jurídicas (CNPJ);",
         "pagina": 13,
         "conflito": false
       },
       {
         "valor": "certidao_federal",
-        "trecho": "Prova de Regularidade para com a Fazenda Federal",
+        "trecho": "Prova de Regularidade para com a Fazenda Federal e Prova de Regularidade Relativa à Seguridade Social",
         "pagina": 13,
         "conflito": false
       },
       {
         "valor": "certidao_estadual",
-        "trecho": "Prova de Regularidade para com a Fazenda Estadual",
+        "trecho": "Prova de Regularidade para com a Fazenda Estadual: Certidão Negativa de Débitos",
         "pagina": 14,
         "conflito": false
       },
       {
         "valor": "certidao_municipal",
-        "trecho": "Prova de Regularidade para com a Fazenda Municipal",
+        "trecho": "Prova de Regularidade para com a Fazenda Municipal: Certidão Negativa de Débitos",
         "pagina": 14,
         "conflito": false
       },
       {
         "valor": "certidao_fgts",
-        "trecho": "Prova de regularidade relativa ao FGTS",
+        "trecho": "Prova de regularidade relativa ao FGTS - (CRF) - Fundo de Garantia por Tempo de Serviço",
         "pagina": 14,
         "conflito": false
       },
       {
         "valor": "certidao_trabalhista",
-        "trecho": "Certidão Negativa de Débitos Trabalhistas",
+        "trecho": "Prova de inexistência de débitos inadimplidos perante a Justiça do Trabalho, mediante apresentação de Certidão Negativa de Débitos Trabalhistas",
         "pagina": 14,
         "conflito": false
       },
       {
         "valor": "registro_conselho",
-        "trecho": "prova de Registro ou Inscrição na entidade profissional competente (CREA/CAU)",
+        "trecho": "Apresentar prova de Registro ou Inscrição na entidade profissional competente (CREA/CAU), tanto da empresa proponente como dos responsáveis técnicos",
         "pagina": 14,
         "conflito": false
       },
       {
         "valor": "certidao_falencia",
-        "trecho": "Certidão Negativa de Falência",
+        "trecho": "Certidão Negativa de Falência, expedida pelo distribuidor da sede da pessoa jurídica",
         "pagina": 16,
         "conflito": false
       },
@@ -127,7 +148,7 @@
       },
       {
         "valor": "declaracao_menor",
-        "trecho": "não emprega menores de 16 anos",
+        "trecho": "não emprega menores de 16 anos, salvo na condição de aprendiz, ou menores de 18 anos em trabalho noturno, perigoso ou insalubre",
         "pagina": 17,
         "conflito": false
       }
