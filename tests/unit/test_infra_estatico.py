@@ -280,14 +280,12 @@ def test_um_dashboard() -> None:
     assert len(re.findall(r'resource\s+"aws_cloudwatch_dashboard"', _todos_tf())) == 1
 
 
-def test_spans_com_retencao() -> None:
+def test_spans_por_runbook() -> None:
     obs = _tf("observabilidade.tf")
-    bloco = re.search(r'resource "aws_cloudwatch_log_group" "spans" \{(.*?)\n\}', obs, re.S)
-    assert bloco, "log group aws/spans ausente"
-    assert 'name              = "aws/spans"' in bloco.group(1)
-    assert "retention_in_days = 7" in bloco.group(1)
-    # Transaction Search é ligado à mão; os comandos ficam registrados no .tf.
+    # aws/spans é reservado: quem cria é o X-Ray; o .tf não pode declará-lo.
+    assert 'resource "aws_cloudwatch_log_group" "spans"' not in obs
     assert "update-trace-segment-destination --destination CloudWatchLogs" in obs
+    assert "put-retention-policy --log-group-name aws/spans --retention-in-days 7" in obs
 
 
 def test_sem_application_signals() -> None:
@@ -393,4 +391,3 @@ def test_xray_pode_escrever_os_spans_nos_logs() -> None:
         "values = [data.aws_caller_identity.atual.account_id]",
     ):
         assert trecho in bloco, trecho
-    assert "terraform import aws_cloudwatch_log_group.spans aws/spans" in _tf("observabilidade.tf")
