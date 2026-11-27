@@ -87,6 +87,9 @@ resource "aws_lambda_function" "processador" {
     variables = {
       RADAR_DB_NULLPOOL   = "true"
       RADAR_CONFIG_FILTRO = "/var/task/config/filtro.toml"
+      RADAR_TELEMETRIA    = "xray"
+      RADAR_METRICAS      = "emf"
+      RADAR_TRACES_FRACAO = "0.25"
     }
   }
 

@@ -160,3 +160,29 @@ def test_fila_roteada_nao_chama_destino_sem_mensagens() -> None:
     fila.enviar_lote([Mensagem(1, "pagina_coletada", {"pagina_id": 1})])
 
     assert janelas.recebidas == []
+
+
+TP = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+
+
+def test_fila_sqs_manda_atributo_traceparent() -> None:
+    cliente = ClienteFalso()
+    fila = FilaSQS("https://sqs.us-east-2.amazonaws.com/1/radar-editais", cliente)
+    fila.enviar_lote(
+        [
+            Mensagem(1, "pagina_coletada", {"pagina_id": 1}, TP),
+            Mensagem(2, "pagina_coletada", {"pagina_id": 2}),
+        ]
+    )
+    com, sem = cliente.lotes[0]
+    assert com["MessageAttributes"] == {  # type: ignore[comparison-overlap]
+        "traceparent": {"DataType": "String", "StringValue": TP}
+    }
+    assert "MessageAttributes" not in sem
+
+
+def test_corpo_nao_leva_traceparent() -> None:
+    com = Mensagem(1, "pagina_coletada", {"pagina_id": 7}, TP)
+    sem = Mensagem(1, "pagina_coletada", {"pagina_id": 7})
+    assert para_corpo(com) == para_corpo(sem)
+    assert de_corpo(para_corpo(com)) == sem

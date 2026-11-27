@@ -4,6 +4,8 @@ from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import SpanKind
 from sqlalchemy import Engine, delete, func, select, text
 from sqlalchemy.orm import Session
 
@@ -254,3 +256,59 @@ def test_fila_que_consome_nao_segura_transacao(engine: Engine) -> None:
         linha = sessao.get(Outbox, recusada)
         assert linha is not None
         assert (linha.publicada_em, linha.tentativas) == (None, 1)
+
+
+class FilaQueGuarda(FilaFalsa):
+    def __init__(self) -> None:
+        super().__init__()
+        self.mensagens: list[Mensagem] = []
+
+    def enviar_lote(self, mensagens: list[Mensagem]) -> ResultadoEnvio:
+        self.mensagens.extend(mensagens)
+        return super().enviar_lote(mensagens)
+
+
+TP1 = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+TP2 = "00-1af7651916cd43dd8448eb211c80319c-c7ad6b7169203331-00"
+
+
+def _com_contexto(sessao: Session) -> None:
+    for i, tp in enumerate((TP1, TP2, None)):
+        linha = enfileirar(sessao, "pagina_coletada", {"pagina_id": i})
+        linha.traceparent = tp
+    sessao.flush()
+
+
+def test_relay_copia_traceparent_para_mensagem(sessao: Session) -> None:
+    _com_contexto(sessao)
+    fila = FilaQueGuarda()
+    publicar_outbox(sessao, fila)
+    assert [m.traceparent for m in fila.mensagens] == [TP1, TP2, None]
+
+
+def test_relay_sem_trava_copia_traceparent(sessao: Session) -> None:
+    _com_contexto(sessao)
+
+    class Local(FilaQueGuarda):
+        consome_no_envio = True
+
+    fila = Local()
+    publicar_outbox(sessao, fila)
+    assert [m.traceparent for m in fila.mensagens] == [TP1, TP2, None]
+
+
+def test_relay_lote_tem_links(sessao: Session, spans: InMemorySpanExporter) -> None:
+    _com_contexto(sessao)
+    publicar_outbox(sessao, FilaQueGuarda())
+    (lote,) = [s for s in spans.get_finished_spans() if s.name == "relay.lote"]
+    assert lote.kind == SpanKind.PRODUCER
+    assert lote.parent is None
+    assert len(lote.links) == 2
+    assert {f"{link.context.span_id:016x}" for link in lote.links} == {
+        "b7ad6b7169203331",
+        "c7ad6b7169203331",
+    }
+    assert lote.attributes is not None
+    assert lote.attributes["messaging.system"] == "aws_sqs"
+    assert lote.attributes["messaging.batch.message_count"] == 3
+    assert lote.attributes["radar.recusadas"] == 0

@@ -17,7 +17,7 @@ from radar.comum import (
     ResultadoEnvio,
     TipoMensagem,
 )
-from radar.processador.consumidor import processar_mensagem
+from radar.processador.consumidor import processar_com_span
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +89,7 @@ class FilaLocal:
         if mensagem.tipo == "coletar_janela":
             assert self._coletora is not None
             return self._coletora(sessao, mensagem)
-        return processar_mensagem(sessao, mensagem, self._fontes, self._agora())
+        return processar_com_span(sessao, mensagem, self._fontes, self._agora())
 
 
 def criar_fila(

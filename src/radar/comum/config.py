@@ -1,6 +1,8 @@
+import os
 from pathlib import Path
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # src/radar/comum/config.py -> raiz do repositório: o padrão não depende do cwd.
@@ -30,7 +32,17 @@ class Config(BaseSettings):
     # Fila das janelas do PNCP (coletar_janela) e a DLQ dela.
     fila_janelas_url: str | None = None
     fila_janelas_falhas_url: str | None = None
+    # Observabilidade: traces (X-Ray por OTLP) e métricas (EMF na Lambda, PutMetricData no
+    # Fargate). Desligadas por padrão: notebook, CI e testes não falam com a AWS.
+    telemetria: Literal["desligada", "xray"] = "desligada"
+    metricas: Literal["desligada", "emf", "cloudwatch"] = "desligada"
+    traces_fracao: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
 def obter_config() -> Config:
     return Config()
+
+
+def regiao_aws() -> str:
+    """Região do processo (Lambda e ECS definem `AWS_REGION`); padrão, a do projeto."""
+    return os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or "us-east-2"

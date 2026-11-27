@@ -54,3 +54,7 @@ def sessao(engine: Engine) -> Iterator[Session]:
         with Session(conexao, join_transaction_mode="create_savepoint") as sessao:
             yield sessao
         transacao.rollback()
+
+
+# Fixtures de telemetria e métricas em memória (`spans`, `metricas`).
+from telemetria_memoria import metricas, spans  # noqa: E402, F401

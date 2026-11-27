@@ -8,6 +8,7 @@ from radar.coleta.fatias import (
     ResultadoFatia,
     coletar_fatia,
 )
+from radar.coleta.frescor import SEM_DADO_H, frescor_por_fonte
 from radar.coleta.janelas import (
     Auditoria,
     JanelaParada,
@@ -51,6 +52,7 @@ from radar.coleta.trava import liberar_trava, obter_trava, trava_fonte
 __all__ = [
     "LEASE_S",
     "ORCAMENTO_LAMBDA_S",
+    "SEM_DADO_H",
     "Auditoria",
     "ClienteEducado",
     "ClientePNCP",
@@ -75,6 +77,7 @@ __all__ = [
     "criar_http_educado",
     "enfileirar_elegiveis",
     "estado_retrato",
+    "frescor_por_fonte",
     "executar_retrato",
     "ha_retrato_mais_novo_processado",
     "janelas_com_lease_vivo",

@@ -23,6 +23,9 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any, Literal
 
+from opentelemetry import trace
+from opentelemetry.context import Context
+from opentelemetry.trace import StatusCode
 from sqlalchemy import Row, case, delete, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
@@ -30,7 +33,8 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from radar.coleta.modelos import ColetaJanela, PaginaBruta
 from radar.coleta.pncp import ClientePNCP, ErroPNCP, Pagina
-from radar.comum import enfileirar
+from radar.comum import enfileirar, metricas
+from radar.comum.telemetria import link_de, tracer
 
 logger = logging.getLogger(__name__)
 
@@ -98,8 +102,49 @@ def coletar_fatia(
     orcamento_s: float | None,
     relogio: Callable[[], datetime] | None = None,
     cronometro: Callable[[], float] = time.monotonic,
+    traceparent: str | None = None,
 ) -> ResultadoFatia:
-    """Coleta uma fatia da janela e devolve o desfecho.
+    """Coleta uma fatia da janela e devolve o desfecho, dentro do span `coleta.janela`.
+
+    O span é raiz (a unidade de trabalho é a fatia, não a execução de quem chama) e tem link
+    para `traceparent` (o contexto da mensagem `coletar_janela`, quando há): as fatias de uma
+    janela ficam encadeadas por links. As páginas e a continuação gravadas aqui levam o
+    contexto deste span para a outbox. As métricas são descarregadas no fim de cada fatia.
+    """
+    link = link_de(traceparent)
+    try:
+        with tracer().start_as_current_span(
+            "coleta.janela",
+            context=Context(),
+            links=[link] if link is not None else None,
+            attributes={"radar.janela.id": janela_id},
+        ) as span:
+            if lote is not None:
+                span.set_attribute("radar.janela.lote", lote)
+            resultado = _coletar_fatia(
+                sessao, cliente, janela_id, lote, token, orcamento_s, relogio, cronometro
+            )
+            span.set_attribute("radar.desfecho", resultado.desfecho)
+            span.set_attribute("radar.janela.paginas", resultado.paginas)
+            span.set_attribute("radar.janela.registros", resultado.registros)
+            if resultado.desfecho in ("falha", "lease_perdida"):
+                span.set_status(StatusCode.ERROR, (resultado.erro or resultado.desfecho)[:200])
+            return resultado
+    finally:
+        metricas.descarregar()
+
+
+def _coletar_fatia(
+    sessao: Session,
+    cliente: ClientePNCP,
+    janela_id: int,
+    lote: int | None,
+    token: str,
+    orcamento_s: float | None,
+    relogio: Callable[[], datetime] | None,
+    cronometro: Callable[[], float],
+) -> ResultadoFatia:
+    """O trabalho da fatia.
 
     Com `lote` (mensagem da fila), a fatia confere o fencing token e, se o orçamento acabar,
     enfileira a continuação; uma divisão enfileira as duas metades. Sem `lote` (laço da cli),
@@ -117,6 +162,7 @@ def coletar_fatia(
         logger.info(evento, extra={"janela_id": janela_id, "lote": lote})
         return ResultadoFatia(janela, 0, 0)
     dados = _dados_log(janela)
+    _atributos_da_janela(janela)
     logger.info("janela_iniciada", extra=dados)
     try:
         return _coletar(
@@ -136,6 +182,7 @@ def coletar_fatia(
         return ResultadoFatia("lease_perdida", 0, 0)
     except Exception as erro:  # Ctrl+C (BaseException) continua parando o processo
         sessao.rollback()
+        trace.get_current_span().set_attribute("radar.desfecho", "falha")
         logger.exception("janela_erro_inesperado", extra=dados)
         sessao.execute(
             update(ColetaJanela)
@@ -211,6 +258,21 @@ def _reivindicar(
     if lote is not None and atual.lote != lote:
         return "obsoleta"
     return "ocupada"
+
+
+def _atributos_da_janela(janela: _Janela) -> None:
+    trace.get_current_span().set_attributes(
+        {
+            "radar.janela.endpoint": janela.endpoint,
+            "radar.janela.modalidade": janela.modalidade,
+            "radar.janela.data_ini": janela.data_ini.isoformat(),
+            "radar.janela.data_fim": janela.data_fim.isoformat(),
+            # Sem radar.janela.lote: ele vem da mensagem (coletar_fatia) e só existe com ela;
+            # no laço local não há lote, e o da linha (0) só confundiria.
+            # Continuação de uma fatia anterior começa depois da página 1.
+            "radar.janela.pagina_inicial": janela.proxima_pagina if janela.total_paginas else 1,
+        }
+    )
 
 
 def _se(condicao: ColumnElement[bool], valor: Any) -> Any:

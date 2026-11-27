@@ -1,16 +1,20 @@
 """Relay: publica a outbox na fila, em lotes, com commit por lote."""
 
-from collections.abc import Callable, Collection
+from collections.abc import Callable, Collection, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import cast, get_args
 
+from opentelemetry.context import Context
+from opentelemetry.trace import Span, SpanKind
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
 from radar.comum.fila import Fila, Mensagem
 from radar.comum.outbox import Outbox, TipoMensagem
+from radar.comum.telemetria import link_de, tracer
 
 
 @dataclass
@@ -60,18 +64,20 @@ def publicar_outbox(
         if not linhas:
             sessao.commit()
             return resumo
-        mensagens = [Mensagem(o.id, _cast_tipo(o.tipo), o.carga) for o in linhas]
-        resultado = fila.enviar_lote(mensagens)
-        ultimo_id = linhas[-1].id
-        aceitas = 0
-        for o in linhas:
-            if o.id in resultado.aceitas:
-                o.publicada_em = relogio()
-                o.erro = None
-                aceitas += 1
-            else:
-                o.tentativas += 1
-                o.erro = resultado.recusadas.get(o.id, "sem resposta da fila")
+        mensagens = [Mensagem(o.id, _cast_tipo(o.tipo), o.carga, o.traceparent) for o in linhas]
+        with _span_lote(fila, mensagens) as span:
+            resultado = fila.enviar_lote(mensagens)
+            ultimo_id = linhas[-1].id
+            aceitas = 0
+            for o in linhas:
+                if o.id in resultado.aceitas:
+                    o.publicada_em = relogio()
+                    o.erro = None
+                    aceitas += 1
+                else:
+                    o.tentativas += 1
+                    o.erro = resultado.recusadas.get(o.id, "sem resposta da fila")
+            span.set_attribute("radar.recusadas", len(linhas) - aceitas)
         sessao.commit()
         resumo.publicadas += aceitas
         resumo.recusadas += len(linhas) - aceitas
@@ -88,7 +94,7 @@ def _publicar_sem_trava(
     ultimo_id = 0
     while True:
         linhas = sessao.execute(
-            select(Outbox.id, Outbox.tipo, Outbox.carga)
+            select(Outbox.id, Outbox.tipo, Outbox.carga, Outbox.traceparent)
             .where(*_pendentes_depois(ultimo_id, tipos))
             .order_by(Outbox.id)
             .limit(lote)
@@ -96,9 +102,13 @@ def _publicar_sem_trava(
         sessao.commit()  # solta a transação (e a conexão) antes de consumir
         if not linhas:
             return resumo
-        for outbox_id, tipo, carga in linhas:
+        for outbox_id, tipo, carga, traceparent in linhas:
             ultimo_id = outbox_id
-            resultado = fila.enviar_lote([Mensagem(outbox_id, _cast_tipo(tipo), carga)])
+            mensagem = Mensagem(outbox_id, _cast_tipo(tipo), carga, traceparent)
+            # Um span por mensagem: a fila local consome no envio (uma cadeia leva horas).
+            with _span_lote(fila, [mensagem]) as span:
+                resultado = fila.enviar_lote([mensagem])
+                span.set_attribute("radar.recusadas", int(outbox_id not in resultado.aceitas))
             if outbox_id in resultado.aceitas:
                 valores: dict[str, object] = {"publicada_em": relogio(), "erro": None}
                 resumo.publicadas += 1
@@ -114,6 +124,30 @@ def _publicar_sem_trava(
                 .values(**valores)
             )
             sessao.commit()
+
+
+@contextmanager
+def _span_lote(fila: Fila, mensagens: Sequence[Mensagem]) -> Iterator[Span]:
+    """Span `relay.lote` (PRODUCER, raiz) com link para o contexto de cada linha.
+
+    O relay é só o carteiro: não é pai de ninguém. Os links mostram de quais coletas vieram
+    as mensagens do lote; o consumidor liga ao produtor, não ao relay.
+    """
+    links = [link for link in (link_de(m.traceparent) for m in mensagens) if link is not None]
+    url = getattr(fila, "url", None)
+    destino = url.rsplit("/", 1)[-1] if isinstance(url, str) else type(fila).__name__
+    with tracer().start_as_current_span(
+        "relay.lote",
+        context=Context(),
+        kind=SpanKind.PRODUCER,
+        links=links,
+        attributes={
+            "messaging.system": "aws_sqs",
+            "messaging.destination.name": destino,
+            "messaging.batch.message_count": len(mensagens),
+        },
+    ) as span:
+        yield span
 
 
 def _pendentes_depois(

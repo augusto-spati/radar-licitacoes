@@ -8,6 +8,9 @@ from typing import Any
 
 import pytest
 from fakes import VAZIA, Chave, ClienteFalso, como_cliente, pagina
+from opentelemetry.sdk.trace import ReadableSpan
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import StatusCode
 from sqlalchemy import Engine, delete, func, select, update
 from sqlalchemy.orm import Session
 
@@ -21,6 +24,8 @@ from radar.coleta import (
 from radar.coleta.modelos import ColetaJanela, PaginaBruta
 from radar.coleta.pncp import Pagina
 from radar.comum import Outbox
+from radar.comum.telemetria import tracer
+from telemetria_memoria import EmissorEmMemoria
 
 D1 = date(2026, 11, 1)
 AGORA = datetime(2026, 11, 20, 12, 0, tzinfo=UTC)
@@ -506,3 +511,108 @@ def test_excecao_inesperada_conta_falha(sessao: Session) -> None:
 
     recarregar(sessao, j)
     assert (j.status, j.falhas) == ("falha", 1)
+
+
+# ---------- Telemetria: coleta.janela é raiz e as páginas herdam o contexto ----------
+
+TP_MENSAGEM = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+
+
+def _span(spans: InMemorySpanExporter, nome: str) -> ReadableSpan:
+    (achado,) = [s for s in spans.get_finished_spans() if s.name == nome]
+    return achado
+
+
+def test_janela_e_raiz_e_pagina_herda(sessao: Session, spans: InMemorySpanExporter) -> None:
+    j = janela(sessao)
+    falso = ClienteFalso({chave(1): pagina(1, 2), chave(2): pagina(2, 2)})
+    with tracer().start_as_current_span("de-fora"):  # a janela não é filha de quem chama
+        r = fatia(sessao, falso, j.id, lote=None)
+    assert r.desfecho == "concluida"
+    span = _span(spans, "coleta.janela")
+    assert span.parent is None
+    assert span.attributes is not None
+    assert span.attributes["radar.janela.id"] == j.id
+    assert span.attributes["radar.janela.endpoint"] == "publicacao"
+    assert span.attributes["radar.janela.modalidade"] == 6
+    assert span.attributes["radar.janela.data_ini"] == "2026-11-01"
+    assert span.attributes["radar.janela.pagina_inicial"] == 1
+    assert span.attributes["radar.janela.paginas"] == 2
+    assert span.attributes["radar.janela.registros"] == 4
+    assert span.attributes["radar.desfecho"] == "concluida"
+    contextos = sessao.scalars(
+        select(Outbox.traceparent).where(Outbox.tipo == "pagina_coletada")
+    ).all()
+    assert len(contextos) == 2
+    trace_id = f"{span.context.trace_id:032x}"
+    assert all(tp is not None and tp.split("-")[1] == trace_id for tp in contextos)
+
+
+def test_continuacao_liga_a_mensagem_e_marca_pagina_inicial(
+    sessao: Session, spans: InMemorySpanExporter
+) -> None:
+    j = janela(sessao)
+    falso, cronometro = cliente_com_relogio(cinco_paginas())
+    fatia(sessao, falso, j.id, lote=0, orcamento_s=540, cronometro=cronometro)
+    continuacao = sessao.scalars(
+        select(Outbox.traceparent).where(Outbox.tipo == "coletar_janela")
+    ).one()
+    primeira = _span(spans, "coleta.janela")
+    assert continuacao is not None and continuacao.split("-")[2] == (
+        f"{primeira.context.span_id:016x}"
+    )
+    spans.clear()
+    coletar_fatia(
+        sessao,
+        como_cliente(falso),
+        j.id,
+        lote=1,
+        token="b",
+        orcamento_s=10_000,
+        cronometro=cronometro,
+        traceparent=continuacao,
+    )
+    segunda = _span(spans, "coleta.janela")
+    assert segunda.parent is None
+    assert [link.context.span_id for link in segunda.links] == [primeira.context.span_id]
+    assert segunda.attributes is not None
+    assert segunda.attributes["radar.janela.pagina_inicial"] == 4
+    assert segunda.attributes["radar.janela.lote"] == 1
+
+
+def test_janela_com_falha_marca_erro(sessao: Session, spans: InMemorySpanExporter) -> None:
+    j = janela(sessao)
+    falso = ClienteFalso({chave(1): ErroPNCP("HTTP 503", 503)})
+    r = fatia(sessao, falso, j.id, lote=None)
+    assert r.desfecho == "falha"
+    span = _span(spans, "coleta.janela")
+    assert span.status.status_code == StatusCode.ERROR
+    assert span.attributes is not None and span.attributes["radar.desfecho"] == "falha"
+
+
+def test_janela_ocupada_nao_e_erro(sessao: Session, spans: InMemorySpanExporter) -> None:
+    j = janela(sessao, status="concluida")
+    r = fatia(sessao, ClienteFalso({}), j.id, lote=None)
+    assert r.desfecho == "concluida"
+    span = _span(spans, "coleta.janela")
+    assert span.status.status_code != StatusCode.ERROR
+
+
+def test_metricas_descarregadas_por_janela(sessao: Session, metricas: EmissorEmMemoria) -> None:
+    for dia in (D1, D1 + timedelta(days=1)):
+        janela(sessao, data_ini=dia, data_fim=dia)
+    roteiro = {chave(1, dia, dia): pagina(1, 1) for dia in (D1, D1 + timedelta(days=1))}
+    resumo = coletar_pendentes(sessao, como_cliente(ClienteFalso(roteiro)), AGORA)
+    assert resumo.concluidas == 2
+    assert metricas.descarregamentos == 2
+
+
+def test_janela_sem_lote_nao_seta_atributo_nulo(
+    sessao: Session, spans: InMemorySpanExporter, caplog: pytest.LogCaptureFixture
+) -> None:
+    j = janela(sessao)
+    with caplog.at_level(logging.WARNING, logger="opentelemetry"):
+        fatia(sessao, ClienteFalso({chave(1): ErroPNCP("HTTP 503", 503)}), j.id, lote=None)
+    span = _span(spans, "coleta.janela")
+    assert span.attributes is not None and "radar.janela.lote" not in span.attributes
+    assert not [r for r in caplog.records if r.name.startswith("opentelemetry")]

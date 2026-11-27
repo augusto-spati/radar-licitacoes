@@ -15,6 +15,8 @@ from zoneinfo import ZoneInfo
 
 import typer
 import uvicorn
+from opentelemetry.context import Context
+from opentelemetry.trace import StatusCode
 from sqlalchemy.orm import Session, sessionmaker
 
 from radar import __version__
@@ -26,6 +28,7 @@ from radar.coleta import (
     criar_http,
     criar_http_educado,
     executar_retrato,
+    frescor_por_fonte,
     janelas_com_lease_vivo,
     janelas_paradas,
     liberar_trava,
@@ -47,11 +50,13 @@ from radar.comum import (
     criar_engine,
     fabrica_sessao,
     limpar_outbox,
+    metricas,
     obter_config,
     pendencias_outbox,
     publicar_outbox,
     regiao_da_url,
 )
+from radar.comum.telemetria import telemetria_do_processo, tracer
 from radar.editais import (
     Criterios,
     EditalResumo,
@@ -114,7 +119,9 @@ def _criar_cliente() -> ClientePNCP:
 
 
 def _criar_cliente_retrato(fonte: FonteRetrato) -> ClienteEducado:
-    return ClienteEducado(criar_http_educado(), marcador_bloqueio=fonte.marcador_bloqueio)
+    return ClienteEducado(
+        criar_http_educado(), marcador_bloqueio=fonte.marcador_bloqueio, fonte=fonte.nome
+    )
 
 
 def _criar_cliente_sqs(url: str) -> Any:
@@ -265,6 +272,29 @@ def _coletar(sessao: Session, cliente: ClientePNCP) -> int:
     return resumo.falhas
 
 
+def _medir_frescor(sessao: Session, fontes: list[str]) -> dict[str, float]:
+    """`FrescorHoras` de cada fonte (a fonte é propriedade, não dimensão) e o log por fonte.
+
+    Medir nunca derruba a execução: erro vira log, a sessão volta limpa e nada é medido.
+    """
+    horas = _frescor(sessao, fontes)
+    for fonte, valor in horas.items():
+        logger.info("frescor_medido", extra={"fonte": fonte, "horas": valor})
+        metricas.registrar("FrescorHoras", valor, propriedades={"fonte": fonte})
+    return horas
+
+
+def _frescor(sessao: Session, fontes: list[str]) -> dict[str, float]:
+    try:
+        horas = frescor_por_fonte(sessao, _agora(), fontes)
+        sessao.rollback()  # só leitura: não deixa transação aberta durante a coleta
+    except Exception:
+        sessao.rollback()
+        logger.exception("frescor_erro")
+        return {}
+    return dict(horas)
+
+
 def _encerrar(coleta: int = 0, relay: int = 0, fila: int = 0) -> None:
     """Imprime a única linha `resultado:` da execução, por último, e sai com 1 se houve falha.
 
@@ -312,7 +342,7 @@ def carga_inicial(
     _recusar_pncp_com_lease_vivo()
     hoje = _agora().date()
     fila = _criar_fila(fontes_retrato())
-    with _criar_sessao() as sessao:
+    with telemetria_do_processo("radar-coletor"), _criar_sessao() as sessao:
 
         def coletar() -> int:
             novas = planejar_janelas(
@@ -351,18 +381,30 @@ def atualizar(
         _recusar_pncp_com_lease_vivo()
     hoje = _agora().date()
     fila = _criar_fila(retratos)
-    with _criar_sessao() as sessao:
+    # Frescor do PNCP sempre (quem coleta é a Lambda; medir daqui não depende dela) e das
+    # fontes de retrato escolhidas: uma fonte fora da nuvem (a Compesa) mediria 9999 h todo
+    # dia e o alarme de frescor dispararia sem nada errado.
+    medidas = ["pncp", *(nome for nome in escolhidas if nome != "pncp")]
+    with telemetria_do_processo("radar-coletor"):
+        ok = False
+        try:
+            with _criar_sessao() as sessao:
 
-        def coletar() -> int:
-            falhas = 0
-            if "pncp" in escolhidas:
-                falhas += _rodar_pncp(sessao, criterios, hoje, lookback)
-            for nome in escolhidas:
-                if nome != "pncp":
-                    falhas += _rodar_retrato(sessao, retratos[nome])
-            return falhas
+                def coletar() -> int:
+                    falhas = 0
+                    if "pncp" in escolhidas:
+                        falhas += _rodar_pncp(sessao, criterios, hoje, lookback)
+                    for nome in escolhidas:
+                        if nome != "pncp":
+                            falhas += _rodar_retrato(sessao, retratos[nome])
+                    return falhas
 
-        falhas = _com_fila(sessao, fila, coletar)
+                _medir_frescor(sessao, medidas)
+                falhas = _com_fila(sessao, fila, coletar)
+                _medir_frescor(sessao, medidas)
+            ok = not sum(falhas)
+        finally:
+            metricas.registrar("ExecucaoOk", 1 if ok else 0)
     _encerrar(*falhas)
 
 
@@ -375,7 +417,7 @@ def processar() -> None:
     configurar_logs()
     _recusar_pncp_com_lease_vivo()
     fila = _criar_fila(fontes_retrato())
-    with _criar_sessao() as sessao:
+    with telemetria_do_processo("radar-coletor"), _criar_sessao() as sessao:
         falhas = _com_fila(sessao, fila, lambda: _coletar(sessao, _criar_cliente()))
     _encerrar(*falhas)
 
@@ -476,13 +518,18 @@ def auditar(
     fim = hoje if endpoint == "atualizacao" else hoje - timedelta(days=1)
     inicio = hoje - timedelta(days=dias)
     agora = _agora()
-    with _criar_sessao() as sessao:
+    with telemetria_do_processo("radar-coletor"), _criar_sessao() as sessao:
+        # Manual: só imprime. A métrica (e o alarme) é do `atualizar` agendado; um auditar
+        # avulso não deve disparar nem calar o alarme de frescor.
+        frescor = _frescor(sessao, ["pncp", *fontes_retrato()])
         auditoria = auditar_cobertura(sessao, endpoint, inicio, fim, criterios.modalidades)
         retratos = [(f.nome, ultimo_retrato(sessao, f.nome)) for f in fontes_retrato().values()]
         pendentes, mais_velha = pendencias_outbox(sessao)
         paradas = paginas_publicadas_sem_processar(sessao, agora - ATRASO_MAXIMO_FILA)
         sem_processar = retratos_sem_processar(sessao)
         paradas_janela = janelas_paradas(sessao, agora - IDADE_MAXIMA_JANELA)
+    for fonte, valor in frescor.items():
+        typer.echo(f"frescor {fonte}: {valor:.1f} h")
     typer.echo(f"esperadas: {auditoria.esperadas}")
     typer.echo(f"concluidas: {auditoria.concluidas}")
     typer.echo(f"faltando: {len(auditoria.faltando)}")
@@ -663,73 +710,127 @@ def analisar(
     analisados = falhas = adiados = 0
     teto = False
     dono = uuid4()
-    with _criar_sessao() as sessao:
-        if not obter_trava(sessao, TRAVA_ANALISE, dono, DURACAO_TRAVA_ANALISE):
-            # Não é falha: a outra rodada está fazendo o trabalho. Sem "resultado:".
-            typer.echo("analise: outra rodada de análise em andamento; nada feito")
-            return
+    # Span raiz da rodada e um filho por edital. Atributos só com contagens, ids e desfechos:
+    # nunca texto do edital nem da resposta do modelo (exceções também não entram no span).
+    with (
+        telemetria_do_processo("radar-analisador"),
+        tracer().start_as_current_span(
+            "analise.rodada",
+            context=Context(),
+            attributes={"radar.analise.modelo": modelo},
+            record_exception=False,
+            set_status_on_exception=False,
+        ) as rodada,
+    ):
+        ok = False
         try:
-            alvos, pulados = _alvos_analise(
-                sessao,
-                criterios,
-                edital,
-                modelo,
-                refazer,
-                limite or config_ia.max_editais_por_rodada,
-            )
-            sessao.rollback()  # só leitura: nenhuma transação aberta durante rede e Bedrock
-            # O cache no banco commita cada resposta paga na hora, em conexão própria: o gasto
-            # da rodada já entra no do mês, e um edital que falha não o apaga.
-            provedor = ProvedorComCache(
-                _criar_provedor_ia(config_ia),
-                CacheBanco(sessao),
-                "gravar",
-                config_ia,
-                guarda_teto(sessao, config_ia, _agora, lambda: Decimal(0)),
-            )
-            cliente = _criar_cliente_arquivos()
-            dep = Dependencias(
-                cliente_arquivos=cliente,
-                armazem=criar_armazem(ambiente.documentos),
-                provedor=provedor,
-                config=config_ia,
-                perfil=perfil,
-                modelo=modelo,
-            )
-            inicio = _relogio_rodada()
-            try:
-                for indice, alvo in enumerate(alvos):
-                    if _relogio_rodada() - inicio > ORCAMENTO_RODADA_S:
-                        adiados = len(alvos) - indice
-                        typer.echo(
-                            f"orçamento de tempo da rodada esgotado: {adiados} editais ficam "
-                            "para a próxima"
-                        )
-                        break
-                    if not obter_trava(sessao, TRAVA_ANALISE, dono, DURACAO_TRAVA_ANALISE):
-                        typer.echo("trava da análise perdida: rodada interrompida", err=True)
-                        falhas += 1
-                        break
+            with _criar_sessao() as sessao:
+                if not obter_trava(sessao, TRAVA_ANALISE, dono, DURACAO_TRAVA_ANALISE):
+                    # Não é falha: a outra rodada está fazendo o trabalho. Sem "resultado:".
+                    typer.echo("analise: outra rodada de análise em andamento; nada feito")
+                    ok = True
+                    return
+                try:
+                    alvos, pulados = _alvos_analise(
+                        sessao,
+                        criterios,
+                        edital,
+                        modelo,
+                        refazer,
+                        limite or config_ia.max_editais_por_rodada,
+                    )
+                    sessao.rollback()  # só leitura: nada aberto durante rede e Bedrock
+                    # O cache no banco commita cada resposta paga na hora, em conexão própria:
+                    # o gasto da rodada já entra no do mês, e um edital que falha não o apaga.
+                    provedor = ProvedorComCache(
+                        _criar_provedor_ia(config_ia),
+                        CacheBanco(sessao),
+                        "gravar",
+                        config_ia,
+                        guarda_teto(sessao, config_ia, _agora, lambda: Decimal(0)),
+                    )
+                    cliente = _criar_cliente_arquivos()
+                    dep = Dependencias(
+                        cliente_arquivos=cliente,
+                        armazem=criar_armazem(ambiente.documentos),
+                        provedor=provedor,
+                        config=config_ia,
+                        perfil=perfil,
+                        modelo=modelo,
+                    )
+                    inicio = _relogio_rodada()
                     try:
-                        analisar_edital(sessao, alvo, dep, _agora())
-                    except TetoAtingido:
-                        teto = True
-                        typer.echo("teto mensal da IA atingido: rodada interrompida")
-                        break
-                    except Exception:  # um edital ruim não para a rodada
-                        sessao.rollback()
-                        logger.exception(
-                            "analise_falhou",
-                            extra={"fonte": alvo.fonte, "id_na_fonte": alvo.id_na_fonte},
-                        )
-                        falhas += 1
-                        continue
-                    analisados += 1
-            finally:
-                cliente.fechar()
+                        for indice, alvo in enumerate(alvos):
+                            if _relogio_rodada() - inicio > ORCAMENTO_RODADA_S:
+                                adiados = len(alvos) - indice
+                                typer.echo(
+                                    f"orçamento de tempo da rodada esgotado: {adiados} editais "
+                                    "ficam para a próxima"
+                                )
+                                break
+                            if not obter_trava(sessao, TRAVA_ANALISE, dono, DURACAO_TRAVA_ANALISE):
+                                typer.echo(
+                                    "trava da análise perdida: rodada interrompida", err=True
+                                )
+                                falhas += 1
+                                break
+                            with tracer().start_as_current_span(
+                                "analise.edital",
+                                attributes={
+                                    "radar.fonte": alvo.fonte,
+                                    "radar.edital.id_na_fonte": alvo.id_na_fonte,
+                                },
+                                record_exception=False,
+                                set_status_on_exception=False,
+                            ) as span:
+                                try:
+                                    analisar_edital(sessao, alvo, dep, _agora())
+                                except TetoAtingido:
+                                    span.set_attribute("radar.desfecho", "teto")
+                                    teto = True
+                                    typer.echo("teto mensal da IA atingido: rodada interrompida")
+                                    break
+                                except Exception as erro:  # um edital ruim não para a rodada
+                                    # Só o tipo: a mensagem pode trazer texto do edital/modelo.
+                                    span.set_attribute("radar.desfecho", "falha")
+                                    span.set_status(StatusCode.ERROR, type(erro).__name__)
+                                    sessao.rollback()
+                                    logger.exception(
+                                        "analise_falhou",
+                                        extra={
+                                            "fonte": alvo.fonte,
+                                            "id_na_fonte": alvo.id_na_fonte,
+                                        },
+                                    )
+                                    falhas += 1
+                                    continue
+                                span.set_attribute("radar.desfecho", "analisado")
+                            analisados += 1
+                    finally:
+                        cliente.fechar()
+                finally:
+                    liberar_trava(sessao, TRAVA_ANALISE, dono)
+            rodada.set_attributes(
+                {
+                    "radar.analise.alvos": len(alvos),
+                    "radar.analise.analisados": analisados,
+                    "radar.analise.pulados": pulados,
+                    "radar.analise.falhas": falhas,
+                    "radar.analise.adiados": adiados,
+                    "radar.analise.teto": teto,
+                    "radar.analise.custo_usd": float(provedor.custo_usd),
+                }
+            )
+            if falhas or teto:
+                rodada.set_status(StatusCode.ERROR, "teto" if teto else f"{falhas} falhas")
+            ok = not (falhas or teto)
+        except BaseException as erro:
+            rodada.set_status(StatusCode.ERROR, type(erro).__name__)
+            raise
         finally:
-            liberar_trava(sessao, TRAVA_ANALISE, dono)
-    # Nunca "resultado:": o log group é o do coletor e essa linha cala o alarme "não rodou".
+            metricas.registrar("ExecucaoOk", 1 if ok else 0)
+    # A última linha da saída. Nunca "resultado:": o log group é o do coletor e essa linha
+    # cala o alarme "não rodou".
     typer.echo(
         f"analise: {analisados} analisados, {pulados} pulados, {falhas} falhas, "
         f"US$ {provedor.custo_usd:.4f}"

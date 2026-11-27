@@ -8,12 +8,14 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from fakes import ClienteFalso, como_cliente
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from sqlalchemy import Engine, func, select, text
 from sqlalchemy.orm import Session, sessionmaker
 from typer.testing import CliRunner
 
 from radar import cli
 from radar.coleta import (
+    ErroFonte,
     coletar_pendentes,
     ler_paginas_nao_processadas,
     marcar_processada,
@@ -25,6 +27,7 @@ from radar.comum import Base, Outbox, enfileirar, fabrica_sessao
 from radar.editais import registrar
 from radar.editais.modelos import Edital
 from radar.processador import consumidor
+from telemetria_memoria import EmissorEmMemoria
 
 RAIZ = Path(__file__).resolve().parent.parent.parent
 AMOSTRA: dict[str, Any] = json.loads(
@@ -911,3 +914,158 @@ def test_publicar_local_deixa_coletar_janela_para_a_lambda(
     with fabrica() as sessao:
         linha = sessao.scalars(select(Outbox)).one()
     assert (linha.publicada_em, linha.tentativas, linha.erro) == (None, 0, None)
+
+
+def test_consumo_e_outro_trace_com_link_para_a_janela(
+    fabrica: sessionmaker[Session],
+    config_filtro: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    spans: InMemorySpanExporter,
+) -> None:
+    """Fila local: a página coletada em `coleta.janela` é consumida noutro trace, por link."""
+    dia = HOJE - timedelta(days=1)
+    roteiro: dict[tuple[str, date, date, int, int], Pagina | Exception] = {
+        ("publicacao", dia, dia, modalidade, pagina): _pagina(
+            pagina, _registro(f"{modalidade}-{pagina}/2026")
+        )
+        for modalidade in (5, 6)
+        for pagina in (1, 2)
+    }
+    monkeypatch.setattr(cli, "_criar_cliente", lambda: como_cliente(ClienteFalso(roteiro)))
+    monkeypatch.setattr(cli, "fontes_retrato", lambda: {})
+
+    resultado = runner.invoke(
+        cli.app, ["carga-inicial", "--dias", "1", "--config", str(config_filtro)]
+    )
+
+    assert resultado.exit_code == 0, resultado.output
+    terminados = spans.get_finished_spans()
+    janelas = {s.context.span_id: s for s in terminados if s.name == "coleta.janela"}
+    consumos = [s for s in terminados if s.name == "processar mensagem"]
+    assert len(janelas) == 2 and len(consumos) == 4
+    for consumo in consumos:
+        assert consumo.parent is None
+        (link,) = consumo.links
+        janela = janelas[link.context.span_id]
+        assert consumo.context.trace_id != janela.context.trace_id
+        assert link.context.trace_id == janela.context.trace_id
+
+
+# ---------- Telemetria do processo: frescor, ExecucaoOk e a linha resultado ----------
+
+
+class FonteVazia:
+    """Fonte de retrato que falha na primeira página, sem rede (o frescor é o que importa)."""
+
+    marcador_bloqueio: str | None = None
+    minimo_registros = 1
+    rotulo_saida = "saiu da lista"
+
+    def __init__(self, nome: str) -> None:
+        self.nome = nome
+
+    def coletar(self, cliente: Any) -> Iterator[Any]:
+        raise ErroFonte("fora do ar")
+        yield
+
+    def extrair(self, paginas: list[Any]) -> list[dict[str, Any]]:
+        return []
+
+
+def _atualizar_pncp(
+    config_filtro: Path, monkeypatch: pytest.MonkeyPatch, roteiro: dict[Any, Any] | None = None
+) -> Any:
+    falso = ClienteFalso(_roteiro_atualizacao() if roteiro is None else roteiro)
+    monkeypatch.setattr(cli, "_criar_cliente", lambda: como_cliente(falso))
+    return runner.invoke(cli.app, ["atualizar", "--lookback", "1", "--config", str(config_filtro)])
+
+
+def test_atualizar_mede_frescor_no_comeco_e_no_fim(
+    fabrica: sessionmaker[Session],
+    config_filtro: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    metricas: EmissorEmMemoria,
+) -> None:
+    monkeypatch.setattr(cli, "fontes_retrato", lambda: {"sanepar": FonteVazia("sanepar")})
+    resultado = runner.invoke(
+        cli.app, ["atualizar", "--fontes", "sanepar", "--config", str(config_filtro)]
+    )
+    assert resultado.output.strip().splitlines()[-1].startswith("resultado: ")
+    frescor = [r for r in metricas.registros if r.nome == "FrescorHoras"]
+    # pncp (coletado pela Lambda) e a fonte escolhida, no começo e no fim; nada da Compesa.
+    assert [r.propriedades["fonte"] for r in frescor] == ["pncp", "sanepar"] * 2
+    assert all(r.dimensoes == {} for r in frescor)
+    assert frescor[0].valor == 9999.0
+    assert resultado.output.count('"evento": "frescor_medido"') == 4
+
+
+def test_atualizar_registra_execucao_ok(
+    fabrica: sessionmaker[Session],
+    config_filtro: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    metricas: EmissorEmMemoria,
+) -> None:
+    monkeypatch.setattr(cli, "fontes_retrato", lambda: {})
+    assert _atualizar_pncp(config_filtro, monkeypatch).exit_code == 0
+    assert metricas.valores("ExecucaoOk") == [1.0]
+    assert _atualizar_pncp(config_filtro, monkeypatch, roteiro={}).exit_code == 1
+    assert metricas.valores("ExecucaoOk") == [1.0, 0.0]
+
+
+def test_auditar_imprime_frescor_sem_emitir_metrica(
+    fabrica: sessionmaker[Session],
+    config_filtro: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    metricas: EmissorEmMemoria,
+) -> None:
+    """O auditar é manual: a métrica (e o alarme de frescor) é só do `atualizar` agendado."""
+    monkeypatch.setattr(cli, "fontes_retrato", lambda: {})
+    _cobrir_pncp(fabrica)
+    resultado = _auditar(config_filtro)
+    assert [r for r in metricas.registros if r.nome == "FrescorHoras"] == []
+    assert "frescor pncp: " in resultado.output
+
+
+class _ExportadorQuebrado:
+    def export(self, spans: Any) -> Any:
+        raise RuntimeError("X-Ray fora do ar")
+
+    def force_flush(self, timeout_millis: int = 30000) -> bool:
+        raise RuntimeError("X-Ray fora do ar")
+
+    def shutdown(self) -> None:
+        raise RuntimeError("X-Ray fora do ar")
+
+
+class _CloudWatchQuebrado:
+    def put_metric_data(self, **_: Any) -> None:
+        raise RuntimeError("PutMetricData recusado")
+
+
+def test_telemetria_quebrada_nao_muda_nada(
+    engine: Engine,
+    fabrica: sessionmaker[Session],
+    config_filtro: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from radar.comum import metricas as modulo_metricas
+    from radar.comum import telemetria, telemetria_sdk
+
+    monkeypatch.setattr(cli, "fontes_retrato", lambda: {})
+    limpo = _atualizar_pncp(config_filtro, monkeypatch)
+    esperado = (limpo.exit_code, _resumo_editais(fabrica))
+    _truncar(engine)
+
+    monkeypatch.setenv("RADAR_TELEMETRIA", "xray")
+    monkeypatch.setenv("RADAR_METRICAS", "cloudwatch")
+    monkeypatch.setattr(telemetria_sdk, "exportador_xray", lambda regiao: _ExportadorQuebrado())
+    monkeypatch.setattr(
+        modulo_metricas.EmissorCloudWatch, "_obter_cliente", lambda self: _CloudWatchQuebrado()
+    )
+    quebrado = _atualizar_pncp(config_filtro, monkeypatch)
+
+    assert (quebrado.exit_code, _resumo_editais(fabrica)) == esperado
+    assert quebrado.output.strip().splitlines()[-1] == "resultado: sem falhas"
+    # O processo desliga o que ligou: nada vaza para o próximo teste.
+    assert modulo_metricas.emissor_atual() is None
+    assert telemetria.traceparent_atual() is None

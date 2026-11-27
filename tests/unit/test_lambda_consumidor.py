@@ -8,6 +8,7 @@ from types import ModuleType
 from typing import Any
 
 import pytest
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from radar.comum import Mensagem
 from radar.processador import MensagemAdiada
@@ -53,7 +54,9 @@ def _falso(
     vistas: list[Mensagem] = []
     abertas: list[_SessaoFalsa] = []
 
-    def processar(sessao: Any, mensagem: Mensagem, fontes: Any, agora: Any) -> str:
+    def processar(
+        sessao: Any, mensagem: Mensagem, fontes: Any, agora: Any, message_id: str | None = None
+    ) -> str:
         assert isinstance(sessao, _SessaoFalsa) and not sessao.fechada
         assert set(fontes) == {"sanepar", "compesa"}
         vistas.append(mensagem)
@@ -62,7 +65,7 @@ def _falso(
             raise desfecho
         return str(desfecho)
 
-    monkeypatch.setattr(modulo, "processar_mensagem", processar)
+    monkeypatch.setattr(modulo, "processar_com_span", processar)
     monkeypatch.setattr(modulo, "_criar_sessao", lambda: _SessaoFalsa(abertas))
     yield vistas, abertas
 
@@ -130,3 +133,72 @@ def test_engine_criado_uma_vez(modulo: ModuleType, monkeypatch: pytest.MonkeyPat
     segunda = modulo._criar_sessao()
     assert len(criados) == 1
     assert primeira[1] is segunda[1]
+
+
+# --- telemetria -------------------------------------------------------------------------
+
+TP = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+
+
+def _com_atributo(registro: dict[str, Any], valor: str) -> dict[str, Any]:
+    return {
+        **registro,
+        "messageAttributes": {"traceparent": {"stringValue": valor, "dataType": "String"}},
+    }
+
+
+@pytest.fixture
+def consumo_real(modulo: ModuleType, monkeypatch: pytest.MonkeyPatch) -> list[Mensagem]:
+    """O span de verdade (processar_com_span), com o consumidor por baixo falso."""
+    from radar.processador import consumidor
+
+    vistas: list[Mensagem] = []
+
+    def processar(sessao: Any, mensagem: Mensagem, fontes: Any, agora: Any) -> str:
+        vistas.append(mensagem)
+        if mensagem.outbox_id == 99:
+            raise RuntimeError("boom")
+        return "ok"
+
+    monkeypatch.setattr(consumidor, "processar_mensagem", processar)
+    monkeypatch.setattr(modulo, "_criar_sessao", lambda: _SessaoFalsa([]))
+    return vistas
+
+
+def test_handler_leva_o_traceparent_ao_link(
+    modulo: ModuleType, consumo_real: list[Mensagem], spans: InMemorySpanExporter
+) -> None:
+    evento = {"Records": [_com_atributo(_registro("m1", _corpo(1, 1)), TP)]}
+    assert modulo.handler(evento, None) == {"batchItemFailures": []}
+    assert consumo_real[0].traceparent == TP
+    (span,) = [s for s in spans.get_finished_spans() if s.name == "processar mensagem"]
+    assert [f"{link.context.span_id:016x}" for link in span.links] == ["b7ad6b7169203331"]
+    assert span.attributes is not None and span.attributes["messaging.message.id"] == "m1"
+
+
+@pytest.mark.parametrize("atributo", [None, "lixo"])
+def test_handler_sem_atributo_ou_malformado_processa_sem_link(
+    modulo: ModuleType,
+    consumo_real: list[Mensagem],
+    spans: InMemorySpanExporter,
+    atributo: str | None,
+) -> None:
+    registro = _registro("m1", _corpo(1, 1))
+    if atributo is not None:
+        registro = _com_atributo(registro, atributo)
+    assert modulo.handler({"Records": [registro]}, None) == {"batchItemFailures": []}
+    (span,) = [s for s in spans.get_finished_spans() if s.name == "processar mensagem"]
+    assert not span.links
+
+
+def test_handler_descarrega_mesmo_com_erro(
+    modulo: ModuleType, consumo_real: list[Mensagem], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from radar.comum import telemetria
+
+    descargas: list[str] = []
+    monkeypatch.setattr(telemetria, "descarregar", lambda timeout_s=2.0: descargas.append("t"))
+    monkeypatch.setattr(telemetria, "_descarregar_metricas", lambda: descargas.append("m"))
+    evento = {"Records": [_registro("m9", _corpo(99, 1))]}
+    assert modulo.handler(evento, None) == {"batchItemFailures": [{"itemIdentifier": "m9"}]}
+    assert descargas == ["t", "m"]

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol, cast, get_args
 
 from radar.comum.outbox import TipoMensagem
+from radar.comum.telemetria import atributos_sqs
 
 TAMANHO_MAXIMO_LOTE = 10
 
@@ -16,6 +17,9 @@ class Mensagem:
     outbox_id: int
     tipo: TipoMensagem
     carga: dict[str, int]
+    # Contexto do produtor (W3C). Vai no atributo da mensagem, nunca no corpo: mensagens em voo
+    # durante um deploy continuam válidas nos dois sentidos.
+    traceparent: str | None = None
 
 
 @dataclass
@@ -80,7 +84,7 @@ class FilaSQS:
         resultado = ResultadoEnvio(aceitas=set(), recusadas={})
         for inicio in range(0, len(mensagens), TAMANHO_MAXIMO_LOTE):
             lote = mensagens[inicio : inicio + TAMANHO_MAXIMO_LOTE]
-            entradas = [{"Id": str(m.outbox_id), "MessageBody": para_corpo(m)} for m in lote]
+            entradas = [_entrada(m) for m in lote]
             resposta = self._cliente.send_message_batch(QueueUrl=self._url, Entries=entradas)
             resultado.aceitas.update(int(e["Id"]) for e in resposta.get("Successful", []))
             for falha in resposta.get("Failed", []):
@@ -92,6 +96,14 @@ class FilaSQS:
             SourceArn=origem_arn, DestinationArn=destino_arn
         )
         return cast(str, resposta["TaskHandle"])
+
+
+def _entrada(m: Mensagem) -> dict[str, Any]:
+    entrada: dict[str, Any] = {"Id": str(m.outbox_id), "MessageBody": para_corpo(m)}
+    atributos = atributos_sqs(m.traceparent)
+    if atributos:
+        entrada["MessageAttributes"] = atributos
+    return entrada
 
 
 class FilaRoteada:

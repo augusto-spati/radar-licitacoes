@@ -7,11 +7,14 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config as AlembicConfig
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import SpanContext
 from sqlalchemy import Engine, create_engine, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from radar.comum.outbox import Outbox, enfileirar
+from radar.comum.telemetria import tracer
 
 
 def test_enfileirar_sem_commit_some_no_rollback(sessao: Session) -> None:
@@ -174,3 +177,21 @@ def test_downgrade_da_0007_apaga_coletar_janela(
     with alvo.connect() as conexao:
         tipos = conexao.scalars(text("SELECT tipo FROM outbox")).all()
     assert tipos == ["pagina_coletada"]
+
+
+def test_enfileirar_grava_traceparent_do_span(sessao: Session, spans: InMemorySpanExporter) -> None:
+    with tracer().start_as_current_span("x") as span:
+        linha = enfileirar(sessao, "pagina_coletada", {"pagina_id": 7})
+    sessao.flush()
+    gravado = sessao.scalar(select(Outbox.traceparent).where(Outbox.id == linha.id))
+    assert gravado == traceparent_de(span.get_span_context())
+
+
+def test_enfileirar_sem_span_grava_nulo(sessao: Session, spans: InMemorySpanExporter) -> None:
+    linha = enfileirar(sessao, "pagina_coletada", {"pagina_id": 7})
+    sessao.flush()
+    assert sessao.scalar(select(Outbox.traceparent).where(Outbox.id == linha.id)) is None
+
+
+def traceparent_de(contexto: SpanContext) -> str:
+    return f"00-{contexto.trace_id:032x}-{contexto.span_id:016x}-01"

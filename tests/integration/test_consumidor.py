@@ -10,6 +10,9 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
+from opentelemetry.sdk.trace import ReadableSpan
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import SpanKind, StatusCode
 from sqlalchemy import Engine, func, select, text, update
 from sqlalchemy.orm import Session
 
@@ -19,7 +22,12 @@ from radar.coleta.sanepar import FonteSanepar
 from radar.comum import Base, Mensagem
 from radar.editais import reconciliar_retrato, registrar_normalizados
 from radar.editais.modelos import Edital
-from radar.processador import MensagemAdiada, fontes_retrato, processar_mensagem
+from radar.processador import (
+    MensagemAdiada,
+    fontes_retrato,
+    processar_com_span,
+    processar_mensagem,
+)
 
 FUSO = ZoneInfo("America/Sao_Paulo")
 AGORA = datetime(2026, 11, 26, 12, 0, tzinfo=FUSO)
@@ -441,3 +449,82 @@ def test_pagina_em_paralelo_espera_e_nao_registra_de_novo(
     assert resultado == ["ok"]
     with Session(engine) as conferencia:
         assert conferencia.scalar(select(func.count()).select_from(Edital)) == 0
+
+
+# --- telemetria: span do consumidor, ligado ao produtor por link ---------------------
+
+TP_PRODUTOR = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+
+
+def _span(spans: InMemorySpanExporter, nome: str) -> ReadableSpan:
+    (achado,) = [s for s in spans.get_finished_spans() if s.name == nome]
+    return achado
+
+
+def test_span_do_consumidor_e_raiz_com_link(sessao: Session, spans: InMemorySpanExporter) -> None:
+    pagina_id = _pagina_pncp(sessao)
+    mensagem = Mensagem(9, "pagina_coletada", {"pagina_id": pagina_id}, TP_PRODUTOR)
+    assert processar_com_span(sessao, mensagem, FONTES, AGORA, message_id="m-1") == "ok"
+    span = _span(spans, "processar mensagem")
+    assert span.parent is None
+    assert span.kind == SpanKind.CONSUMER
+    assert f"{span.context.trace_id:032x}" != TP_PRODUTOR.split("-")[1]
+    assert [f"{link.context.span_id:016x}" for link in span.links] == ["b7ad6b7169203331"]
+    assert span.attributes is not None
+    assert span.attributes["messaging.message.id"] == "m-1"
+    assert span.attributes["radar.outbox_id"] == 9
+    assert span.attributes["radar.tipo"] == "pagina_coletada"
+    assert span.attributes["radar.desfecho"] == "ok"
+    registrar = _span(spans, "editais.registrar")
+    assert registrar.parent is not None and registrar.parent.span_id == span.context.span_id
+
+
+@pytest.mark.parametrize("traceparent", [None, "lixo"])
+def test_sem_contexto_ou_malformado_processa_sem_link(
+    sessao: Session, spans: InMemorySpanExporter, traceparent: str | None
+) -> None:
+    pagina_id = _pagina_pncp(sessao)
+    mensagem = Mensagem(9, "pagina_coletada", {"pagina_id": pagina_id}, traceparent)
+    assert processar_com_span(sessao, mensagem, FONTES, AGORA) == "ok"
+    assert not _span(spans, "processar mensagem").links
+
+
+def test_adiada_nao_e_erro_no_span(sessao: Session, spans: InMemorySpanExporter) -> None:
+    retrato_id = _retrato(sessao, _paginas_sanepar(_lista("lista-oe-abertura-p1.html")))
+    with trava_fonte(sessao, "sanepar") as obtida:
+        assert obtida
+        with pytest.raises(MensagemAdiada):
+            processar_com_span(sessao, _msg_retrato(retrato_id), FONTES, AGORA)
+    span = _span(spans, "processar mensagem")
+    assert span.status.status_code != StatusCode.ERROR
+    assert span.attributes is not None and span.attributes["radar.desfecho"] == "adiada"
+
+
+def test_erro_inesperado_marca_o_span(sessao: Session, spans: InMemorySpanExporter) -> None:
+    retrato_id = _retrato(sessao, _paginas_sanepar(_lista("lista-oe-abertura-p1.html")))
+    with pytest.raises(KeyError):  # fonte desconhecida: erro de deploy, nova tentativa
+        processar_com_span(sessao, _msg_retrato(retrato_id), {}, AGORA)
+    span = _span(spans, "processar mensagem")
+    assert span.status.status_code == StatusCode.ERROR
+    # Só o tipo: a mensagem (ou o repr) pode trazer texto do edital.
+    assert span.status.description == "KeyError"
+    assert span.events == ()
+
+
+def test_registrar_e_reconciliar_viram_spans_filhos(
+    sessao: Session, spans: InMemorySpanExporter
+) -> None:
+    retrato_id = _retrato(sessao, _paginas_sanepar(_lista("lista-oe-abertura-p1.html")))
+    assert processar_com_span(sessao, _msg_retrato(retrato_id), FONTES, AGORA) == "ok"
+    raiz = _span(spans, "processar mensagem")
+    filhos = {
+        s.name: s
+        for s in spans.get_finished_spans()
+        if s.parent is not None and s.parent.span_id == raiz.context.span_id
+    }
+    assert set(filhos) == {"editais.registrar", "editais.reconciliar"}
+    registrar = filhos["editais.registrar"].attributes or {}
+    assert registrar["radar.inseridos"] == 20
+    assert {"radar.atualizados", "radar.invalidos"} <= set(registrar)
+    assert not {"inseridos", "atualizados", "invalidos"} & set(registrar)
+    assert (filhos["editais.reconciliar"].attributes or {})["radar.encerrados"] == 0

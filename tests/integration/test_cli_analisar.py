@@ -10,10 +10,13 @@ from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import StatusCode
 from sqlalchemy import Engine, create_engine, func, select, text
 from sqlalchemy.orm import Session, sessionmaker
 from typer.testing import CliRunner
 
+import radar.analise
 from radar import cli
 from radar.analise import AnaliseEdital, ClienteArquivosPNCP, ConfigIA, Pedido, Resposta
 from radar.analise.custos import gasto_do_mes
@@ -21,6 +24,7 @@ from radar.analise.modelos import RespostaLLM
 from radar.coleta.trava import obter_trava
 from radar.comum import Base, fabrica_sessao
 from radar.editais import registrar, registrar_normalizados
+from telemetria_memoria import EmissorEmMemoria
 
 RAIZ = Path(__file__).resolve().parent.parent.parent
 AMOSTRA: dict[str, Any] = json.loads(
@@ -392,3 +396,95 @@ def test_rodada_solta_a_trava_no_fim(
     assert _analisar(config_filtro).exit_code == 0
     with engine.connect() as conexao:
         assert conexao.scalar(text("SELECT count(*) FROM trava_fonte")) == 0
+
+
+# ---------- Telemetria: span da rodada, span por edital, ExecucaoOk ----------
+
+# Só contagens, ids e desfechos: nada do texto do edital nem da resposta do modelo.
+ATRIBUTOS_RODADA = {
+    "radar.analise.modelo",
+    "radar.analise.alvos",
+    "radar.analise.analisados",
+    "radar.analise.pulados",
+    "radar.analise.falhas",
+    "radar.analise.adiados",
+    "radar.analise.teto",
+    "radar.analise.custo_usd",
+}
+ATRIBUTOS_EDITAL = {"radar.fonte", "radar.edital.id_na_fonte", "radar.desfecho"}
+
+
+def test_analisar_span_da_rodada_e_um_por_edital(
+    rede: tuple[sessionmaker[Session], Rede],
+    config_filtro: Path,
+    spans: InMemorySpanExporter,
+    metricas: EmissorEmMemoria,
+) -> None:
+    fabrica, _ = rede
+    _popular(fabrica)
+    resultado = _analisar(config_filtro)
+    assert resultado.exit_code == 0, resultado.output
+
+    terminados = spans.get_finished_spans()
+    (rodada,) = [s for s in terminados if s.name == "analise.rodada"]
+    editais = [s for s in terminados if s.name == "analise.edital"]
+    assert rodada.parent is None
+    assert set(rodada.attributes or {}) == ATRIBUTOS_RODADA
+    assert (rodada.attributes or {})["radar.analise.analisados"] == 2
+    assert sorted((s.attributes or {})["radar.edital.id_na_fonte"] for s in editais) == [
+        ABERTO,
+        OUTRO_ABERTO,
+    ]
+    for span in editais:
+        assert span.parent is not None and span.parent.span_id == rodada.context.span_id
+        assert set(span.attributes or {}) == ATRIBUTOS_EDITAL
+        assert (span.attributes or {})["radar.desfecho"] == "analisado"
+        assert span.events == ()
+    assert metricas.valores("ExecucaoOk") == [1.0]
+
+
+def test_analisar_falha_marca_o_span_sem_texto_e_execucao_nao_ok(
+    rede: tuple[sessionmaker[Session], Rede],
+    config_filtro: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    spans: InMemorySpanExporter,
+    metricas: EmissorEmMemoria,
+) -> None:
+    fabrica, _ = rede
+    _popular(fabrica)
+
+    def explode(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("SEGREDO-DO-EDITAL texto que nao pode sair")
+
+    # analisar importa de radar.analise dentro da função: trocar lá basta.
+    monkeypatch.setattr(radar.analise, "analisar_edital", explode)
+    resultado = _analisar(config_filtro)
+    assert resultado.exit_code == 1
+    assert "resultado:" not in resultado.output
+
+    terminados = spans.get_finished_spans()
+    editais = [s for s in terminados if s.name == "analise.edital"]
+    assert len(editais) == 2
+    for span in editais:
+        assert span.status.status_code == StatusCode.ERROR
+        assert span.status.description == "RuntimeError"
+        assert (span.attributes or {})["radar.desfecho"] == "falha"
+        assert span.events == ()
+    for span in terminados:
+        assert "SEGREDO" not in repr(dict(span.attributes or {}))
+        assert "SEGREDO" not in (span.status.description or "")
+    assert metricas.valores("ExecucaoOk") == [0.0]
+
+
+def test_rodada_concorrente_conta_como_execucao_ok(
+    rede: tuple[sessionmaker[Session], Rede],
+    config_filtro: Path,
+    spans: InMemorySpanExporter,
+    metricas: EmissorEmMemoria,
+) -> None:
+    fabrica, _ = rede
+    with fabrica() as sessao:
+        assert obter_trava(sessao, "analise", uuid.uuid4(), timedelta(minutes=30))
+    assert _analisar(config_filtro).exit_code == 0
+    assert metricas.valores("ExecucaoOk") == [1.0]
+    assert [s.name for s in spans.get_finished_spans()] == ["analise.rodada"]
