@@ -103,7 +103,9 @@ def test_fila_tem_dlq_e_alarmes() -> None:
     assert "maxReceiveCount     = 5" in fila
     assert "visibility_timeout_seconds = 720" in fila
     assert 'function_response_types = ["ReportBatchItemFailures"]' in fila
-    assert "maximum_concurrency = 2" in fila
+    # Sem maximum_concurrency na radar-editais: com ele, os pollers ociosos não são
+    # otimizados e o custo de ReceiveMessage do SQS sobe; o limite fica só na radar-janelas.
+    assert "maximum_concurrency" not in fila
     assert len(re.findall(r'resource\s+"aws_cloudwatch_metric_alarm"', fila)) == 3
 
 
@@ -127,9 +129,14 @@ def test_janelas_tem_dlq_agenda_e_alarmes() -> None:
     assert 'schedule_expression_timezone = "America/Sao_Paulo"' in janelas
     assert '["radar.processador.lambda_coletora.handler"]' in janelas
     assert '["radar.processador.lambda_planejador.handler"]' in janelas
-    # Confiança do Scheduler: a mesma do coletor, com aws:SourceAccount.
-    assert "data.aws_iam_policy_document.scheduler_assume.json" in janelas
-    assert "aws:SourceAccount" in _tf("coletor.tf")
+    # Confiança do Scheduler: aws:SourceAccount e aws:SourceArn da agenda do planejador.
+    assert "data.aws_iam_policy_document.scheduler_assume_planejador.json" in janelas
+    assert '"aws:SourceAccount"' in janelas and '"aws:SourceArn"' in janelas
+    assert ":schedule/default/${local.nome_agenda_planejador}" in janelas
+    assert 'nome_agenda_planejador = "radar-planejar-diario"' in janelas
+    # Invocação assíncrona do planejador sem retry da Lambda (o retry é o do Scheduler).
+    assert 'resource "aws_lambda_function_event_invoke_config" "planejador"' in janelas
+    assert re.search(r"maximum_retry_attempts\s+= 0", janelas)
     assert 'pattern        = "\\"janela_concluida\\""' in janelas
     assert "threshold           = 21600" in janelas
     assert len(re.findall(r'resource\s+"aws_cloudwatch_metric_alarm"', janelas)) == 3

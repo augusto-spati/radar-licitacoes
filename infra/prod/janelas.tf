@@ -199,12 +199,49 @@ resource "aws_lambda_function" "planejador" {
   ]
 }
 
+# O Scheduler invoca de forma assincrona: sem retry da propria Lambda, o unico retry e o da
+# agenda (retry_policy abaixo). Um erro do planejador vira Errors uma vez, nao tres.
+resource "aws_lambda_function_event_invoke_config" "planejador" {
+  function_name          = aws_lambda_function.planejador.function_name
+  maximum_retry_attempts = 0
+}
+
 # ---------- Agenda: todo dia 06:00 de Brasilia ----------
 
-# Confianca: data.aws_iam_policy_document.scheduler_assume (coletor.tf), com aws:SourceAccount.
+locals {
+  nome_agenda_planejador = "radar-planejar-diario"
+  # Montado a mao: referenciar aws_scheduler_schedule aqui fecharia um ciclo (a agenda usa o
+  # papel). Grupo "default", o da agenda.
+  arn_agenda_planejador = "arn:aws:scheduler:${var.regiao}:${data.aws_caller_identity.atual.account_id}:schedule/default/${local.nome_agenda_planejador}"
+}
+
+# Confianca: so o Scheduler desta conta, e so pela agenda do planejador (confused deputy).
+data "aws_iam_policy_document" "scheduler_assume_planejador" {
+  statement {
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["scheduler.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.atual.account_id]
+    }
+
+    condition {
+      test     = "ArnEquals"
+      variable = "aws:SourceArn"
+      values   = [local.arn_agenda_planejador]
+    }
+  }
+}
+
 resource "aws_iam_role" "scheduler_planejador" {
   name               = "radar-scheduler-planejador"
-  assume_role_policy = data.aws_iam_policy_document.scheduler_assume.json
+  assume_role_policy = data.aws_iam_policy_document.scheduler_assume_planejador.json
 }
 
 data "aws_iam_policy_document" "scheduler_planejador" {
@@ -221,7 +258,7 @@ resource "aws_iam_role_policy" "scheduler_planejador" {
 }
 
 resource "aws_scheduler_schedule" "planejar_diario" {
-  name                         = "radar-planejar-diario"
+  name                         = local.nome_agenda_planejador
   schedule_expression          = "cron(0 6 * * ? *)"
   schedule_expression_timezone = "America/Sao_Paulo"
 
