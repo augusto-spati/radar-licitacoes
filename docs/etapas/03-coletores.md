@@ -147,3 +147,9 @@ Cada retrato grava todas as páginas (a Sanepar, umas 100 por rodada com os deta
 retrato concluído e registrado, `limpar_brutos` apaga as páginas dos retratos mais antigos da
 mesma fonte: ficam as dos 3 concluídos mais novos e as dos 10 em falha mais novos (a falha é o que
 se quer diagnosticar). As linhas de `coleta_retrato` ficam todas. O log é `brutos_removidos`.
+
+## A Compesa não responde a partir da AWS (etapa 4a)
+
+Na primeira rodada na nuvem, o portal da Compesa deu `ConnectTimeout` duas vezes seguidas, em horários diferentes, a partir de us-east-2. Da conexão do Augusto, no Brasil, o mesmo endereço respondeu em 0,6 s. O mais provável é um bloqueio por origem do endereço IP.
+
+Por isso a execução agendada na nuvem coleta só `pncp,sanepar` (`infra/prod/coletor.tf`, campo `input` do agendamento). A Compesa continua funcionando localmente com `uv run radar atualizar --fontes compesa`. Decisão pendente com o Augusto: rodar a Compesa por um agendamento local, aceitar sem ela na nuvem, ou perguntar à Compesa.

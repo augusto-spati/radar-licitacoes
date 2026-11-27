@@ -237,6 +237,16 @@ resource "aws_scheduler_schedule" "atualizar_diario" {
     arn      = aws_ecs_cluster.radar.arn
     role_arn = aws_iam_role.scheduler_coletor.arn
 
+    # A Compesa fica fora da nuvem: o portal dela nao responde a partir da AWS
+    # (ConnectTimeout em duas rodadas em us-east-2; responde em 0,6 s de uma conexao no
+    # Brasil). Ela continua coletavel localmente com `radar atualizar --fontes compesa`.
+    input = jsonencode({
+      containerOverrides = [{
+        name    = "coletor"
+        command = ["atualizar", "--fontes", "pncp,sanepar"]
+      }]
+    })
+
     ecs_parameters {
       task_definition_arn = local.arn_familia_coletor
       launch_type         = "FARGATE"
