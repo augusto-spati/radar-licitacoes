@@ -267,3 +267,72 @@ def test_dn_nao_casa_com_de_dentro_de_palavra() -> None:
     assert not _dn_no_texto(100, "assentamentoderede100,00m")  # "rede100" não é "DE 100"
     assert _dn_no_texto(110, "tubopvcde=110mm")
     assert _dn_no_texto(100, "tubopvcdn100mm")
+
+
+# --- Descrição em várias linhas com item inteiro (editais do PNCP de 2026-11-27) ---
+
+# PNCP 76995422000106-1-000127/2026: o item sozinho na linha, a descrição embaixo e a unidade
+# "Metros" na linha do preço. Antes só a última linha da descrição ("de abastecimento") ficava.
+RURAL = """LOTE 02 - ADUTORAS EM PEAD E INTERLIGAÇÕES HIDRÁULICAS ENTRE POÇO E
+Item Descrição
+1
+Tubo PEAD PE80 DN 50 mm PN
+12,5, próprio para adução de
+água potável em sistemas rurais
+de abastecimento
+Metros 1000  R$        28,19  R$ 28.190,00
+3
+União PEAD DN 50 mm para
+interligação de adutora de água
+potável
+Und 20  R$      139,72  R$ 2.794,40
+19 Hidrometro medidor de vazão com capacidade de 16m3 h. Un 8  R$   1.216,92  R$ 9.735,36
+"""
+
+# PNCP 25269069000146-1-000045/2026: "item código DESCRIÇÃO", a descrição continua nas linhas de
+# baixo (uma delas começa com número: "75 GRAMAS.") e a unidade por extenso.
+HIDRAULICO = """Item Código Descrição Unidade Quant. Valor
+6 63642 ADESIVO BISNAGA.
+ADESIVO PLÁSTICO PARA COLAR PVC , BISNAGA COM
+75 GRAMAS.
+TUBO 1500 R$ 8,30 R$ 12.450,00
+76 82147 TUBO EM FERRO FUNDIDO DÚCTIL PONTA/BOLSA, K7,
+DN 400 MM, CONFORME NBR 7675, PARA ÁGUA BRUTA
+OU TRATADA.
+METRO 24 R$ 1.402,42 R$ 33.658,08
+8 81802 BRAÇADEIRA EM AÇO COM PARAFUSOS PARA FIXAÇÃO
+DE TUBULAÇÃO DE FERRO FUNDIDO, DN 300 MM.
+UNIDADE 55 R$ 940,00 R$ 51.700,00
+"""
+
+
+def test_item_inteiro_sozinho_e_descricao_nas_linhas_de_baixo() -> None:
+    itens = _por_item(ler_planilha([RURAL]))
+    assert set(itens) == {"1", "3", "19"}
+    tubo = itens["1"]
+    assert tubo.descricao == (
+        "Tubo PEAD PE80 DN 50 mm PN 12,5, próprio para adução de água potável em sistemas "
+        "rurais de abastecimento"
+    )
+    assert (tubo.unidade, tubo.quantidade, tubo.preco_com_bdi) == (
+        "Metros",
+        Decimal(1000),
+        Decimal("28.19"),
+    )
+    assert itens["3"].descricao.startswith("União PEAD DN 50 mm")
+    assert itens["19"].descricao.startswith("Hidrometro medidor de vazão")
+
+
+def test_item_inteiro_com_codigo_e_unidade_por_extenso() -> None:
+    itens = _por_item(ler_planilha([HIDRAULICO]))
+    tubo = itens["76"]
+    assert tubo.codigo == "82147"
+    assert tubo.descricao == (
+        "TUBO EM FERRO FUNDIDO DÚCTIL PONTA/BOLSA, K7, DN 400 MM, CONFORME NBR 7675, PARA "
+        "ÁGUA BRUTA OU TRATADA."
+    )
+    assert (tubo.unidade, tubo.quantidade) == ("METRO", Decimal(24))
+    assert itens["8"].unidade == "UNIDADE"
+    assert itens["8"].descricao.startswith("BRAÇADEIRA EM AÇO")
+    # "TUBO" não é unidade conhecida: a linha do adesivo fica de fora (a conta não basta).
+    assert "6" not in itens

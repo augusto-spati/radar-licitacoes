@@ -11,7 +11,8 @@ Layouts medidos no spike (2026-11-27, `docs/superpowers/specs/2026-11-27-etapa-0
 - código e fonte depois da descrição ("... fornec./assent. SINAPI 90701 m 33,00 90,52 ...");
 - código, fonte e data-base da linha ("... HM07752 SABESP jul/26 M 2.866,62 284,07 ... 15,28% ...");
 - memorial de cálculo entre a quantidade e os preços ("m³ 1487,20 Trecho linear 845m x ...").
-Descrição quebrada em várias linhas: junta as linhas desde o último número de item.
+Descrição quebrada em várias linhas: junta as linhas desde o último número de item ("4.4 ...",
+"12" sozinho numa linha ou "1 67009 ACIONADOR ...", item inteiro seguido do código).
 """
 
 import re
@@ -30,12 +31,13 @@ BDI_MIN = Decimal("0.05")
 BDI_MAX = Decimal("0.45")
 MIN_NUMEROS = 2
 MAX_NUMEROS = 7
-MAX_LINHAS_DESCRICAO = 6
+MAX_LINHAS_DESCRICAO = 10
 
 # Unidades vistas nas planilhas (sem acento, sem ponto nem espaço, como `normalizar_unidade`).
 UNIDADES = frozenset(
     {
-        "m", "m2", "m3", "ml", "mt", "km", "un", "und", "unid", "ud", "u", "pc", "peca", "pca",
+        "m", "m2", "m3", "ml", "mt", "mts", "metro", "metros", "km", "un", "und", "unid",
+        "unidade", "ud", "u", "pc", "peca", "pca",
         "kg", "t", "ton", "h", "hr", "hh", "mes", "dia", "vb", "verba", "cj", "conj", "cjto",
         "jg", "l", "gl", "pt", "sc", "ha", "lig", "unmes", "un/mes", "unid/mes", "mxmes",
         "tkm", "txkm", "tonxkm", "m3xkm", "m3km", "kmxm3",
@@ -301,6 +303,19 @@ def _comeca_item(linha: str) -> bool:
     return False
 
 
+def _abre_item(linha: str) -> bool:
+    """Linha onde começa a descrição de um item: `_comeca_item`, o número inteiro sozinho
+    ("12", com a descrição nas linhas de baixo) ou inteiro seguido do código ("1 67009 ...")."""
+    if _comeca_item(linha):
+        return True
+    tokens = linha.split()
+    if not tokens or not _INTEIRO_ITEM.match(tokens[0]):
+        return False
+    return len(tokens) == 1 or (
+        len(tokens) > 2 and _CODIGO.match(sem_acento(tokens[1])) is not None
+    )
+
+
 @dataclass(frozen=True)
 class _Bruta:
     item: str | None
@@ -392,15 +407,28 @@ def ler_planilha(paginas: list[str]) -> list[LinhaPlanilha]:
             bruta, antes = lida
             if not _comeca_item(" ".join(antes)) and anteriores:
                 inicio = max(
-                    (i for i, a in enumerate(anteriores) if _comeca_item(a)),
+                    (i for i, a in enumerate(anteriores) if _abre_item(a)),
                     default=len(anteriores) - 1,
                 )
                 juntas = " ".join([*anteriores[inicio:], bruta.descricao])
                 item, tokens = _limpar_descricao(juntas.split())
                 _, _, usados = _fonte_e_codigo(tokens[:2])
                 tokens = [t for j, t in enumerate(tokens) if j not in usados]
+                codigo = bruta.codigo
+                # "1 67009 ACIONADOR ...": o código vem logo depois do item inteiro.
+                if (
+                    codigo is None
+                    and item is not None
+                    and "." not in item
+                    and len(tokens) > 1
+                    and _CODIGO.match(sem_acento(tokens[0]))
+                ):
+                    codigo = tokens.pop(0)
                 bruta = replace(
-                    bruta, item=bruta.item or item, descricao=" ".join(_tirar_fim(tokens))
+                    bruta,
+                    item=bruta.item or item,
+                    codigo=codigo,
+                    descricao=" ".join(_tirar_fim(tokens)),
                 )
             anteriores = []
             if len(bruta.descricao) < 3:
@@ -448,6 +476,7 @@ _NUMERO_CORRIDO = re.compile(r"\d[\d.,]*\d|\d")
 _MATERIAIS_IA = {
     "pvc": ("pvc",),
     "defofo": ("defofo",),
+    "pba": ("pba",),
     "pead": ("pead", "polietileno"),
     "polietileno": ("pead", "polietileno"),
     "ferro fundido": ("ferrofundido", "fofo"),
