@@ -143,7 +143,8 @@ def _contagens(sessao: Session, filtro: list[ColumnElement[bool]]) -> dict[str, 
     return {situacao: int(n) for situacao, n in sessao.execute(consulta)}
 
 
-def _ultimas(sessao: Session, filtro: list[ColumnElement[bool]]) -> list[ContratacaoPassada]:
+def _referencia() -> ColumnElement[Any]:
+    """Data do resultado mais recente da contratação; sem ela, o encerramento."""
     data_resultado = (
         select(func.max(ResultadoItem.data_resultado))
         .where(
@@ -154,9 +155,10 @@ def _ultimas(sessao: Session, filtro: list[ColumnElement[bool]]) -> list[Contrat
         .scalar_subquery()
     )
     # O encerramento é hora de Brasília sem fuso; vira timestamptz para comparar.
-    referencia = func.coalesce(
-        data_resultado, func.timezone(FUSO.key, Edital.data_encerramento_proposta)
-    )
+    return func.coalesce(data_resultado, func.timezone(FUSO.key, Edital.data_encerramento_proposta))
+
+
+def _ultimas(sessao: Session, filtro: list[ColumnElement[bool]]) -> list[ContratacaoPassada]:
     consulta = (
         select(
             Edital.fonte,
@@ -173,7 +175,7 @@ def _ultimas(sessao: Session, filtro: list[ColumnElement[bool]]) -> list[Contrat
         )
         .join(ResultadoBusca, _juncao())
         .where(*filtro)
-        .order_by(referencia.desc().nulls_last(), Edital.id_na_fonte.desc())
+        .order_by(_referencia().desc().nulls_last(), Edital.id_na_fonte.desc())
         .limit(ULTIMAS)
     )
     return [
@@ -203,7 +205,10 @@ def _mediana(valores: list[Decimal]) -> Decimal | None:
 
 
 def _vencedores(sessao: Session, filtro: list[ColumnElement[bool]]) -> list[Vencedor]:
-    """Uma vitória por contratação (o vencedor do resumo). Pessoa física conta à parte."""
+    """Uma vitória por contratação (o vencedor do resumo). Pessoa física conta à parte.
+
+    `parcial` conta vitória, mas o desconto provisório não entra na mediana (regra da régua).
+    """
     consulta = (
         select(
             Edital.id_na_fonte,
@@ -212,11 +217,12 @@ def _vencedores(sessao: Session, filtro: list[ColumnElement[bool]]) -> list[Venc
             ResultadoBusca.vencedor_porte,
             ResultadoBusca.valor_homologado_considerado,
             ResultadoBusca.desconto,
+            ResultadoBusca.situacao,
         )
         .join(Edital, _juncao())
         .where(*filtro)
         .where(ResultadoBusca.vencedor_nome.is_not(None))
-        .order_by(Edital.data_encerramento_proposta.desc().nulls_last(), Edital.id_na_fonte)
+        .order_by(_referencia().desc().nulls_last(), Edital.id_na_fonte.desc())
     )
     grupos: dict[tuple[str, str], dict[str, Any]] = {}
     for linha in sessao.execute(consulta):
@@ -226,7 +232,7 @@ def _vencedores(sessao: Session, filtro: list[ColumnElement[bool]]) -> list[Venc
             chave = ("pf", linha.id_na_fonte)
         else:
             chave = ("nome", linha.vencedor_nome)
-        # Ordem por encerramento decrescente: nome e porte vêm da vitória mais recente.
+        # Mesma ordem de `_ultimas`: nome e porte vêm do resultado mais recente.
         grupo = grupos.setdefault(
             chave,
             {
@@ -239,7 +245,7 @@ def _vencedores(sessao: Session, filtro: list[ColumnElement[bool]]) -> list[Venc
         )
         grupo["vitorias"] += 1
         grupo["soma"] += linha.valor_homologado_considerado or Decimal(0)
-        if linha.desconto is not None:
+        if linha.situacao == "homologada" and linha.desconto is not None:
             grupo["descontos"].append(linha.desconto)
     ordenados = sorted(grupos.values(), key=lambda g: (-g["vitorias"], -g["soma"]))
     return [
@@ -262,6 +268,7 @@ def _regua(
     sessao: Session,
     filtro: list[ColumnElement[bool]],
     criterios: Criterios,
+    proprio: tuple[str, str],
     linha: str | None,
     uf: str | None,
     faixa: str | None,
@@ -270,6 +277,8 @@ def _regua(
         *filtro,
         ResultadoBusca.situacao == "homologada",
         ResultadoBusca.desconto.is_not(None),
+        # O próprio edital não mede a si mesmo.
+        ~and_(Edital.fonte == proprio[0], Edital.id_na_fonte == proprio[1]),
     ]
     if linha is not None:
         condicoes.append(_casa_termos(criterios.linhas[linha]))
@@ -297,11 +306,15 @@ def historico_do_edital(
 ) -> HistoricoOrgao | None:
     """Histórico do órgão do edital; None só se o edital não existe.
 
+    O próprio edital fica fora das réguas, mas entra nas contagens, últimas e vencedores.
+    `agora` sem fuso → ValueError.
     Órgão sem nada no recorte (ou edital sem CNPJ) → histórico vazio, com as réguas zeradas.
     Régua: uma por linha do edital (sem linha → uma de todas as linhas), na UF e faixa de valor
     do edital, só contratações `homologada` com desconto; com menos de 5 casos, vem também a
     régua da mesma linha sem UF e sem faixa.
     """
+    if agora.tzinfo is None or agora.utcoffset() is None:
+        raise ValueError("agora precisa ter fuso horário")
     edital = obter_edital(sessao, fonte, id_na_fonte, criterios)
     if edital is None:
         return None
@@ -309,13 +322,14 @@ def historico_do_edital(
     filtro = _recorte(criterios, edital.orgao_cnpj, agora) if edital.orgao_cnpj else sem_orgao
     contagens = _contagens(sessao, filtro)
     faixa = faixa_de_valor(edital.valor_estimado)
+    proprio = (fonte, id_na_fonte)
     reguas: list[Regua] = []
     linhas: list[str | None] = [*edital.linhas] or [None]
     for linha in linhas:
-        regua = _regua(sessao, filtro, criterios, linha, edital.uf, faixa)
+        regua = _regua(sessao, filtro, criterios, proprio, linha, edital.uf, faixa)
         reguas.append(regua)
         if regua.poucos_casos and (regua.uf is not None or regua.faixa is not None):
-            reguas.append(_regua(sessao, filtro, criterios, linha, None, None))
+            reguas.append(_regua(sessao, filtro, criterios, proprio, linha, None, None))
     return HistoricoOrgao(
         orgao_cnpj=edital.orgao_cnpj,
         orgao_nome=edital.orgao_nome,

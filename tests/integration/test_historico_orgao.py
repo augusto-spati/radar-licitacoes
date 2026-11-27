@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
+import pytest
 from sqlalchemy.orm import Session
 
 from radar.editais import (
@@ -127,7 +128,8 @@ def test_contagens_ultimas_e_vencedores(sessao: Session) -> None:
         False,
     )
     assert (primeira.valor_estimado, primeira.valor_homologado) == (Decimal(100), Decimal(50))
-    assert [(v.nome, v.vitorias) for v in historico.vencedores] == [("Acme Ltda", 2), ("Beta", 1)]
+    # O nome vem do resultado mais recente (h1, pela data do resultado), como em `ultimas`.
+    assert [(v.nome, v.vitorias) for v in historico.vencedores] == [("Acme", 2), ("Beta", 1)]
     assert historico.vencedores[0].desconto_mediano == Decimal("0.2000")
     assert historico.limite_inexequivel == Decimal("0.75")
 
@@ -270,3 +272,37 @@ def test_faixas_de_valor() -> None:
     assert faixa_de_valor(Decimal("1000000.01")) == "1m_a_5m"
     assert faixa_de_valor(Decimal(5_000_000)) == "1m_a_5m"
     assert faixa_de_valor(Decimal("5000000.01")) == "acima_5m"
+
+
+def test_parcial_conta_vitoria_mas_nao_entra_na_mediana(sessao: Session) -> None:
+    _edital(sessao, "alvo", dias=-5)
+    _passada(sessao, "h", ni="111", nome="Acme", desconto="0.20")
+    _passada(sessao, "p", ni="111", nome="Acme", situacao="parcial", desconto="0.60")
+    sessao.flush()
+
+    historico = historico_do_edital(sessao, CRITERIOS, "pncp", "alvo", AGORA)
+
+    assert historico is not None
+    vencedor = historico.vencedores[0]
+    assert (vencedor.vitorias, vencedor.desconto_mediano) == (2, Decimal("0.20"))
+
+
+def test_o_proprio_edital_fica_fora_da_regua(sessao: Session) -> None:
+    for i, desconto in enumerate(["0.10", "0.12", "0.15", "0.20", "0.25", "0.30"]):
+        _passada(sessao, f"r{i}", desconto=desconto)
+    _passada(sessao, "alvo", dias=10, desconto="0.90", ni="111", nome="Acme")
+    sessao.flush()
+
+    historico = historico_do_edital(sessao, CRITERIOS, "pncp", "alvo", AGORA)
+
+    assert historico is not None
+    assert [(r.casos, r.mediana) for r in historico.reguas] == [(6, Decimal("0.1750"))]
+    # Fora da régua, mas é histórico do órgão: entra nas contagens, últimas e vencedores.
+    assert historico.total == 7
+    assert historico.ultimas[0].id_publico == "pncp~alvo"
+    assert historico.vencedores[0].nome == "Acme"
+
+
+def test_agora_sem_fuso_e_erro(sessao: Session) -> None:
+    with pytest.raises(ValueError, match="fuso"):
+        historico_do_edital(sessao, CRITERIOS, "pncp", "x", AGORA.replace(tzinfo=None))
