@@ -51,7 +51,9 @@ Situação:
   `DIAS_ABERTA_SEM_ATA` da publicação, depois encerrada também: "outra" a reconciliação nunca
   fecha, e um NE de mais de seis meses sem ata publicada não é oportunidade. A data de
   abertura do NE só existe no PDF do edital: o prazo fica nulo, e por isso o filtro de abertos
-  (que exige prazo futuro) ainda não mostra esses editais. Ler o PDF é trabalho da análise.
+  (que exige prazo futuro) ainda não mostra esses editais. `data_sessao_no_edital` já lê a
+  data da capa do edital (texto); falta o download, que no Compra Eletrônica é postback e não
+  está aprovado (nota da fonte, seção 7).
 
 Formatos de data: lista `dd/mm/aaaa HH:MM:SS` (hora zero no NE), detalhe `dd/mm/aaaa`.
 """
@@ -409,6 +411,93 @@ def inferir_situacao_ne(linha: LinhaLista, detalhe: Detalhe, hoje: date) -> tupl
         # para sempre. Seis meses sem ata publicada não é mais oportunidade.
         return f"Sem ata, publicada há mais de {DIAS_ABERTA_SEM_ATA} dias", "encerrada"
     return "Sem ata (sessão por realizar)", "aberta"
+
+
+# --- data da sessão no texto do edital -------------------------------------------------------
+
+MESES = {
+    "JANEIRO": 1,
+    "FEVEREIRO": 2,
+    "MARCO": 3,
+    "ABRIL": 4,
+    "MAIO": 5,
+    "JUNHO": 6,
+    "JULHO": 7,
+    "AGOSTO": 8,
+    "SETEMBRO": 9,
+    "OUTUBRO": 10,
+    "NOVEMBRO": 11,
+    "DEZEMBRO": 12,
+}
+# Sobre o texto sem acento, em maiúsculas e com espaços colapsados. Capa dos editais MDF/MDA de
+# 2026: "RECEBIMENTO DOS ENVELOPES DATA: 16 de junho de 2026 HORÁRIO: Até as 09:30 horas" e
+# "SESSÃO PÚBLICA DATA: ... HORÁRIO: ...". Só rótulo seguido de perto pela data: o corpo do
+# edital fala muito em "data de abertura da sessão" sem data nenhuma.
+_DATA_EXTENSO = r"(\d{1,2})(?:º|O)?\s+DE\s+([A-Z]+)\s+DE\s+(\d{4})"
+_DATA_BARRA = r"(\d{1,2})/(\d{1,2})/(\d{4})"
+_HORA = r"(\d{1,2})\s*(?::|H)\s*(\d{2})"
+_ROTULO_SESSAO = re.compile(
+    r"\b(?:SESSAO PUBLICA|RECEBIMENTO DOS ENVELOPES|DATA DA DISPUTA"
+    r"|ABERTURA DA SESSAO|ABERTURA DOS ENVELOPES|ABERTURA DAS PROPOSTAS)\b"
+)
+# Depois do rótulo, até 40 caracteres sem ponto final de frase até a data, e até 60 da data à
+# hora (a hora só vale se vier depois de "HORARIO" ou "AS").
+_DEPOIS_DO_ROTULO = re.compile(
+    rf"^[^.;]{{0,40}}?(?:{_DATA_EXTENSO}|{_DATA_BARRA})"
+    rf"(?:[^.;]{{0,60}}?(?:HORARIO|\bAS)\b[^0-9.;]{{0,20}}{_HORA})?"
+)
+
+
+def _sem_acento_colapsado(texto: str) -> str:
+    return " ".join(_sem_acento(texto).split())
+
+
+def _candidato(trecho: str) -> tuple[date, tuple[int, int] | None] | None:
+    achado = _DEPOIS_DO_ROTULO.search(trecho)
+    if achado is None:
+        return None
+    d1, mes_nome, a1, d2, m2, a2, hora, minuto = achado.groups()
+    try:
+        if d1 is not None:
+            mes = MESES.get(mes_nome)
+            if mes is None:
+                return None
+            dia = date(int(a1), mes, int(d1))
+        else:
+            dia = date(int(a2), int(m2), int(d2))
+    except ValueError:
+        return None
+    if hora is None:
+        return dia, None
+    if not (0 <= int(hora) <= 23 and 0 <= int(minuto) <= 59):
+        return None
+    return dia, (int(hora), int(minuto))
+
+
+def data_sessao_no_edital(texto: str) -> datetime | None:
+    """Data e hora da sessão pública (abertura dos envelopes) no texto do edital, em Brasília.
+
+    Conservador: junta todas as datas que vêm logo depois de um rótulo de sessão ou de
+    recebimento dos envelopes; só devolve se houver uma única data e uma única hora entre elas.
+    Datas diferentes, horas diferentes ou nenhuma hora: None (nunca chuta).
+    """
+    normal = _sem_acento_colapsado(texto)
+    candidatos = [
+        achado
+        for rotulo in _ROTULO_SESSAO.finditer(normal)
+        if (achado := _candidato(normal[rotulo.end() : rotulo.end() + 200])) is not None
+    ]
+    dias = {dia for dia, _ in candidatos}
+    horas = {hora for _, hora in candidatos if hora is not None}
+    if len(dias) != 1 or len(horas) != 1:
+        if candidatos:
+            logger.info(
+                "dae_jundiai_data_sessao_ambigua",
+                extra={"fonte": "dae_jundiai", "datas": len(dias), "horas": len(horas)},
+            )
+        return None
+    (dia,), ((hora, minuto),) = dias, horas
+    return datetime(dia.year, dia.month, dia.day, hora, minuto, tzinfo=FUSO)
 
 
 def situacao_pregao(linha: LinhaLista) -> tuple[str, str]:

@@ -84,5 +84,40 @@ Aprovado pelo Augusto: POST só de leitura no Compra Eletrônica, com a mesma co
 - **Janela**: os últimos 12 meses pela Data/Hora inicial; lê o exercício corrente e o anterior.
 - **Custo por rodada**: 1 GET de lista, uns 19 POST e uns 25 GET de detalhe, cerca de 2,5 min.
 - **Bloqueio**: 403/429 param, e há um marcador genérico de WAF (`<title>Request Rejected|Access Denied|Acesso Negado</title>`); nenhum bloqueio foi visto.
-- **Pendente**: a data da sessão dos modos de disputa (só no PDF do edital, baixado por postback). Sem ela o edital fica sem prazo e fora do filtro de abertos.
+- **Pendente**: a data da sessão dos modos de disputa (só no PDF do edital, baixado por postback). Sem ela o edital fica sem prazo e fora do filtro de abertos. Estudo e parser na seção 7.
 - **Fora de propósito, por enquanto**: `dae_jundiai` não está em `metricas.FONTES` (orçamento de métricas em 10/10, então sem `LatenciaRequisicao` dela) nem em `FONTES_ANALISADAS` da análise (os PDFs vêm por postback; trabalho futuro).
+
+## 7. Prazo dos modos de disputa: data da sessão no edital (estudo de 27/11/2026)
+
+**Estado: parser pronto e testado; download não implementado, porque o único caminho para o PDF de uma licitação em andamento é um POST que não está aprovado.** Decisão do Augusto pendente.
+
+### Onde está a data
+Na capa de todo edital MDF/MDA de 2026 lido (MDF 012/26 e MDA 01/26, PDFs públicos do WordPress da DAE, 2 GET com o UA do projeto e 4 s entre eles), sempre neste formato, duas vezes e com a mesma data e hora:
+
+```
+RECEBIMENTO DOS ENVELOPES
+DATA: 16 de junho de 2026
+HORÁRIO: Até as 09:30 horas (horário de Brasília/DF)
+...
+SESSÃO PÚBLICA
+DATA: 16 de junho de 2026
+HORÁRIO: Até as 09:30 horas (horário de Brasília/DF)
+```
+
+O corpo do edital fala em "sessão de abertura dos envelopes ... conforme data, horário e endereço discriminados neste edital" sem data, e o rodapé de toda página traz "Edital de 12/05/2026" (data do edital, não da sessão). Recebimento e sessão coincidem: são o mesmo prazo (a entrega dos envelopes é até a hora da sessão), então a data serve para `data_abertura_proposta` e `data_encerramento_proposta`, como nos pregões.
+
+### Parser (`dae_jundiai.data_sessao_no_edital`, feito)
+Sobre o texto sem acento e com espaços colapsados, só datas logo depois de um rótulo (`SESSÃO PÚBLICA`, `RECEBIMENTO DOS ENVELOPES`, `DATA DA DISPUTA`, `ABERTURA DA SESSÃO/DOS ENVELOPES/DAS PROPOSTAS`), até 40 caracteres sem ponto final; a hora só depois de `HORÁRIO` ou `às`. Datas por extenso ou `dd/mm/aaaa`, hora `HH:MM` ou `HHhMM`. Devolve data e hora em `America/Sao_Paulo` só se houver uma única data e uma única hora entre todos os candidatos; datas ou horas diferentes, ou nenhuma hora, dão None e o log `dae_jundiai_data_sessao_ambigua` (sem métrica nova). Testado no texto inteiro dos dois editais (acerta os dois) e nos trechos da capa guardados em `tests/dados/fontes/dae-jundiai-edital-*-capa.txt` (só o texto, o PDF não foi guardado).
+
+### Por que o download parou
+- No Compra Eletrônica o anexo só baixa por `__doPostBack('grdArquivos$ctlNN$lnkArquivo','')`, um POST no detalhe. A exceção aprovada em 27/11 cobre só os dois postbacks de navegação (seção 6: "nenhum download de anexo"), e a tarefa pedia só GET.
+- O WordPress da DAE tem os editais por GET (`/wp-json/wp/v2/media?search=edital&after=...` lista MDF 012/26, 06/26, 08/26 etc.), mas só depois do certame: em 27/11 não havia edital de MDF 013 a 017/26, os que ainda podem estar abertos. Não serve para o prazo.
+- Não testei nenhum POST nem tentei adivinhar URL de arquivo no Compra Eletrônica.
+
+### Desenho para quando (e se) o Augusto aprovar o POST de download
+1. **Exceção**: um terceiro postback de leitura, `grdArquivos$ctlNN$lnkArquivo` no `CompraNEWeb.aspx?cdcompra=N`, com o estado do formulário do próprio detalhe (GET logo antes, mesmo cookie), só para o anexo de tipo `EDITAL DA COMPRA` e extensão `.pdf`. Mesma cortesia do `ClienteEducado` (UA, 3 s, para em 403/429/bloqueio). Conferir que a resposta é `application/pdf`/`%PDF`; senão é falha do PDF.
+2. **Quem**: só linhas NE que ficam `aberta` pela `inferir_situacao_ne` e sem prazo; teto de 5 PDFs por rodada (`MAX_EDITAIS_PDF`), os mais novos primeiro.
+3. **Isolamento**: download e leitura num `try` próprio dentro de `coletar`; erro de rede, HTTP 4xx/5xx que não seja 403/429, PDF ilegível ou data ambígua deixam o prazo nulo e logam `dae_jundiai_edital_falhou` (fonte, cdcompra, motivo). 403/429/bloqueio continuam derrubando o retrato, como em qualquer requisição: a lista já lida não pode virar retrato parcial depois de um bloqueio. Uma página com a data (`PaginaColetada(url do detalhe + "#edital=<arquivo>", "texto", "<iso>|<arquivo>")`) é gravada com o retrato, e `extrair` a usa; a lista continua tudo-ou-nada.
+4. **Texto do PDF na coleta**: `pypdf` direto em `radar.coleta` (já é dependência). `radar.analise.extracao` não pode ser importado (contrato de independência do import-linter), e o limite de tempo dela (sinal) teria de ser copiado ou o PDF limitado por tamanho e número de páginas (a data está na página 1: ler só as 3 primeiras).
+5. **Cache sem migração**: a chave é `cdcompra` + nome do arquivo do edital (`bruto.detalhe.anexos[].arquivo`; o download é posicional, então o nome é a única chave estável) e o valor vai em `bruto.detalhe.data_sessao_edital` (`{"arquivo": ..., "data": iso | null}`) do edital gravado. Quem monta a fonte (cli/processador, que já leem o banco) passaria à `FonteDaeJundiai` um dicionário `{(cdcompra, arquivo): data}` lido do `bruto` dos editais `dae_jundiai` abertos; a fonte só baixa o que não está no dicionário. Edital retificado com outro nome de arquivo baixa de novo. Um resultado nulo também é guardado, para não baixar todo dia um PDF sem data legível.
+6. **Testes previstos**: teto, cache (não baixa o que está no dicionário), falha do PDF não derruba o retrato, 403 derruba, ambíguo fica nulo.
