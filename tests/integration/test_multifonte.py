@@ -498,7 +498,7 @@ def test_api_lista_traz_fonte_e_id_publico(cliente: TestClient, sessao: Session)
 def test_openapi_fonte_e_enum(cliente: TestClient) -> None:
     esquemas = cliente.app.openapi()["components"]["schemas"]  # type: ignore[attr-defined]
 
-    assert esquemas["Fonte"]["enum"] == ["pncp", "sanepar", "compesa"]
+    assert esquemas["Fonte"]["enum"] == ["pncp", "sanepar", "compesa", "dae_jundiai"]
     assert "numero_controle_pncp" not in esquemas["EditalResumoOut"]["properties"]
 
 

@@ -58,7 +58,7 @@ def _falso(
         sessao: Any, mensagem: Mensagem, fontes: Any, agora: Any, message_id: str | None = None
     ) -> str:
         assert isinstance(sessao, _SessaoFalsa) and not sessao.fechada
-        assert set(fontes) == {"sanepar", "compesa"}
+        assert set(fontes) == {"sanepar", "compesa", "dae_jundiai"}
         vistas.append(mensagem)
         desfecho = desfechos[mensagem.outbox_id]
         if isinstance(desfecho, BaseException):

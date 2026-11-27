@@ -1110,7 +1110,7 @@ def test_cli_registra_a_sanepar_real_e_atualizar_grava_com_a_fonte(
 ) -> None:
     from radar.coleta.sanepar import ler_lista
 
-    assert list(cli.fontes_retrato()) == ["sanepar", "compesa"]
+    assert list(cli.fontes_retrato()) == ["sanepar", "compesa", "dae_jundiai"]
 
     dados = Path(__file__).resolve().parent.parent / "dados" / "fontes"
 

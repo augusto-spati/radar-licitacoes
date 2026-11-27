@@ -137,7 +137,12 @@ describe('formatarCnpj', () => {
 
 describe('fontes', () => {
   it('cada fonte tem seu nome de tela', () => {
-    expect(NOMES_FONTE).toEqual({pncp: 'PNCP', sanepar: 'Sanepar', compesa: 'Compesa'});
+    expect(NOMES_FONTE).toEqual({
+      pncp: 'PNCP',
+      sanepar: 'Sanepar',
+      compesa: 'Compesa',
+      dae_jundiai: 'DAE Jundiaí',
+    });
   });
   it('idNaFonte tira o prefixo "fonte~" e mantém o resto', () => {
     expect(idNaFonte('sanepar~OE-345/26')).toBe('OE-345/26');

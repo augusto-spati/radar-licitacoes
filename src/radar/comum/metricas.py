@@ -30,6 +30,8 @@ from radar.comum.config import Config, regiao_aws
 logger = logging.getLogger("radar.metricas")
 
 NAMESPACE = "Radar"
+# dae_jundiai fica de fora de propósito por enquanto: o orçamento de métricas está em 10/10.
+# Fora daqui, o ClienteEducado não emite LatenciaRequisicao dela (só PaginaComErro).
 FONTES = frozenset({"pncp", "sanepar", "compesa"})
 MAXIMO_DATUMS = 1000  # por chamada de PutMetricData
 MAXIMO_VALORES = 150  # valores distintos por datum

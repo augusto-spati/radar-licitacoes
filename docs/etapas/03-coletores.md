@@ -36,6 +36,23 @@ A segunda rodada seguida deu **0 editais alterados** nas duas fontes. Isso mostr
 
 Na etapa 4b o PNCP deixou de usar a chave `pncp`: cada janela tem o próprio lease (`travada_por`/`travada_ate` em `coleta_janela`, renovado a cada página), tanto na Lambda coletora quanto no `coletar_pendentes` local, e duas execuções em paralelo só disputam janela por janela. A `trava_fonte` segue valendo para os retratos.
 
+## DAE S/A Jundiaí (fonte `dae_jundiai`, 27/11/2026)
+
+O site `daejundiai.com.br` só publica as encerradas, sem datas. As licitações em andamento estão no **Compra Eletrônica** do CIJUN (`compraeletronica.jundiai.sp.gov.br/dae/aberto/`), um ASP.NET WebForms que só passa da página 1 por `__doPostBack`. O Augusto aprovou a exceção à regra "só GET" para o postback de leitura (nota `docs/superpowers/specs/2026-11-27-fonte-dae-jundiai.md`, opção 1).
+
+- **Postback no `ClienteEducado`.** Método próprio, `postback_leitura`, com a mesma cortesia do GET (3 s, User-Agent, sem retentativa, 403/429/bloqueio param). O coletor só faz dois postbacks: a paginação da grade (`gdvCompras`, `Page$N`) e a busca por exercício (`btnPesquisar` com `txtNrexer`). O estado (`__VIEWSTATE`, `__EVENTVALIDATION` e os campos do formulário) vem sempre da página anterior, no mesmo cookie.
+- **Retrato completo ou falha.** A lista vem por exercício; o retrato lê o corrente e o anterior inteiros e fica com os últimos 12 meses pela data inicial (como a Compesa, com "fora da janela"). Cada página tem de trazer o exercício pedido e o número pedido no paginador, e um id novo. Na rodada real, a primeira tentativa falhou de propósito: a busca do exercício anterior herdava a página 9 da grade (o índice fica no viewstate) e a página "1" repetiu a 9. Nenhum edital foi gravado; a correção é um `Page$1` depois da busca, e a página 1 agora também é conferida.
+- **Situação.** Pregões (`mural.aspx`): o ícone da grade é o estado real e a "Data/Hora Final" é o prazo. Modos de disputa e alienação (`CompraNEWeb.aspx`): o sistema diz "Em Configuracao" para tudo, então a situação é inferida no detalhe (aviso de revogação encerra; ata publicada = sessão feita, em julgamento até 90 dias e encerrada depois; sem ata, aberta até 180 dias da publicação). A data da sessão desses só está no PDF do edital: o prazo fica nulo e o filtro de abertos (que exige prazo futuro) ainda não os mostra.
+- **Anexos.** O detalhe traz os anexos tipados (edital, planilha, ata, projetos, aviso); vão para `anexos` e para `bruto.detalhe.anexos`. O download é outro postback e fica para a análise.
+- **Migração `0012`.** O `ck_edital_fonte` ganha `dae_jundiai` (vem depois da `0011` dos preços).
+
+| Rodada local (27/11/2026) | Editais | Abertos | Abertos com prazo futuro | Requisições | Tempo |
+|---|---|---|---|---|---|
+| 1ª (completa) | 92 (12 meses) | 7 (5 pregões e 2 MDF) | 5 pregões | 45 (1 GET de lista, 19 POST, 25 detalhes) | 2 min 25 s |
+| 2ª seguida | 92 | 7 | 5 | 45 | cerca de 2 min 30 s |
+
+A segunda rodada deu 0 inseridos e 0 alterados. Também há 7 em julgamento, 77 encerrados e 1 pregão suspenso ("outra").
+
 ## Perguntas de entrevista
 
 Responda com suas palavras, citando o arquivo ou o comportamento. A etapa só fecha quando estiverem respondidas.

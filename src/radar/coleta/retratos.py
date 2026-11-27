@@ -77,12 +77,17 @@ def criar_http_educado() -> httpx.Client:
 class ClienteEducado:
     """GET com cortesia: intervalo fixo entre requisições, User-Agent próprio, sem retentativa.
 
-    Não há POST de propósito. 403, 429, qualquer outro status de erro, falha de transporte
-    ou corpo que casa com `marcador_bloqueio` (captcha, página de bloqueio) viram `ErroFonte`.
+    POST só existe para o postback de leitura do ASP.NET WebForms (`postback_leitura`): a lista
+    da DAE Jundiaí só passa da página 1 por `__doPostBack`, e o Augusto aprovou essa exceção em
+    27/11/2026 (nota `docs/superpowers/specs/2026-11-27-fonte-dae-jundiai.md`). Mesma cortesia
+    do GET; quem chama garante que o POST só navega (paginação, filtro de busca) e não cria nada.
+    403, 429, qualquer outro status de erro, falha de transporte ou corpo que casa com
+    `marcador_bloqueio` (captcha, página de bloqueio) viram `ErroFonte`.
 
-    Telemetria por GET: span `GET` (CLIENT), log `requisicao_http`, `PaginaComErro` (0/1) e,
-    se `fonte` está no catálogo de métricas, `LatenciaRequisicao{fonte}` medida só em volta do
-    `http.get` (a pausa de cortesia fica de fora). Nenhum cabeçalho de trace sai para a fonte.
+    Telemetria por requisição: span `GET` ou `POST` (CLIENT), log `requisicao_http`,
+    `PaginaComErro` (0/1) e, se `fonte` está no catálogo de métricas, `LatenciaRequisicao{fonte}`
+    medida só em volta da chamada HTTP (a pausa de cortesia fica de fora). Nenhum cabeçalho de
+    trace sai para a fonte.
     """
 
     def __init__(
@@ -115,26 +120,48 @@ class ClienteEducado:
         headers: dict[str, str] | None = None,
     ) -> httpx.Response:
         """`headers` somam-se aos do cliente só nesta requisição (o User-Agent fica)."""
+        return self._educado("GET", url, params=params, headers=headers)
+
+    def postback_leitura(
+        self, url: str, dados: dict[str, str], headers: dict[str, str] | None = None
+    ) -> httpx.Response:
+        """POST de formulário (`application/x-www-form-urlencoded`) só para navegar numa lista
+        ASP.NET (paginação, busca). Nunca para enviar algo que crie ou altere dado na fonte."""
+        return self._educado("POST", url, dados=dados, headers=headers)
+
+    def _educado(
+        self,
+        metodo: str,
+        url: str,
+        params: dict[str, Any] | None = None,
+        dados: dict[str, str] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> httpx.Response:
         if not self._primeira:
             self._dormir(self._intervalo_s)
         self._primeira = False
         try:
-            resposta = self._get_medido(url, params, headers)
+            resposta = self._medido(metodo, url, params, dados, headers)
         except ErroFonte:
             metricas.registrar("PaginaComErro", 1)
             raise
         metricas.registrar("PaginaComErro", 0)
         return resposta
 
-    def _get_medido(
-        self, url: str, params: dict[str, Any] | None, headers: dict[str, str] | None
+    def _medido(
+        self,
+        metodo: str,
+        url: str,
+        params: dict[str, Any] | None,
+        dados: dict[str, str] | None,
+        headers: dict[str, str] | None,
     ) -> httpx.Response:
         host = self._http.base_url.join(url).host or "desconhecido"
         with tracer().start_as_current_span(
-            "GET",
+            metodo,
             kind=SpanKind.CLIENT,
             attributes={
-                "http.request.method": "GET",
+                "http.request.method": metodo,
                 "server.address": host,
                 "radar.fonte": self._fonte,
             },
@@ -142,7 +169,9 @@ class ClienteEducado:
             inicio = self._cronometro()
             status: int | None = None
             try:
-                resposta = self._http.get(url, params=params, headers=headers)
+                resposta = self._http.request(
+                    metodo, url, params=params, data=dados, headers=headers
+                )
                 status = resposta.status_code
             except httpx.HTTPError as erro:
                 span.set_attribute("error.type", type(erro).__name__)

@@ -216,9 +216,9 @@ def test_alarmes_cabem_no_gratis() -> None:
 
 def test_coletor_so_retratos() -> None:
     coletor = _tf("coletor.tf")
-    assert 'command     = ["atualizar", "--fontes", "sanepar,compesa"]' in coletor
+    assert 'command     = ["atualizar", "--fontes", "sanepar,compesa,dae_jundiai"]' in coletor
     # O agendamento sobrescreve o command: só retratos, sem o PNCP (que vai pelas janelas).
-    assert 'command = ["atualizar", "--fontes", "sanepar,compesa"]' in coletor
+    assert 'command = ["atualizar", "--fontes", "sanepar,compesa,dae_jundiai"]' in coletor
     assert "pncp" not in "".join(re.findall(r"command\s*=\s*\[[^\]]*\]", coletor))
     assert '{ name = "RADAR_FILA_JANELAS_URL", value = aws_sqs_queue.janelas.url }' in coletor
     assert "aws_sqs_queue.janelas.arn" in _tf("fila.tf")  # o relay do coletor pode enviar

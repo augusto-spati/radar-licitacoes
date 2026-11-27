@@ -28,6 +28,7 @@ class Fonte(StrEnum):
     pncp = "pncp"
     sanepar = "sanepar"
     compesa = "compesa"
+    dae_jundiai = "dae_jundiai"
 
 
 Situacao = Literal["aberta", "em_julgamento", "encerrada", "outra"]

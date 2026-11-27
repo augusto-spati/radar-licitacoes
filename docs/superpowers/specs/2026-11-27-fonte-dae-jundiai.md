@@ -1,8 +1,10 @@
 # DAE S/A Jundiaí: pré-requisitos do coletor (verificado em 2026-11-27)
 
-Amostras reduzidas em `tests/dados/fontes/dae-jundiai-*.html`. Foram 17 requisições GET (curl, UA `radar-licitacoes-estudo (github.com/augusto-spati/radar-licitacoes)`, 2 s ou mais entre elas, sem cookie, sem login): 10 a `daejundiai.com.br`, 3 a `compraabertadae.jundiai.sp.gov.br` e 4 a `compraeletronica.jundiai.sp.gov.br`. Nenhum POST.
+Amostras reduzidas em `tests/dados/fontes/dae-jundiai-*.html` (as do Compra Eletrônica foram trocadas pelas da seção 6). Foram 17 requisições GET (curl, UA `radar-licitacoes-estudo (github.com/augusto-spati/radar-licitacoes)`, 2 s ou mais entre elas, sem cookie, sem login): 10 a `daejundiai.com.br`, 3 a `compraabertadae.jundiai.sp.gov.br` e 4 a `compraeletronica.jundiai.sp.gov.br`. Nenhum POST.
 
-**Resultado: o coletor não foi implementado.** O portal WordPress indicado pela pesquisa só publica licitações **encerradas**, sem datas, e com atraso. As licitações em andamento estão num segundo sistema (Compra Eletrônica, ASP.NET) cuja lista só passa da página 1 por POST (`__doPostBack`). Pela regra do projeto (só GET), a decisão fica com o Augusto. As opções estão na seção 5.
+**Atualização (27/11/2026, mais tarde): o Augusto escolheu a opção 1 e o coletor foi feito** (`src/radar/coleta/dae_jundiai.py`, fonte `dae_jundiai`). A abordagem final está na seção 6; o texto abaixo é o estudo original.
+
+**Resultado do estudo: o coletor não foi implementado.** O portal WordPress indicado pela pesquisa só publica licitações **encerradas**, sem datas, e com atraso. As licitações em andamento estão num segundo sistema (Compra Eletrônica, ASP.NET) cuja lista só passa da página 1 por POST (`__doPostBack`). Pela regra do projeto (só GET), a decisão fica com o Augusto. As opções estão na seção 5.
 
 ## 1. Termos de uso, privacidade e robots.txt
 - **robots.txt**: `daejundiai.com.br/robots.txt`, `compraabertadae.jundiai.sp.gov.br/robots.txt` e `compraeletronica.jundiai.sp.gov.br/robots.txt` devolvem 404. Não há restrição declarada nem `Crawl-delay`.
@@ -67,3 +69,20 @@ As inferências do Compra Eletrônica não foram confirmadas: a data de abertura
 4. **Pedir à DAE** um feed ou a liberação explícita, citando a LAI, como sugerido para a Sanasa.
 
 Trabalho futuro, qualquer que seja a opção: a análise (`radar.analise`) ler os PDFs da DAE (edital e termo de referência) para extrair data de abertura e valor.
+
+## 6. Abordagem final (opção 1, implementada)
+
+Aprovado pelo Augusto: POST só de leitura no Compra Eletrônica, com a mesma cortesia. Verificado em 27/11/2026 com mais umas 60 requisições de estudo (3 s entre elas, mesmo UA).
+
+- **O que é POST e o que não é.** Só dois postbacks, ambos no `ClienteEducado.postback_leitura`: paginação (`__EVENTTARGET=gdvCompras`, `__EVENTARGUMENT=Page$N`) e a busca por exercício (`btnPesquisar=Pesquisar`, `txtNrexer=<ano>`, os outros filtros zerados). O estado sai do formulário da página anterior (`__VIEWSTATE`, `__VIEWSTATEGENERATOR`, `__EVENTVALIDATION`, campos de texto e `<select>`), no mesmo `ASP.NET_SessionId`. Nenhum botão além da busca, nenhum download de anexo. Detalhe (`CompraNEWeb.aspx`) continua GET.
+- **A lista é por exercício.** O GET já vem com `txtNrexer=2026`; 2026 tem 9 páginas de 10 linhas e 2025 tem 10. O pager é o numérico do ASP.NET (link `Page$N` para as outras páginas, `<span>` na corrente; com mais de 10 páginas aparece o "..." que também é `Page$N`). Pedir uma página além da última dá HTTP 500. Exercício sem nada responde "Nenhum registro encontrado!" sem a grade.
+- **Armadilha vista na rodada real.** A busca guarda o índice de página da grade anterior: buscar 2025 a partir da página 9 de 2026 devolve a página 9 de 2025. O coletor volta à página 1 com `Page$1` e confere a página corrente em todas as páginas.
+- **Completude (a reconciliação fecha o que o retrato não lista).** Cada página tem de trazer o `txtNrexer` pedido e todos os números da grade começando por `<exercício>/` (`2025/00001`, `2026/00063`): o WebForms devolve o campo digitado mesmo quando a grade não foi atualizada. "Nenhum registro encontrado!" só vale na página 1 do exercício corrente (o novo, em janeiro). No exercício anterior, busca vazia ganha um `Page$1` (a grade herdada da página 9 pode responder vazia) e, vazia de novo, derruba o retrato. O detalhe tem de ser da compra pedida (`cdcompra` do `action` do formulário e número do título iguais aos da linha) e trazer a grade `grdArquivos` com ao menos um anexo; senão é erro de layout e o retrato cai.
+- **Duas numerações.** Os pregões são outro sistema: link `mural.aspx?cdcompra=<n>` (ids 419 a 567), com Data/Hora Final preenchida e ícone de situação real (`prop_preco_env` recebendo propostas, `cp_negociacao`, `intencao_recurso`, `cp_em_adjudicaca`, `adjudicacao`, `cp_homologada`, `cp_cancelada`, `cp_suspensa` com `title`). O `mural.aspx` tem 400 KB e não é lido. Modos de disputa, alienação e chamada pública são `CompraNEWeb.aspx?cdcompra=<n>` (ids 804 a 847), sem Data/Hora Final e com ícone `cp_configuracao` (às vezes `cp_negociacao` preso: o MDF 007/26 já homologado).
+- **Id**: `<sigla da modalidade>-<número>`, ex. `MDF-2026/00014`, `PE-2026/00063` (o número só é único dentro da modalidade).
+- **Situação do sistema NE, inferida no detalhe**: aviso (`AVISO`) de revogação, anulação ou cancelamento encerra (MDA 2/26), mas não "revogação da suspensão", suspensão nem negação ("não revogada"); com anexo `ATA`, em julgamento até 90 dias da publicação e encerrada depois; sem ata, aberta até 180 dias e encerrada depois (não "outra", que a reconciliação nunca fecha). Tipos de anexo vistos: `EDITAL DA COMPRA`, `ANEXO DA COMPRA`, `ANEXO DA ATA`, `PLANILHA`, `PROJETOS`, `ESCLARECIMENTOS`, `AVISO`, `ATA`.
+- **Janela**: os últimos 12 meses pela Data/Hora inicial; lê o exercício corrente e o anterior.
+- **Custo por rodada**: 1 GET de lista, uns 19 POST e uns 25 GET de detalhe, cerca de 2,5 min.
+- **Bloqueio**: 403/429 param, e há um marcador genérico de WAF (`<title>Request Rejected|Access Denied|Acesso Negado</title>`); nenhum bloqueio foi visto.
+- **Pendente**: a data da sessão dos modos de disputa (só no PDF do edital, baixado por postback). Sem ela o edital fica sem prazo e fora do filtro de abertos.
+- **Fora de propósito, por enquanto**: `dae_jundiai` não está em `metricas.FONTES` (orçamento de métricas em 10/10, então sem `LatenciaRequisicao` dela) nem em `FONTES_ANALISADAS` da análise (os PDFs vêm por postback; trabalho futuro).
