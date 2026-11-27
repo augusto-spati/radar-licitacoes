@@ -97,6 +97,9 @@ forbidden_modules = [
     "radar.analise.extracao",
     "radar.analise.trechos",
     "radar.analise.armazem",
+    "radar.analise.provedor",
+    "radar.analise.cache",
+    "radar.analise.custos",
 ]
 allow_indirect_imports = true
 
