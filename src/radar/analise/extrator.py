@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from radar.analise.exigencias import Exigencias, RespostaExtracao, esquema_resposta
 from radar.analise.normalizacao import AchadoAncorado, ancorar, juntar
-from radar.analise.provedor import ConfigIA, Pedido, Provedor
+from radar.analise.provedor import ConfigIA, ErroProvedor, Pedido, Provedor
 from radar.analise.trechos import dividir
 
 logger = logging.getLogger(__name__)
@@ -17,6 +17,11 @@ logger = logging.getLogger(__name__)
 SISTEMA: str = (
     resources.files("radar.analise").joinpath("prompts/extracao.md").read_text(encoding="utf-8")
 )
+
+
+def delimitar(texto: str) -> str:
+    """O trecho entre `<edital>` e `</edital>`; um fechamento dentro do texto é neutralizado."""
+    return f"<edital>\n{texto.replace('</edital>', '</ edital>')}\n</edital>"
 
 
 @dataclass(frozen=True)
@@ -50,15 +55,20 @@ def extrair_exigencias(
     ancorados: list[AchadoAncorado] = []
     invalidos = descartados = entrada = saida = 0
     for indice, trecho in enumerate(trechos, start=1):
-        resposta = provedor.gerar(
-            Pedido(
-                modelo=modelo,
-                sistema=SISTEMA,
-                texto=trecho.texto,
-                esquema=esquema,
-                max_tokens=config.max_tokens,
+        try:
+            resposta = provedor.gerar(
+                Pedido(
+                    modelo=modelo,
+                    sistema=SISTEMA,
+                    texto=delimitar(trecho.texto),
+                    esquema=esquema,
+                    max_tokens=config.max_tokens,
+                )
             )
-        )
+        except ErroProvedor as erro:
+            invalidos += 1
+            logger.warning("trecho_invalido", extra={"trecho": indice, "erro_provedor": str(erro)})
+            continue
         entrada += resposta.tokens_entrada
         saida += resposta.tokens_saida
         try:

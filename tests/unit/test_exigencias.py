@@ -97,3 +97,19 @@ def test_exigencias_ida_e_volta_json() -> None:
         documentos=[CategoriaEvidencia(valor="certidao_fgts", trecho="FGTS", pagina=6)],
     )
     assert Exigencias.model_validate_json(e.model_dump_json()) == e
+
+
+@pytest.mark.parametrize("numero", ["NaN", "Infinity", -1])
+def test_numero_nan_infinito_ou_negativo_recusado(numero: object) -> None:
+    bruto = (
+        '{"achados": [{"campo": "capital_social_minimo", "valor": "", "numero": '
+        + (str(numero) if not isinstance(numero, str) else numero)
+        + ', "unidade": "reais", "trecho": "capital social mínimo de R$ 1"}]}'
+    )
+    with pytest.raises(ValidationError):
+        RespostaExtracao.model_validate_json(bruto)
+
+
+def test_numero_nan_python_recusado() -> None:
+    with pytest.raises(ValidationError):
+        Achado(campo="capital_social_minimo", valor="", numero=float("nan"), unidade="", trecho="x")

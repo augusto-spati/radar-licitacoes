@@ -63,7 +63,10 @@ def test_pagina_vem_do_marcador() -> None:
 
 
 def test_sem_marcador_usa_pagina_inicial() -> None:
-    ancorados, _ = ancorar([_achado("consorcio", "vedado", trecho="vedada")], "é vedada", 12)
+    texto = "é vedada a participação em consórcio"
+    ancorados, _ = ancorar(
+        [_achado("consorcio", "vedado", trecho="vedada a participação")], texto, 12
+    )
     assert ancorados[0].pagina == 12
 
 
@@ -227,3 +230,66 @@ def test_prazo_com_unidade_desconhecida_descartado() -> None:
     exigencias, descartados = juntar([_ancorado("prazo_execucao", "", 3, "semestres")], None)
     assert exigencias.prazo_execucao_dias is None
     assert descartados == 1
+
+
+# Revisão final: trecho curto demais ancora em qualquer lugar ("de" está em todo edital) e o
+# número pode ser inventado mesmo com trecho literal.
+EDITAL_NUMEROS = (
+    "[[pagina 3]]\nO capital social mínimo exigido é de R$ 250.000,00 (duzentos e cinquenta mil"
+    " reais). O patrimônio líquido mínimo será de R$ 250 mil. Garantia contratual de 5% do"
+    " valor do contrato. Prazo de execução: 6 (seis) meses. Atestado de pesquisa de"
+    " vazamentos em no mínimo 500 km de rede. Capital integralizado de 250.000 reais."
+)
+
+
+def test_trecho_curto_demais_descartado_mesmo_existindo() -> None:
+    ancorados, descartados = ancorar(
+        [_achado("capital_social_minimo", numero=999999, unidade="reais", trecho="de")],
+        EDITAL_NUMEROS,
+        3,
+    )
+    assert ancorados == []
+    assert descartados == 1
+
+
+@pytest.mark.parametrize(
+    ("campo", "numero", "unidade", "trecho"),
+    [
+        ("capital_social_minimo", 250000, "reais", "capital social mínimo exigido é de R$ 250.000,00"),  # noqa: E501
+        ("capital_social_minimo", 250000, "reais", "Capital integralizado de 250.000 reais"),
+        ("patrimonio_liquido_minimo", 250000, "reais", "patrimônio líquido mínimo será de R$ 250 mil"),  # noqa: E501
+        ("garantia_contratual", 5, "%", "Garantia contratual de 5% do valor do contrato"),
+        ("prazo_execucao", 6, "meses", "Prazo de execução: 6 (seis) meses."),
+        ("atestado_tecnico", 500, "km", "pesquisa de vazamentos em no mínimo 500 km de rede"),
+        # o modelo converteu para metros: vale o número já normalizado (500 km)
+        ("atestado_tecnico", 500000, "metros", "pesquisa de vazamentos em no mínimo 500 km de rede"),  # noqa: E501
+    ],
+)  # fmt: skip
+def test_numero_presente_no_trecho_mantido(
+    campo: str, numero: float, unidade: str, trecho: str
+) -> None:
+    [ancorado], descartados = ancorar(
+        [_achado(campo, numero=numero, unidade=unidade, trecho=trecho)], EDITAL_NUMEROS, 3
+    )
+    assert descartados == 0
+    assert ancorado.achado.numero == numero
+
+
+def test_numero_inventado_vira_nulo_e_verificar() -> None:
+    trecho = "capital social mínimo exigido é de R$ 250.000,00"
+    [ancorado], descartados = ancorar(
+        [_achado("capital_social_minimo", numero=999999, unidade="reais", trecho=trecho)],
+        EDITAL_NUMEROS,
+        3,
+    )
+    assert descartados == 0
+    assert ancorado.achado.numero is None
+    exigencias, _ = juntar([ancorado], None)
+    assert exigencias.capital_social_minimo is not None
+    assert exigencias.capital_social_minimo.numero is None  # a comparação dá `verificar`
+
+
+def test_numero_de_categoria_nao_e_conferido() -> None:
+    trecho = "Garantia contratual de 5% do valor do contrato"
+    [ancorado], _ = ancorar([_achado("consorcio", "vedado", trecho=trecho)], EDITAL_NUMEROS, 3)
+    assert ancorado.achado.numero is None

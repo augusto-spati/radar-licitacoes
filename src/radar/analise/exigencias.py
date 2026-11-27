@@ -3,7 +3,7 @@
 from decimal import Decimal
 from typing import Any, Literal, get_args
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 Campo = Literal[
     "atestado_tecnico",
@@ -43,7 +43,8 @@ class Achado(BaseModel):
     valor: str
     # O esquema enviado pede o campo sempre; no modo ferramenta alguns modelos o omitem quando
     # é nulo (sonda de 2026-11-26), e a ausência vale null.
-    numero: float | None = None
+    # NaN/infinito quebram a junção (max, conversão para Decimal); negativo não é exigência.
+    numero: float | None = Field(default=None, allow_inf_nan=False, ge=0)
     unidade: str
     trecho: str
 

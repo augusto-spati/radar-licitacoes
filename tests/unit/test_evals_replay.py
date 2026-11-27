@@ -37,7 +37,7 @@ class ModeloDeBrinquedo:
             achados = [
                 _achado("capital_social_minimo", "", 100000, "reais", "capital social mínimo de R$ 100.000,00"),
                 _achado("visita_tecnica", "obrigatoria", None, "", "A visita técnica é obrigatória."),
-                _achado("garantia_contratual", "", 5, "%", "garantia contratual"),
+                _achado("garantia_contratual", "", 5, "%", "garantia contratual. Este parágrafo"),
                 _achado("atestado_tecnico", "pesquisa de vazamentos", 500000, "metros", "pesquisa de vazamentos em no mínimo 500 km"),
                 _achado("consorcio", "permitido", None, "", "participação de consórcio"),
             ]  # fmt: skip

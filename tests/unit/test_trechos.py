@@ -35,3 +35,12 @@ def test_dividir_pagina_gigante() -> None:
 
 def test_dividir_vazio() -> None:
     assert dividir([]) == []
+
+
+def test_sobreposicao_nao_repete_trecho_que_so_teria_a_pagina_ja_enviada() -> None:
+    # [1, 2] cabem; 2 + 3 não: o trecho seguinte seria só a página 2, já enviada inteira.
+    paginas = ["a" * 25_000, "b" * 25_000, "c" * 50_000]
+    trechos = dividir(paginas)
+    assert [(t.pagina_inicial, t.pagina_final) for t in trechos] == [(1, 2), (3, 3)]
+    textos = [t.texto for t in trechos]
+    assert len(set(textos)) == len(textos)

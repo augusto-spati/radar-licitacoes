@@ -38,12 +38,17 @@ def dividir(paginas: list[str], caracteres: int = CARACTERES_POR_TRECHO) -> list
     unidades = _unidades(paginas, caracteres)
     trechos: list[Trecho] = []
     inicio = 0
+    sobreposto = False  # `inicio` é a última unidade do trecho anterior
     while inicio < len(unidades):
         fim = inicio
         tamanho = len(unidades[inicio][1])
         while fim + 1 < len(unidades) and tamanho + 1 + len(unidades[fim + 1][1]) <= caracteres:
             fim += 1
             tamanho += 1 + len(unidades[fim][1])
+        if sobreposto and fim == inicio:
+            # Só caberia a unidade já enviada inteira no trecho anterior: não repete.
+            inicio, sobreposto = inicio + 1, False
+            continue
         janela = unidades[inicio : fim + 1]
         trechos.append(
             Trecho(
@@ -54,5 +59,5 @@ def dividir(paginas: list[str], caracteres: int = CARACTERES_POR_TRECHO) -> list
         )
         if fim == len(unidades) - 1:
             break
-        inicio = fim if fim > inicio else fim + 1
+        inicio, sobreposto = (fim, True) if fim > inicio else (fim + 1, False)
     return trechos

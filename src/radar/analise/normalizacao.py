@@ -38,13 +38,77 @@ def _colapsar(texto: str) -> str:
     return _ESPACOS.sub(" ", texto).strip().casefold()
 
 
+# Trecho mais curto que isso ancora em qualquer lugar ("de", "R$") e não é lastro de nada.
+MINIMO_TRECHO = 20
+# Campos em que `numero` é o valor exigido: ele precisa estar escrito no trecho citado.
+CAMPOS_NUMERICOS = frozenset(
+    {
+        "atestado_tecnico",
+        "capital_social_minimo",
+        "patrimonio_liquido_minimo",
+        "garantia_proposta",
+        "garantia_contratual",
+        "prazo_execucao",
+    }
+)
+_NUMERO_NO_TEXTO = re.compile(r"(\d[\d.,]*)(\s*(?:mil|milh(?:ao|oes)|bilh(?:ao|oes))\b)?")
+_MULTIPLICADORES = {"mil": 1000, "milh": 1_000_000, "bilh": 1_000_000_000}
+_MILHAR = re.compile(r"^\d{1,3}(\.\d{3})+$")
+
+
+def _leituras(numeral: str) -> set[Decimal]:
+    """Os valores que um numeral do texto pode ter ("250.000" é milhar ou decimal)."""
+    bruto = numeral.rstrip(".,")
+    valores: set[Decimal] = set()
+    if "," in bruto:
+        candidatos = [bruto.replace(".", "").replace(",", ".")]
+    elif _MILHAR.match(bruto):
+        candidatos = [bruto.replace(".", ""), bruto]
+    else:
+        candidatos = [bruto]
+    for candidato in candidatos:
+        try:
+            valores.add(Decimal(candidato))
+        except ArithmeticError:
+            continue
+    return valores
+
+
+def numeros_do_texto(texto: str) -> set[Decimal]:
+    """Todo número escrito com algarismos no texto: "R$ 250.000,00", "250 mil", "6 (seis)"."""
+    achados: set[Decimal] = set()
+    for casamento in _NUMERO_NO_TEXTO.finditer(sem_acento(texto)):
+        leituras = _leituras(casamento.group(1))
+        achados |= leituras
+        if casamento.group(2):
+            palavra = casamento.group(2).strip()
+            fator = next(v for k, v in _MULTIPLICADORES.items() if palavra.startswith(k))
+            achados |= {valor * fator for valor in leituras}
+    return achados
+
+
+def _numero_tem_lastro(achado: Achado) -> bool:
+    """O número (cru ou já na unidade canônica) aparece escrito no trecho citado."""
+    if achado.numero is None or achado.campo not in CAMPOS_NUMERICOS:
+        return True
+    numero = Decimal(str(achado.numero))
+    aceitos = {numero}
+    if achado.campo == "atestado_tecnico" and achado.unidade.strip():
+        aceitos.add(numero * normalizar_unidade(achado.unidade)[1])
+    escritos = numeros_do_texto(achado.trecho)
+    return any(a == e for a in aceitos for e in escritos)
+
+
 def ancorar(
     achados: list[Achado], texto_trecho: str, pagina_inicial: int
 ) -> tuple[list[AchadoAncorado], int]:
     """Mantém só os achados cujo trecho existe no texto enviado; a página sai da posição.
 
-    A comparação ignora diferenças de espaço e de maiúsculas. A página é a do último marcador
-    `[[pagina N]]` antes do trecho (ou `pagina_inicial`), nunca a que o modelo disser.
+    A comparação ignora diferenças de espaço e de maiúsculas. Trecho com menos de
+    `MINIMO_TRECHO` caracteres é descartado (ancoraria em qualquer lugar). Nos campos
+    numéricos, número que não está escrito no trecho vira nulo (a comparação dá `verificar`).
+    A página é a do último marcador `[[pagina N]]` antes do trecho (ou `pagina_inicial`),
+    nunca a que o modelo disser.
     """
     texto = _colapsar(texto_trecho)
     marcadores = [(m.start(), int(m.group(1))) for m in _MARCADOR.finditer(texto)]
@@ -52,14 +116,15 @@ def ancorar(
     descartados = 0
     for achado in achados:
         trecho = _colapsar(achado.trecho)
-        posicao = texto.find(trecho) if trecho else -1
+        posicao = texto.find(trecho) if len(trecho) >= MINIMO_TRECHO else -1
         if posicao < 0:
             descartados += 1
-            logger.info(
-                "achado_descartado",
-                extra={"motivo": "trecho_sem_lastro", "campo": achado.campo},
-            )
+            motivo = "trecho_curto" if len(trecho) < MINIMO_TRECHO else "trecho_sem_lastro"
+            logger.info("achado_descartado", extra={"motivo": motivo, "campo": achado.campo})
             continue
+        if not _numero_tem_lastro(achado):
+            logger.info("numero_sem_lastro", extra={"campo": achado.campo})
+            achado = achado.model_copy(update={"numero": None})
         pagina = pagina_inicial
         for inicio, numero in marcadores:
             if inicio > posicao:
