@@ -358,6 +358,11 @@ def _servicos_padrao() -> tuple[Servico, ...]:
     return carregar_servicos()
 
 
+def servicos_padrao() -> tuple[Servico, ...]:
+    """Serviços de `config/servicos.toml`, lidos uma vez por processo."""
+    return _servicos_padrao()
+
+
 def classificar(
     descricao: str, unidade: str, servicos: tuple[Servico, ...] | None = None
 ) -> Classificacao | None:

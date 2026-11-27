@@ -114,6 +114,8 @@ forbidden_modules = [
     "radar.analise.evals",
     "radar.precos.modelos",
     "radar.precos.servicos",
+    "radar.precos.consulta",
+    "radar.precos.tcepe",
 ]
 allow_indirect_imports = true
 

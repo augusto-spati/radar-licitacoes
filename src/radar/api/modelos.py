@@ -22,6 +22,7 @@ from radar.editais import (
     Situacao,
     id_publico,
 )
+from radar.precos import Abrangencia, Referencia
 
 FUSO = ZoneInfo("America/Sao_Paulo")
 
@@ -285,4 +286,57 @@ def historico_out(historico: HistoricoOrgao) -> HistoricoOut:
             for r in historico.reguas
         ],
         limite_inexequivel=str(historico.limite_inexequivel),
+    )
+
+
+class ReferenciaOut(BaseModel):
+    servico: str
+    rotulo: str
+    linha: str
+    material: str | None
+    dn: int | None
+    escopo: str | None
+    faixa: str | None
+    unidade: str
+    abrangencia: Abrangencia
+    uf: str | None
+    casos_estimado: int
+    mediana_estimado: str | None
+    casos_contratado: int
+    mediana_contratado: str | None
+    data_base_inicio: str | None
+    data_base_fim: str | None
+
+
+class PrecosOut(BaseModel):
+    uf: str | None
+    referencias: list[ReferenciaOut]
+
+
+def precos_out(uf: str | None, referencias: list[Referencia]) -> PrecosOut:
+    return PrecosOut(
+        uf=uf,
+        referencias=[
+            ReferenciaOut(
+                servico=r.servico,
+                rotulo=r.rotulo,
+                linha=r.linha,
+                material=r.material,
+                dn=r.dn,
+                escopo=r.escopo,
+                faixa=r.faixa,
+                unidade=r.unidade,
+                abrangencia=r.abrangencia,
+                uf=r.uf,
+                casos_estimado=r.casos_estimado,
+                mediana_estimado=_decimal(r.mediana_estimado),
+                casos_contratado=r.casos_contratado,
+                mediana_contratado=_decimal(r.mediana_contratado),
+                data_base_inicio=None
+                if r.data_base_inicio is None
+                else r.data_base_inicio.isoformat(),
+                data_base_fim=None if r.data_base_fim is None else r.data_base_fim.isoformat(),
+            )
+            for r in referencias
+        ],
     )

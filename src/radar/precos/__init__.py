@@ -1,5 +1,6 @@
 """Módulo precos: preço unitário por item, normalizado em serviços-padrão comparáveis."""
 
+from radar.precos.consulta import CASOS_REDE, CASOS_UF, Abrangencia, Referencia, referencias
 from radar.precos.modelos import ORIGENS, Origem, PrecoItem, PrecoItemNovo
 from radar.precos.servicos import (
     ESCOPOS,
@@ -17,6 +18,7 @@ from radar.precos.servicos import (
     faixa_profundidade,
     normalizar_unidade,
     sem_acento,
+    servicos_padrao,
     tem_termo,
     termos_processo_padrao,
 )
@@ -31,6 +33,12 @@ from radar.precos.tcepe import (
 )
 
 __all__ = [
+    "CASOS_REDE",
+    "CASOS_UF",
+    "Abrangencia",
+    "Referencia",
+    "referencias",
+    "servicos_padrao",
     "ESCOPOS",
     "FAIXAS",
     "ORIGENS",

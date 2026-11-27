@@ -1,7 +1,8 @@
 import copy
 import json
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 from types import TracebackType
 from typing import Any, cast
@@ -14,6 +15,7 @@ from sqlalchemy.orm import Session
 from radar.api.app import criar_app
 from radar.coleta.modelos import ColetaJanela
 from radar.editais import registrar
+from radar.precos import PrecoItem
 
 RAIZ = Path(__file__).resolve().parent.parent.parent
 AMOSTRA: dict[str, Any] = json.loads(
@@ -444,3 +446,82 @@ def test_historico_vazio_devolve_200(cliente: TestClient, sessao: Session) -> No
 def test_historico_404_para_edital_inexistente(cliente: TestClient) -> None:
     assert cliente.get("/api/historicos/pncp~nao/existe").status_code == 404
     assert cliente.get("/api/historicos/sem-fonte").status_code == 404
+
+
+def _gravar_preco(sessao: Session, chave: str, preco: str, uf: str = "SP") -> None:
+    sessao.add(
+        PrecoItem(
+            origem="tce_pe",
+            chave_origem=chave,
+            uf=uf,
+            orgao_nome="Compesa",
+            processo=f"proc-{chave}",
+            descricao="HIDROMETRO FORNECIMENTO E INSTALACAO",
+            unidade="UN",
+            preco_com_bdi=Decimal(preco),
+            preco_contratado_com_bdi=Decimal(preco) * Decimal("0.8"),
+            data_base=date(2025, 6, 1),
+            servico="hidrometro",
+            unidade_canonica="un",
+            fator_unidade=Decimal(1),
+        )
+    )
+    sessao.flush()
+
+
+def test_precos_do_edital(cliente: TestClient, sessao: Session) -> None:
+    registrar(sessao, [_registro("alvo/2026", "Troca de hidrometro")])
+    for i, preco in enumerate(["100", "200", "300"]):
+        _gravar_preco(sessao, f"h{i}", preco)
+
+    resposta = cliente.get("/api/precos/pncp~alvo/2026")
+
+    assert resposta.status_code == 200
+    assert resposta.json() == {
+        "uf": "SP",
+        "referencias": [
+            {
+                "servico": "hidrometro",
+                "rotulo": "Hidrômetro, fornecimento e instalação",
+                "linha": "perdas",
+                "material": None,
+                "dn": None,
+                "escopo": None,
+                "faixa": None,
+                "unidade": "un",
+                "abrangencia": "nacional",
+                "uf": None,
+                "casos_estimado": 3,
+                "mediana_estimado": "200.00",
+                "casos_contratado": 3,
+                "mediana_contratado": "160.00",
+                "data_base_inicio": "2025-06-01",
+                "data_base_fim": "2025-06-01",
+            }
+        ],
+    }
+    assert cliente.get("/api/precos/pncp~alvo%2F2026").json() == resposta.json()
+
+
+def test_precos_vazio_sem_linha_com_servico(cliente: TestClient, sessao: Session) -> None:
+    registrar(sessao, [_registro("alvo/2026", "Pavimentacao de vias")])
+    _gravar_preco(sessao, "h0", "100")
+
+    resposta = cliente.get("/api/precos/pncp~alvo/2026")
+
+    assert resposta.status_code == 200
+    assert resposta.json() == {"uf": "SP", "referencias": []}
+
+
+def test_precos_vazio_sem_dados(cliente: TestClient, sessao: Session) -> None:
+    registrar(sessao, [_registro("alvo/2026", "Troca de hidrometro")])
+
+    resposta = cliente.get("/api/precos/pncp~alvo/2026")
+
+    assert resposta.status_code == 200
+    assert resposta.json()["referencias"] == []
+
+
+def test_precos_404_para_edital_inexistente(cliente: TestClient) -> None:
+    assert cliente.get("/api/precos/pncp~nao/existe").status_code == 404
+    assert cliente.get("/api/precos/sem-fonte").status_code == 404

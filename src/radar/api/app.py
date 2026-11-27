@@ -19,11 +19,13 @@ from radar.api.modelos import (
     EditalDetalheOut,
     HistoricoOut,
     ListaOut,
+    PrecosOut,
     StatusOut,
     analise_out,
     detalhe_out,
     historico_out,
     iso_com_fuso,
+    precos_out,
     resumo_out,
 )
 from radar.coleta import ultima_atualizacao
@@ -35,6 +37,7 @@ from radar.editais import (
     obter_edital,
     separar_id_publico,
 )
+from radar.precos import referencias
 
 FUSO = ZoneInfo("America/Sao_Paulo")
 logger = logging.getLogger(__name__)
@@ -127,6 +130,15 @@ def criar_app(
         if lido is None:
             raise HTTPException(status_code=404, detail="edital não encontrado")
         return historico_out(lido)
+
+    @app.get("/api/precos/{id_publico:path}")
+    def precos(id_publico: str, sessao: SessaoDep) -> PrecosOut:
+        """Preços de referência dos serviços das linhas do edital; vazio (não 404) sem dados."""
+        chave = separar_id_publico(id_publico)
+        edital = None if chave is None else obter_edital(sessao, *chave, criterios)
+        if edital is None:
+            raise HTTPException(status_code=404, detail="edital não encontrado")
+        return precos_out(edital.uf, referencias(sessao, edital.linhas, edital.uf))
 
     @app.get("/api/analises/{id_publico:path}")
     def analise(id_publico: str, sessao: SessaoDep) -> AnaliseOut:
