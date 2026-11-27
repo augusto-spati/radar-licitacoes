@@ -1198,6 +1198,9 @@ def _precos_de_um_processo(sessao: Session, cliente: ClienteTcepe, processo: dic
         logger.warning("tcepe_orcamento_vazio", extra={"processo_id": processo_id})
         return 0
     anteriores = contratados_gravados(sessao, processo_id, processo.get("valorHomologado"))
+    # Fecha a leitura antes de buscar os contratos: com dezenas de contratos a rede leva minutos
+    # e o Neon derruba a transação ociosa (`idle_in_transaction_session_timeout`).
+    sessao.rollback()
     contratos = [] if anteriores is not None else _contratos_tcepe(cliente, processo)
     novos = itens_de_processo(processo, orcamento, contratos, contratados=anteriores)
     if novos:
@@ -1215,6 +1218,7 @@ def _limpar_fora_do_alvo(sessao: Session, brutos: list[dict[str, Any]], alvos: s
     na_listagem = {str(p.get("processoContratacaoId") or "").strip() for p in brutos}
     saiu = (na_listagem - alvos) & processos_gravados(sessao)
     if not saiu:
+        sessao.rollback()  # fecha a leitura: o Neon derruba transação ociosa durante a rede
         return 0
     apagar_processos(sessao, saiu)
     sessao.commit()
