@@ -1,5 +1,6 @@
 import {type ComponentType, lazy} from 'react';
 import {Lista} from './paginas/Lista';
+import {NaoEncontrada} from './paginas/NaoEncontrada';
 
 export type Rota = {
   caminho: string;
@@ -20,4 +21,6 @@ export const rotas: readonly Rota[] = [
   {caminho: '/', nome: 'Editais', noMenu: true, elemento: Lista},
   {caminho: '/edital/:id', nome: 'Edital', noMenu: false, elemento: Detalhe},
   {caminho: '/entrar', nome: 'Entrar', noMenu: false, elemento: Entrar},
+  // Captura todo o resto (fica por último, fora do menu).
+  {caminho: '*', nome: 'Página não encontrada', noMenu: false, elemento: NaoEncontrada},
 ];
