@@ -13,9 +13,8 @@ import pytest
 from sqlalchemy import Engine, func, select, text, update
 from sqlalchemy.orm import Session
 
-from radar.coleta import FonteRetrato, PaginaColetada
+from radar.coleta import FonteRetrato, PaginaColetada, trava_fonte
 from radar.coleta.modelos import ColetaJanela, ColetaRetrato, PaginaBruta
-from radar.coleta.retratos import CHAVE_RETRATOS, chave_da_fonte
 from radar.coleta.sanepar import FonteSanepar
 from radar.comum import Base, Mensagem
 from radar.editais import reconciliar_retrato, registrar_normalizados
@@ -352,16 +351,12 @@ def test_retrato_rebaixado_e_descartado(sessao: Session, caplog: pytest.LogCaptu
     assert descarte.status == "falha"
 
 
-def test_trava_ocupada_adia(sessao: Session, engine: Engine) -> None:
+def test_trava_ocupada_adia(sessao: Session) -> None:
     retrato_id = _retrato(sessao, _paginas_sanepar(_lista("lista-oe-abertura-p1.html")))
-    chaves = (CHAVE_RETRATOS, chave_da_fonte("sanepar"))
-    with engine.connect() as outra:
-        outra.scalar(select(func.pg_advisory_lock(*chaves)))
-        try:
-            with pytest.raises(MensagemAdiada):
-                processar_mensagem(sessao, _msg_retrato(retrato_id), FONTES, AGORA)
-        finally:
-            outra.scalar(select(func.pg_advisory_unlock(*chaves)))
+    with trava_fonte(sessao, "sanepar") as obtida:  # outro processo com o lease vivo
+        assert obtida
+        with pytest.raises(MensagemAdiada):
+            processar_mensagem(sessao, _msg_retrato(retrato_id), FONTES, AGORA)
 
     assert _estado(sessao, retrato_id).processado_em is None
     assert _editais(sessao, "sanepar") == {}

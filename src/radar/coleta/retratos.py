@@ -6,28 +6,27 @@ Qualquer página em falha, ou menos registros que o mínimo da fonte, deixa o re
 o retrato concluído vira uma mensagem `retrato_coletado` na outbox, no mesmo commit, e o
 consumidor relê as páginas (`paginas_do_retrato`), extrai, grava e reconcilia.
 
-Um único retrato por fonte de cada vez: um advisory lock por fonte (chave dupla
-`CHAVE_RETRATOS`, `chave_da_fonte(nome)`), separado do lock do coletor do PNCP. Assim uma
-rodada agendada e uma manual não se sobrepõem na mesma fonte, mas fontes diferentes (e o
-PNCP) não se bloqueiam. A cli segura o lock (`trava_fonte`) durante a coleta do retrato.
+Um único retrato por fonte de cada vez: um lease por fonte na tabela `trava_fonte`
+(`coleta.trava`), separado do lease do coletor do PNCP. Assim uma rodada agendada e uma
+manual não se sobrepõem na mesma fonte, mas fontes diferentes (e o PNCP) não se bloqueiam.
+A cli segura a trava (`trava_fonte`) durante a coleta do retrato.
 """
 
 import json
 import logging
 import re
 import time
-import zlib
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol, cast
 
 import httpx
-from sqlalchemy import Engine, delete, desc, func, literal, select, tuple_, update
+from sqlalchemy import delete, desc, func, literal, select, tuple_, update
 from sqlalchemy.orm import Session
 
 from radar.coleta.modelos import ColetaRetrato, PaginaBruta
+from radar.coleta.trava import trava_fonte
 from radar.comum import enfileirar
 
 logger = logging.getLogger(__name__)
@@ -35,7 +34,6 @@ logger = logging.getLogger(__name__)
 USER_AGENT = "radar-licitacoes-estudo (github.com/augusto-spati/radar-licitacoes)"
 INTERVALO_S = 3.0  # entre requisições à mesma fonte
 TIMEOUT_SEGUNDOS = 60.0
-CHAVE_RETRATOS = 7_240_002  # primeira metade do advisory lock; a segunda é a fonte
 FRACAO_ENCOLHEU = 0.5
 LIMITE_ERRO = 500
 MANTER_CONCLUIDOS = 3  # retratos processados cujas páginas brutas ficam guardadas
@@ -169,11 +167,6 @@ def _agora_real() -> datetime:
     return datetime.now(UTC)
 
 
-def chave_da_fonte(nome: str) -> int:
-    """Segunda metade do advisory lock: um int4 estável derivado do nome da fonte."""
-    return zlib.crc32(nome.encode("utf-8")) & 0x7FFFFFFF
-
-
 def ultimo_retrato(sessao: Session, fonte: str) -> InfoRetrato | None:
     """O último retrato terminado (concluido ou falha) da fonte; em andamento não conta."""
     retrato = sessao.scalars(
@@ -192,25 +185,6 @@ def ultimo_retrato(sessao: Session, fonte: str) -> InfoRetrato | None:
         registros=retrato.registros,
         erro=retrato.erro,
     )
-
-
-@contextmanager
-def trava_fonte(sessao: Session, fonte: str) -> Iterator[bool]:
-    """Advisory lock da fonte; rende True se obtido. Não espera: False = outro processo."""
-    bind = sessao.get_bind()
-    # Conexão dedicada: o lock é da conexão, e a sessão devolve a dela ao pool a cada commit.
-    conexao = bind.connect() if isinstance(bind, Engine) else bind
-    chaves = (CHAVE_RETRATOS, chave_da_fonte(fonte))
-    try:
-        obtida = bool(conexao.scalar(select(func.pg_try_advisory_lock(*chaves))))
-        try:
-            yield obtida
-        finally:
-            if obtida:
-                conexao.scalar(select(func.pg_advisory_unlock(*chaves)))
-    finally:
-        if conexao is not bind:
-            conexao.close()
 
 
 def executar_retrato(
@@ -244,7 +218,7 @@ def _executar(
     agora: datetime,
     relogio: Callable[[], datetime],
 ) -> ResumoRetrato:
-    # Com o lock da fonte, um retrato em_andamento só pode ser sobra de execução interrompida.
+    # Com a trava da fonte, um retrato em_andamento só pode ser sobra de execução interrompida.
     sessao.execute(
         update(ColetaRetrato)
         .where(ColetaRetrato.fonte == fonte.nome, ColetaRetrato.status == "em_andamento")

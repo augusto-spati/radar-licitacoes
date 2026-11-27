@@ -24,11 +24,12 @@ from radar.coleta import (
     ler_paginas_nao_processadas,
     limpar_brutos,
     paginas_do_retrato,
+    trava_fonte,
     ultimo_retrato,
 )
 from radar.coleta.compesa import URL_GRADE, URL_PAGINA, FonteCompesa
 from radar.coleta.modelos import ColetaJanela, ColetaRetrato, PaginaBruta
-from radar.coleta.retratos import CHAVE_RETRATOS, USER_AGENT, chave_da_fonte
+from radar.coleta.retratos import USER_AGENT
 from radar.coleta.sanepar import FonteSanepar
 from radar.comum import Base, Outbox, fabrica_sessao
 from radar.editais import registrar_normalizados
@@ -437,17 +438,14 @@ def test_minimo_conta_ids_distintos(sessao: Session) -> None:
     assert resumo.erro == "abaixo do minimo: 1 < 2"
 
 
-def test_retrato_ocupado_por_outro_processo_nao_roda(sessao: Session, engine: Engine) -> None:
+def test_retrato_ocupado_por_outro_processo_nao_roda(sessao: Session) -> None:
     chamadas: list[str] = []
     fonte = FonteFalsa("sanepar", paginas=1)
-    with engine.connect() as outra:
-        outra.scalar(select(func.pg_advisory_lock(CHAVE_RETRATOS, chave_da_fonte("sanepar"))))
-        try:
-            resumo = executar_retrato(
-                sessao, fonte, _cliente(_rotas("sanepar", _lista("OE-1/26")), chamadas), AGORA
-            )
-        finally:
-            outra.scalar(select(func.pg_advisory_unlock(CHAVE_RETRATOS, chave_da_fonte("sanepar"))))
+    with trava_fonte(sessao, "sanepar") as obtida:  # outro processo com o lease vivo
+        assert obtida
+        resumo = executar_retrato(
+            sessao, fonte, _cliente(_rotas("sanepar", _lista("OE-1/26")), chamadas), AGORA
+        )
 
     assert resumo.status == "ocupado"
     assert chamadas == []
