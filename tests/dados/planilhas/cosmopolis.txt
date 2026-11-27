@@ -1,0 +1,66 @@
+=====PAGINA 1
+OBRA: ADUTORA DE ÁGUA TRATADA - SANTO RIZZO/JARDIM BETO SPANA SINAPI - 07/2026 SABESP - 01/2026 DATA 02/09/2026
+LOCAL: MUNICÍPIO COSMÓPOLIS/SP SICRO-04/2026
+Código Item Descrição Und. Qtd. R$ unit. s/ BDI
+R$ unit. c/ BDI = 
+24,18%         
+Aquisição de 
+materiais BDI 
+=14,02%
+R$ Total
+1.0 ADMINISTRAÇÃO LOCAL E SERVIÇOS TÉCNICOS 245.816,76                
+SINAPI-93568 1.1 Engenheiro mês 3,00               34.765,53              43.171,84                129.515,52                
+SINAPI-93572 1.2 Encarregado mês 3,00               9.886,23                12.276,72                36.830,16                  
+SINAPI-94296 1.3 Equipe de Topografia mês 3,00               15.391,28              19.112,89                57.338,67                  
+SINAPI-101460 1.5 Vigia (24 horas) mês 3,00               5.940,95                7.377,47                  22.132,41                  
+2.0 MOBILIZAÇÃO/DESMOBILIZAÇÃO 4.989,60                    
+SICRO-5914640 2.1 Transporte com cavalo mecânico com semirreboque com capacidade de 30 t - rodovia pavimentada tkm 6.160,00       0,65                        0,81                          4.989,60                     
+3.0 CANTEIRO DE OBRAS 11.918,04                  
+SINAPI-103689 3.1 FORNECIMENTO E INSTALAÇÃO DE PLACA DE OBRA COM CHAPA GALVANIZADA E ESTRUTURA DE MADEIRA. AF_03/2022_PS m² 6,00               508,95                   632,01                      3.792,06                     
+SINAPI-10779 3.2 Aluguel de Container Administrativo e Almoxarifado, sala de informática, sanitários em conjunto de módulos metálicos. mês 3,00               1.090,62                1.354,33                  4.062,99                     
+SINAPI-10779 3.3 Aluguel de Container  2,30 x 4,30m H=2,50m para Sanitário mês 3,00               1.090,62                1.354,33                  4.062,99                     
+4.0 EXECUÇÃO ADUTORA 2.578.505,98            
+SICRO-E9591 4.1 Serra para corte de concreto e asfalto - 10 Kw h 396,00          24,87                      30,88                        12.228,48                  
+SINAPI-100982 CARGA, MANOBRA E DESCARGA DE ENTULHO EM CAMINHÃO BASCULANTE 10 M³ - CARGA COM ESCAVADEIRA HIDRÁULICA (CAÇAMBA DE 0,80 M³ / 111 HP) E DESCARGA LIVRE (UNIDADE: M3). AF_02/2026 m³ 214,20          10,11                      12,55                        2.688,21                     
+SINAPI-102278 4.2 Escavação em solo de 1º Categoria m³ 3.213,00       10,41                      12,93                        41.544,09                  
+SINAPI-93367 4.3 Reaterro de solo de 1º Categoria m³ 3.213,00       27,91                      34,66                        111.362,58                
+SINAPI-97132 4.4
+ASSENTAMENTO DE TUBO DE PVC DEFOFO OU PRFV OU RPVC PARA REDE DE ÁGUA, DN 400 MM, JUNTA ELÁSTICA 
+INTEGRADA, INSTALADO EM LOCAL COM NÍVEL ALTO DE INTERFERÊNCIAS (NÃO INCLUI FORNECIMENTO). 
+AF_05/2024
+m 2.142,00       23,02                      28,59                        61.239,78                  
+Cotação 4.5 Fornecimento de Tubo Defofo - Dn 400mm m 2.142,00       810,22                   923,81                      1.978.801,02            
+SINAPI-98009 4.6 ACRÉSCIMO PARA POÇO DE VISITA RETANGULAR PARA ESGOTO, EM ALVENARIA COM BLOCOS DE CONCRETO, DIMENSÕES INTERNAS = 1,5X1,5 M. AF_12/2020 m 6,00               2.287,79                2.840,98                  17.045,88                  
+SINAPI-99290 4.7 BASE PARA POÇO DE VISITA RETANGULAR PARA DRENAGEM, EM ALVENARIA COM BLOCOS DE CONCRETO, DIMENSÕES INTERNAS = 1,5X1,5 M, PROFUNDIDADE = 1,40 M, EXCLUINDO TAMPÃO. AF_12/2020 PÇ 6,00               4.650,36                5.774,82                  34.648,92                  
+SINAPI-6243 4.8 TAMPAO FOFO SIMPLES COM BASE / REQUADRO, CLASSE B125 CARGA MAX. 12,5 T, REDONDO, TAMPA 600 MM (COM INSCRICAO EM RELEVO DO TIPO DE REDE) PÇ 6,00               487,50                   555,85                      3.335,10                     
+SINAPI-102098 5.16 Recomposição de revestimento em concreto asfáltico (aquisição em usina), para o fechamento de valas - incluso demolição do pavimento. m³ 107,10          2.023,15                2.512,35                  269.072,69                
+SINAPI-101849 5.17 Recomposição de base e ou sub-base para fechamento de valas de brita graduada simples - incluso retirada e colocação do material. Af_12/2020 m³ 214,20          174,96                   217,27                      46.539,23                  
+5.0 INSTALAÇÕES ELÉTRICAS E HIDRÁULICAS 162.243,44                
+SINAPI-103112 5.1 ASSENTAMENTO DE CONEXÃO COM 2 ACESSOS, FERRO FUNDIDO PARA REDE DE ÁGUA, DN 400 MM, JUNTA FLANGEADA (NÃO INCLUI O FORNECIMENTO). AF_09/2021 und. 18,00            366,70                   455,37                      8.196,66                     
+SINAPI-103128 5.2 ASSENTAMENTO DE CONEXÃO COM 3 ACESSOS, FERRO FUNDIDO PARA REDE DE ÁGUA , DN 400 MM, JUNTA FLANGEADA (NÃO INCLUI O FORNECIMENTO). AF_09/2021 und. 4,00               539,67                   670,16                      2.680,64                     
+SABESP-HM04169 5.3 VÁLVULA GAVETA C/FLANGES PN10 FERRO FUNDIDO DN=400 MM * (290,00 KG), ACION. VOLANTE, CUNHA DE BORRACHA, MÉTRICA CHATA, PINTURA EPÓXI EM PÓ NBR 14968 ÁGUA/ESGOTO PÇ 1,00               14.203,99              16.195,39                16.195,39                  
+SABESP-HM02939 5.4 CURVA 11º15' COM BOLSAS JE2GS FERRO FUNDIDO DN=400 MM * (56,10 KG) PINTURA BETUMINOSA E ANÉIS DE BORRACHA INCLUSOS NBR 7675 ÁGUA PÇ 2,00               2.327,52                2.653,84                  5.307,68                     
+SABESP-HM02949 5.5 CURVA 22º30' COM BOLSAS JE2GS FERRO FUNDIDO DN=400 MM * (63,10 KG) PINTURA BETUMINOSA E ANÉIS DE BORRACHA INCLUSOS NBR 7675 ÁGUA PÇ 2,00               2.501,95                2.852,72                  5.705,44                     
+SABESP-HM02969 5.6 CURVA 90º COM BOLSAS JE2GS FERRO FUNDIDO DN=400 MM * (105,00 KG) PINTURA BETUMINOSA E ANÉIS DE BORRACHA INCLUSOS NBR 7675 PARA ÁGUA PÇ 1,00               5.509,05                6.281,42                  6.281,42                     
+SABESP-HM03542 5.7 TUBO C/FLANGES PN10 FERRO FUNDIDO DN=400 MM L=1.500 MM * (190,25 KG) PINTURA BETUMINOSA, ACESSÓRIOS NÃO INCLUSOS NBR 7675 ÁGUA PÇ 4,00               6.378,17                7.272,39                  29.089,56                  
+SABESP-HM03092 5.8 EXTREMIDADE BOLSA JE2GS - FLANGE PN10 FERRO FUNDIDO DN=400 MM L=160 MM * (53,10 KG) PINTURA BETUMINOSA - INCLUSO ANEL DE BORRACHA NBR 7675 ÁGUA PÇ 4,00               3.468,17                3.954,41                  15.817,64                  
+SABESP-HM06621 5.9 TÊ COM FLANGES PN10 FERRO FUNDIDO DN=400X150 MM (142,00 KG) PINTURA BETUMINOSA, ACESSÓRIOS NÃO INCLUSOS NBR 7675 ÁGUA PÇ 2,00               9.971,95                11.370,02                22.740,04                  
+SABESP-HM04204 5.10
+VÁLVULA GAVETA C/FLANGES PN10/16 FERRO FUNDIDO DN=150 MM * (33,00 KG), ACION.
+VOLANTE, CUNHA DE BORRACHA, MÉTRICA CHATA, PINTURA EPÓXI EM PÓ NBR 14968
+ÁGUA/ESGOTO
+PÇ 2,00               1.161,87                1.324,76                  2.649,52                     
+SABESP-HM04221 5.11 VENTOSA TRÍPLICE FUNÇÃO C/FLANGES PN10/16 FERRO FUNDIDO DN=150 MM PINTURA EPÓXI NTS 322 ÁGUA PÇ 2,00               6.296,81                7.179,62                  14.359,24                  
+SABESP-HM03441 5.12 TÊ COM BOLSAS JE2GS FERRO FUNDIDO DN=400 X 60 MM * (74,50 KG) PINTURA BETUMINOSA, ANÉIS DE BORRACHA INCLUSOS NBR 7675 ÁGUA PÇ 2,00               3.667,93                4.182,17                  8.364,34                     
+SABESP-HM01884 5.13 CURVA 45° PVC DE=60 MM JUNTA ELÁSTICA PBA NBR 10351 INFRAESTRUTURA ÁGUA PÇ 4,00               17,95                      20,47                        81,88                          
+SABESP-HM01887 5.14 CURVA 90° PVC DE=60 MM JUNTA ELÁSTICA PBA NBR 10351 INFRAESTRUTURA ÁGUA PÇ 2,00               22,19                      25,30                        50,60                          
+SABESP-HM01915 5.15 TUBO PVC DE=60 MM CL 15 PBA JEI NBR 5647-1 INFRAESTRUTURA ÁGUA M 12,00            17,89                      20,40                        244,80                        
+SABESP-HM04207 5.16 VÁLVULA GAVETA C/FLANGES PN10/16 FERRO FUNDIDO DN=50 MM * (11,00 KG), ACION. VOLANTE, CUNHA DE BORRACHA, MÉTRICA CHATA, PINTURA EPÓXI EM PÓ NBR 14968 ÁGUA/ESGOTO PÇ 2,00               471,20                   537,26                      1.074,52                     
+PLANILHA ORÇAMENTÁRIA
+                                                                                            Prefeitura Municipal de Cosmópolis 
+                                                                   Rua Dr. Campos Sales – Centro – Cosmópolis – Estado de São Paulo
+                                                                                         Telefone (19)3812-8000 -   CEP 13150-000
+                                                                                                     CNPJ 44.730.331/0001-52
+                                                                                                  http://www.cosmopolis.sp.gov.br         
+
+=====PAGINA 2
