@@ -100,7 +100,13 @@ class ClientePNCP:
         )
 
     def buscar(
-        self, endpoint: str, data_ini: date, data_fim: date, modalidade: int, pagina: int
+        self,
+        endpoint: str,
+        data_ini: date,
+        data_fim: date,
+        modalidade: int,
+        pagina: int,
+        uf: str | None = None,
     ) -> Pagina:
         if endpoint not in CAMINHOS:
             raise ValueError(f"endpoint desconhecido: {endpoint!r}")
@@ -112,6 +118,8 @@ class ClientePNCP:
             "pagina": pagina,
             "tamanhoPagina": TAMANHO_PAGINA,
         }
+        if uf is not None:
+            parametros["uf"] = uf
         tentativas = Retrying(
             stop=stop_after_attempt(self._tentativas),
             wait=self._esperar,

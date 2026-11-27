@@ -9,6 +9,12 @@ from radar.coleta.fatias import (
     coletar_fatia,
 )
 from radar.coleta.frescor import SEM_DADO_H, frescor_por_fonte
+from radar.coleta.historico import (
+    ResumoHistorico,
+    carregar_historico,
+    meses_ate,
+    prefiltrar,
+)
 from radar.coleta.janelas import (
     Auditoria,
     JanelaParada,
@@ -71,8 +77,10 @@ __all__ = [
     "PaginaPNCP",
     "ResultadoFatia",
     "ResumoColeta",
+    "ResumoHistorico",
     "ResumoRetrato",
     "auditar",
+    "carregar_historico",
     "coletar_fatia",
     "coletar_pendentes",
     "criar_http",
@@ -89,12 +97,14 @@ __all__ = [
     "liberar_trava",
     "limpar_brutos",
     "marcar_processada",
+    "meses_ate",
     "marcar_retrato_falha",
     "marcar_retrato_processado",
     "obter_trava",
     "paginas_do_retrato",
     "paginas_publicadas_sem_processar",
     "planejar_janelas",
+    "prefiltrar",
     "retratos_sem_processar",
     "trava_fonte",
     "ultima_atualizacao",
