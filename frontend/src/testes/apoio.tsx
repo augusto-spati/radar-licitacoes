@@ -17,6 +17,7 @@ export function fonteFalsa(parcial: Partial<Fonte> = {}): Fonte {
     listar: async () => ({atualizado_em: new Date().toISOString(), editais: []}),
     obter: async () => null,
     analise: async () => null,
+    historico: async () => null,
     status: async () => ({atualizado_em: null}),
     ...parcial,
   };

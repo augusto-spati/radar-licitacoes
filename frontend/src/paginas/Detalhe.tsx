@@ -12,6 +12,7 @@ import {Heading, Text} from '@astryxdesign/core/Text';
 import {rtlStyles} from '@astryxdesign/core/utils';
 import {Aderencia} from '../componentes/Aderencia';
 import {Carregando, ErroAoCarregar} from '../componentes/EstadoCarga';
+import {HistoricoOrgao} from '../componentes/HistoricoOrgao';
 import {TokensLinhas} from '../componentes/TokensLinhas';
 import {useFonte} from '../dados/FonteContext';
 import {
@@ -93,6 +94,13 @@ function AderenciaDoEdital({id}: {id: string}) {
   return <Aderencia carga={carga} onTentarDeNovo={tentarDeNovo} />;
 }
 
+// O histórico do órgão também carrega à parte, pelo mesmo motivo.
+function HistoricoDoEdital({id}: {id: string}) {
+  const fonte = useFonte();
+  const {carga, tentarDeNovo} = useCarga(() => fonte.historico(id), id);
+  return <HistoricoOrgao carga={carga} onTentarDeNovo={tentarDeNovo} />;
+}
+
 function Conteudo({edital}: {edital: EditalDetalhe}) {
   return (
     <VStack gap={4}>
@@ -131,6 +139,9 @@ function Conteudo({edital}: {edital: EditalDetalhe}) {
       </Section>
       <Section>
         <AderenciaDoEdital id={edital.id_publico} />
+      </Section>
+      <Section>
+        <HistoricoDoEdital id={edital.id_publico} />
       </Section>
     </VStack>
   );
