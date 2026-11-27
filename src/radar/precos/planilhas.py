@@ -5,7 +5,8 @@ compõe com os documentos e a IA é a CLI.
 
 - Só linha com serviço-padrão é gravada, origem `pncp_planilha`, chave
   `<id_pncp>#<sha256[:12]>#<item>`, `processo` = id do edital no PNCP (é o caso das medianas).
-- Classificação com o contexto da obra: título da seção da planilha e, sem ele, o objeto.
+- Classificação com o contexto da obra: título da seção da planilha e, sem ele, o objeto;
+  em seção de ramal ("4.0 Ramal") o tubo não é metro de rede.
 - BDI: com e sem BDI na linha → `bdi = com ÷ sem − 1` (ou o `%` da linha); um preço só e
   nenhum BDI declarado → `bdi_desconhecido` (regra da 7b.1). Compara-se sempre o com BDI.
 - Republicação: a mesma planilha (sha256) ou, do mesmo órgão, 80%+ das linhas (das duas
@@ -17,7 +18,7 @@ compõe com os documentos e a IA é a CLI.
 
 import logging
 from collections.abc import Collection, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -36,7 +37,7 @@ from radar.precos.modelos import (
     StatusPlanilha,
 )
 from radar.precos.planilha_leitura import LinhaPlanilha, bdi_plausivel
-from radar.precos.servicos import Servico, classificar, contexto_da_obra
+from radar.precos.servicos import Servico, classificar, contexto_da_obra, secao_de_ramal
 from radar.precos.tcepe import gravar_precos
 
 logger = logging.getLogger(__name__)
@@ -92,7 +93,9 @@ def itens_da_planilha(
     novos: list[PrecoItemNovo] = []
     chaves: set[str] = set()
     for posicao, linha in enumerate(linhas, start=1):
-        contexto = contexto_da_obra(linha.secao, edital.objeto)
+        contexto = replace(
+            contexto_da_obra(linha.secao, edital.objeto), ramal=secao_de_ramal(linha.secao)
+        )
         classificacao = classificar(linha.descricao, linha.unidade, servicos, contexto)
         if classificacao is None:
             continue

@@ -3,7 +3,7 @@
 As regras ficam em `config/servicos.toml`. O casamento é por termos sem acento, com U+FFFD
 (o acento perdido no `Remessa_*` do TCE-PE) valendo por qualquer letra. Na dúvida, o item fica
 sem serviço: casar com dois serviços, unidade fora da lista, rede sem material, sem DN ou
-sem escopo claro (só o tubo, só o assentamento ou os dois).
+sem escopo claro (só o tubo, só o assentamento ou os dois) e rede que cita dois materiais.
 """
 
 import re
@@ -87,11 +87,14 @@ class Contexto:
     """Linha da obra de onde o item veio (título da seção da planilha ou objeto do edital).
 
     Só vale quando a descrição do item não cita nem água nem esgoto ("TUBO PVC-O DN 250 MM"
-    numa seção "EXECUÇÃO ADUTORA").
+    numa seção "EXECUÇÃO ADUTORA") ou cita os dois como alternativa ("TUBO PEAD ... PARA REDE
+    DE ÁGUA OU ESGOTO", a composição genérica do SINAPI), que a linha da obra desempata.
     """
 
     obra: Obra | None
     adutora: bool = False
+    # Seção de ramais/ligações ("4.0 Ramal"): o tubo dela é do ramal, não metro de rede.
+    ramal: bool = False
 
 
 _TERMOS_AGUA = ("agua", "abastecimento", "adutora", "adutoras", "potavel", "saa")
@@ -301,13 +304,51 @@ def contexto_da_obra(*textos: str | None) -> Contexto:
     return Contexto(None)
 
 
+_TERMOS_RAMAL = (
+    "ramal", "ramais", "ligacao", "ligacoes", "predial", "prediais", "domiciliar",
+    "domiciliares",
+)  # fmt: skip
+_TERMOS_REDE = ("rede", "redes", "coletor", "coletores", "adutora", "adutoras", "interceptor")
+
+
+def secao_de_ramal(secao: str | None) -> bool:
+    """Seção só de ramais ou ligações ("Ramal", "LIGAÇÕES DOMICILIARES"), sem citar rede."""
+    if not secao:
+        return False
+    texto = sem_acento(secao)
+    return _algum(texto, _TERMOS_RAMAL) and not _algum(texto, _TERMOS_REDE)
+
+
+# "ÁGUA OU ESGOTO", "ÁGUA/ESGOTO": a mesma composição serve às duas obras.
+_AGUA_OU_ESGOTO = re.compile(
+    rf"(?<![a-z{CURINGA}])(?:agua(?:\s+ou\s+|\s*/\s*)esgoto|esgoto(?:\s+ou\s+|\s*/\s*)agua)"
+)
+
+
 def _com_contexto(texto: str, contexto: Contexto | None) -> str:
     if contexto is None or contexto.obra is None:
         return texto
+    texto = _AGUA_OU_ESGOTO.sub(contexto.obra, texto)
     sem_servidas = _AGUAS_SERVIDAS.sub(" ", texto)
     if tem_termo(sem_servidas, "agua") or tem_termo(sem_servidas, "esgot"):
         return texto
     return f"{texto} {contexto.obra}"
+
+
+# Antes de contar materiais: "PVC DE FOFO"/"DE-FOFO" é PVC DEFOFO (não ferro fundido); o
+# polietileno da manta/luva que envolve o ferro fundido não é PEAD.
+_DE_FOFO = re.compile(rf"(pvc\s+)de[\s-]?fofo|(?<![a-z{CURINGA}])de-fofo")
+_ENVOLTORIO = re.compile(
+    r"(?:manta|luva|manga|mangueira|envolt\w*|revestid\w*|revestimento)\s+"
+    r"(?:\w+\s+){0,2}?(?:de|em)\s+polietileno"
+)
+
+
+def _sem_falso_material(texto: str) -> str:
+    texto = _DE_FOFO.sub(lambda m: f"{m.group(1) or ''}defofo", texto)
+    if _algum(texto, ("fofo", "ferro fundido", "ferro ductil")):
+        texto = _ENVOLTORIO.sub(" ", texto)
+    return texto
 
 
 def _classificar_em(servico: Servico, texto: str, unidade: str) -> Classificacao | None:
@@ -323,10 +364,13 @@ def _classificar_em(servico: Servico, texto: str, unidade: str) -> Classificacao
         return Classificacao(servico.nome, None, None, None, servico.unidade, fator)
     if _cita_agua_e_esgoto(texto):
         return None
-    material = next((m.nome for m in servico.materiais if _algum(texto, m.termos)), None)
+    # Dois materiais na linha ("TUBO FERRO FUNDIDO ... COMPATÍVEL COM PVC PBA") é ambíguo: sem.
+    so_material = _sem_falso_material(texto)
+    materiais = {m.nome for m in servico.materiais if _algum(so_material, m.termos)}
     dn = extrair_dn(texto)
-    if material is None or dn is None:
+    if len(materiais) != 1 or dn is None:
         return None
+    (material,) = materiais
     if (servico.dn_min is not None and dn < servico.dn_min) or (
         servico.dn_max is not None and dn > servico.dn_max
     ):
@@ -431,13 +475,16 @@ def classificar(
     """Serviço-padrão do item, ou None se não casar com exatamente um serviço.
 
     Com `contexto` (planilha do PNCP), a linha da obra entra na descrição que não cita nem
-    água nem esgoto. Rede de água de adutora (pela descrição ou pelo contexto) sai com
+    água nem esgoto (ou que cita "água ou esgoto"); em seção de ramal (`Contexto.ramal`) não há
+    rede. Rede de água de adutora (pela descrição ou pelo contexto) sai com
     `observacao="adutora"`: compara-se com rede de água pelo material e DN, e dá para separar.
     """
     texto = sem_acento(descricao)
     texto_ctx = _com_contexto(texto, contexto)
     unidade_norm = normalizar_unidade(unidade)
     candidatos = servicos if servicos is not None else _servicos_padrao()
+    if contexto is not None and contexto.ramal:
+        candidatos = tuple(s for s in candidatos if not s.de_rede)
     achados = [c for s in candidatos if (c := _classificar_em(s, texto_ctx, unidade_norm))]
     if len(achados) != 1:
         return None

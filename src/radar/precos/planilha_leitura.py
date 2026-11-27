@@ -11,7 +11,8 @@ Layouts medidos no spike (2026-11-27, `docs/superpowers/specs/2026-11-27-etapa-0
 - código e fonte depois da descrição ("... fornec./assent. SINAPI 90701 m 33,00 90,52 ...");
 - código, fonte e data-base da linha ("... HM07752 SABESP jul/26 M 2.866,62 284,07 ... 15,28% ...");
 - memorial de cálculo entre a quantidade e os preços ("m³ 1487,20 Trecho linear 845m x ...").
-Descrição quebrada em várias linhas: junta as linhas desde o último número de item.
+Descrição quebrada em várias linhas: junta as linhas desde o último número de item ("4.4 ...",
+"12" sozinho numa linha ou "1 67009 ACIONADOR ...", item inteiro seguido do código).
 """
 
 import re
@@ -30,12 +31,13 @@ BDI_MIN = Decimal("0.05")
 BDI_MAX = Decimal("0.45")
 MIN_NUMEROS = 2
 MAX_NUMEROS = 7
-MAX_LINHAS_DESCRICAO = 6
+MAX_LINHAS_DESCRICAO = 10
 
 # Unidades vistas nas planilhas (sem acento, sem ponto nem espaço, como `normalizar_unidade`).
 UNIDADES = frozenset(
     {
-        "m", "m2", "m3", "ml", "mt", "km", "un", "und", "unid", "ud", "u", "pc", "peca", "pca",
+        "m", "m2", "m3", "ml", "mt", "mts", "metro", "metros", "km", "un", "und", "unid",
+        "unidade", "ud", "u", "pc", "peca", "pca",
         "kg", "t", "ton", "h", "hr", "hh", "mes", "dia", "vb", "verba", "cj", "conj", "cjto",
         "jg", "l", "gl", "pt", "sc", "ha", "lig", "unmes", "un/mes", "unid/mes", "mxmes",
         "tkm", "txkm", "tonxkm", "m3xkm", "m3km", "kmxm3",
@@ -301,6 +303,19 @@ def _comeca_item(linha: str) -> bool:
     return False
 
 
+def _abre_item(linha: str) -> bool:
+    """Linha onde começa a descrição de um item: `_comeca_item`, o número inteiro sozinho
+    ("12", com a descrição nas linhas de baixo) ou inteiro seguido do código ("1 67009 ...")."""
+    if _comeca_item(linha):
+        return True
+    tokens = linha.split()
+    if not tokens or not _INTEIRO_ITEM.match(tokens[0]):
+        return False
+    return len(tokens) == 1 or (
+        len(tokens) > 2 and _CODIGO.match(sem_acento(tokens[1])) is not None
+    )
+
+
 @dataclass(frozen=True)
 class _Bruta:
     item: str | None
@@ -310,6 +325,20 @@ class _Bruta:
     unidade: str
     precos: _Precos
     data_linha: date | None
+
+
+_METRO_POR_EXTENSO = frozenset({"metro", "metros", "mts"})
+_ANTES_DO_COMPRIMENTO = frozenset({"de", "barra", "barras", "com", "c/"})
+
+
+def _comprimento_da_barra(tokens: list[str], i: int, unidade: str) -> bool:
+    """ "BARRA DE 6 METROS 50 ...": "6 METROS" é o comprimento da barra, não a unidade."""
+    return (
+        normalizar_unidade(unidade) in _METRO_POR_EXTENSO
+        and i >= 2
+        and _eh_numero(tokens[i - 1])
+        and sem_acento(tokens[i - 2]) in _ANTES_DO_COMPRIMENTO
+    )
 
 
 def _ler_linha(linha: str) -> tuple[_Bruta, list[str]] | None:
@@ -328,6 +357,8 @@ def _ler_linha(linha: str) -> tuple[_Bruta, list[str]] | None:
         if i is None:
             continue
         bruta = " ".join(tokens[i:depois])
+        if _comprimento_da_barra(tokens, i, bruta):
+            continue
         numeros = tokens[max(depois + 1, cauda) :]
         precos = _precos(quantidade, numeros)
         if precos is None:
@@ -339,9 +370,27 @@ def _ler_linha(linha: str) -> tuple[_Bruta, list[str]] | None:
             fonte, codigo, _ = _fonte_e_codigo(meio)
         data_linha = next((d for t in [*antes[-4:], *meio] if (d := data_de_token(t))), None)
         item, descricao = _limpar_descricao([t for j, t in enumerate(antes) if j not in usados])
+        # "45 81797 PARAFUSO ...": o código logo depois do item inteiro.
+        if (
+            codigo is None
+            and item is not None
+            and "." not in item
+            and len(descricao) > 1
+            and _CODIGO.match(sem_acento(descricao[0]))
+        ):
+            codigo = descricao.pop(0)
         texto = " ".join(_tirar_fim(descricao))
         return _Bruta(item, codigo, fonte, texto, bruta, precos, data_linha), antes
     return None
+
+
+_NAO_TITULO = frozenset(
+    {
+        "mm", "cm", "m", "km", "pol", "polegada", "polegadas", "kg", "g", "gramas", "l", "litros",
+        "metro", "metros", "mca", "mpa", "kv", "kva", "hp", "cv", "kw", "un", "und", "pc", "pecas",
+        "x", "de", "do", "da", "e", "ou", "a", "com", "para", "em",
+    }
+)  # fmt: skip
 
 
 def _titulo_de_secao(linha: str) -> str | None:
@@ -352,8 +401,73 @@ def _titulo_de_secao(linha: str) -> str | None:
     tokens = m.group(3).split()
     while tokens and _eh_numero(tokens[-1]):
         tokens.pop()
-    titulo = " ".join(tokens).strip()
-    return titulo if len(titulo) >= 4 and any(c.isalpha() for c in titulo) else None
+    # "1 - SERVIÇOS PRELIMINARES", "4 – RAMAIS PREDIAIS", "4. RAMAL.".
+    titulo = " ".join(tokens).strip().lstrip("-–—:. ").rstrip(".").strip()
+    if len(titulo) < 4 or not any(c.isalpha() for c in titulo):
+        return None
+    # Continuação de descrição que começa com número não é seção: "75 GRAMAS", "2 E 15813-1",
+    # "08 MM,UTILIZADA NA MANUTENÇÃO DAS REDES", "50 MM PARA REDE DE ESGOTO".
+    primeira = re.match(r"[^\W\d_]+", titulo)
+    if (
+        not titulo[0].isupper()
+        or primeira is None
+        or len(primeira.group()) < 2
+        or sem_acento(primeira.group()) in _NAO_TITULO
+    ):
+        return None
+    return titulo
+
+
+_DEPOIS_DO_NUMERO = frozenset({"mm", "cm", "m", "pol", "x", "un", "und", "m2", "m3", "kg"})
+
+
+def _seguinte(item: str) -> str | None:
+    """ "18" → "19"; "4.4" → "4.5"."""
+    partes = item.rstrip(".").split(".")
+    if not all(p.isdigit() for p in partes):
+        return None
+    return ".".join([*partes[:-1], str(int(partes[-1]) + 1)])
+
+
+def _item_proprio(
+    bruta: "_Bruta", antes: list[str], anteriores: list[str], ultimo: str | None
+) -> bool:
+    """O número no começo da linha de preço é o item dela, ou o resto de uma descrição de cima?
+
+    Item com ponto ("4.4") sempre é. O inteiro não é quando vem seguido de medida ("100 MM",
+    "110 MM m 10,00"); é quando não há item aberto nas linhas de cima ou quando segue o aberto
+    (ou o último lido): "19" depois de "18".
+    """
+    item = bruta.item
+    if item is None or _comeca_item(" ".join(antes)):
+        return True
+    depois = bruta.descricao.split()
+    if not depois or sem_acento(depois[0]).strip(" ,.;:") in _DEPOIS_DO_NUMERO:
+        return False
+    abertos = [a.split()[0].rstrip(".") for a in anteriores if _abre_item(a)]
+    if not abertos:
+        return True
+    return item in {_seguinte(abertos[-1]), _seguinte(ultimo) if ultimo else None}
+
+
+def _numero_de_pagina(cheias: list[str], numero: int) -> bool:
+    """Número sozinho no topo da página é o número dela quando é igual ao índice da página, vem
+    antes de outro número sozinho ("36" / "1" / "Tubo ...") ou de continuação em minúscula
+    ("35" / "circuito, acionamento"); "12" / "TUBO PVC ..." é o item 12."""
+    if not _INTEIRO_ITEM.match(cheias[0]):
+        return False
+    if int(cheias[0].rstrip(".")) == numero or len(cheias) == 1:
+        return True
+    seguinte = cheias[1]
+    return bool(_INTEIRO_ITEM.match(seguinte)) or seguinte[0].islower()
+
+
+def _preco_nao_lido(linha: str) -> bool:
+    """Linha com "R$" e 2+ números que não virou linha (unidade desconhecida: "Serviço 15 R$
+    2.283,33 R$ 34.249,95"): fecha o item, para a descrição dele não passar ao seguinte."""
+    if "R$" not in linha:
+        return False
+    return sum(1 for t in linha.replace("R$", " ").split() if _eh_numero(t)) >= MIN_NUMEROS
 
 
 def pagina_de_composicao(texto: str) -> bool:
@@ -370,17 +484,18 @@ def ler_planilha(paginas: list[str]) -> list[LinhaPlanilha]:
     linhas: list[LinhaPlanilha] = []
     vistas: set[tuple[object, ...]] = set()
     secao: str | None = None
+    ultimo: str | None = None
     for numero, pagina in enumerate(paginas, start=1):
         if pagina_de_composicao(pagina):
             continue
         anteriores: list[str] = []
-        for crua in pagina.splitlines():
-            linha = crua.strip()
-            if not linha:
+        cheias = [c.strip() for c in pagina.splitlines() if c.strip()]
+        for posicao, linha in enumerate(cheias):
+            if posicao == 0 and _numero_de_pagina(cheias, numero):
                 continue
             lida = _ler_linha(linha)
             if lida is None:
-                if _TOTAL.match(sem_acento(linha)):
+                if _TOTAL.match(sem_acento(linha)) or _preco_nao_lido(linha):
                     anteriores = []
                     continue
                 if (titulo := _titulo_de_secao(linha)) is not None:
@@ -390,19 +505,37 @@ def ler_planilha(paginas: list[str]) -> list[LinhaPlanilha]:
                 anteriores = [*anteriores, linha][-MAX_LINHAS_DESCRICAO:]
                 continue
             bruta, antes = lida
-            if not _comeca_item(" ".join(antes)) and anteriores:
+            # Item na própria linha ("19 Hidrometro ... Un 8 R$ ..."): a descrição é a dela. Mas
+            # "100 MM PARA REDE ... m 10,00" embaixo de "1.1 TUBO PVC PBA JE DN" é continuação.
+            if bruta.item is not None and not _item_proprio(bruta, antes, anteriores, ultimo):
+                bruta = replace(bruta, item=None, descricao=f"{bruta.item} {bruta.descricao}")
+            if bruta.item is None and not _comeca_item(" ".join(antes)) and anteriores:
                 inicio = max(
-                    (i for i, a in enumerate(anteriores) if _comeca_item(a)),
+                    (i for i, a in enumerate(anteriores) if _abre_item(a)),
                     default=len(anteriores) - 1,
                 )
                 juntas = " ".join([*anteriores[inicio:], bruta.descricao])
                 item, tokens = _limpar_descricao(juntas.split())
                 _, _, usados = _fonte_e_codigo(tokens[:2])
                 tokens = [t for j, t in enumerate(tokens) if j not in usados]
+                codigo = bruta.codigo
+                # "1 67009 ACIONADOR ...": o código vem logo depois do item inteiro.
+                if (
+                    codigo is None
+                    and item is not None
+                    and "." not in item
+                    and len(tokens) > 1
+                    and _CODIGO.match(sem_acento(tokens[0]))
+                ):
+                    codigo = tokens.pop(0)
                 bruta = replace(
-                    bruta, item=bruta.item or item, descricao=" ".join(_tirar_fim(tokens))
+                    bruta,
+                    item=bruta.item or item,
+                    codigo=codigo,
+                    descricao=" ".join(_tirar_fim(tokens)),
                 )
             anteriores = []
+            ultimo = bruta.item or ultimo
             if len(bruta.descricao) < 3:
                 continue
             data_base = bruta.data_linha or (datas.get(bruta.fonte) if bruta.fonte else None)
@@ -448,6 +581,7 @@ _NUMERO_CORRIDO = re.compile(r"\d[\d.,]*\d|\d")
 _MATERIAIS_IA = {
     "pvc": ("pvc",),
     "defofo": ("defofo",),
+    "pba": ("pba",),
     "pead": ("pead", "polietileno"),
     "polietileno": ("pead", "polietileno"),
     "ferro fundido": ("ferrofundido", "fofo"),
