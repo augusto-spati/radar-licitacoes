@@ -17,16 +17,24 @@ from radar.analise import carregar_config_ia, obter_analise
 from radar.api.modelos import (
     AnaliseOut,
     EditalDetalheOut,
+    HistoricoOut,
     ListaOut,
     StatusOut,
     analise_out,
     detalhe_out,
+    historico_out,
     iso_com_fuso,
     resumo_out,
 )
 from radar.coleta import ultima_atualizacao
 from radar.comum import criar_engine, fabrica_sessao, obter_config
-from radar.editais import carregar_criterios, filtrar, obter_edital, separar_id_publico
+from radar.editais import (
+    carregar_criterios,
+    filtrar,
+    historico_do_edital,
+    obter_edital,
+    separar_id_publico,
+)
 
 FUSO = ZoneInfo("America/Sao_Paulo")
 logger = logging.getLogger(__name__)
@@ -110,6 +118,15 @@ def criar_app(
         if edital is None:
             raise HTTPException(status_code=404, detail="edital não encontrado")
         return detalhe_out(edital)
+
+    @app.get("/api/historicos/{id_publico:path}")
+    def historico(id_publico: str, sessao: SessaoDep) -> HistoricoOut:
+        """Histórico do órgão do edital e régua de desconto; vazio (não 404) sem contratações."""
+        chave = separar_id_publico(id_publico)
+        lido = None if chave is None else historico_do_edital(sessao, criterios, *chave, relogio())
+        if lido is None:
+            raise HTTPException(status_code=404, detail="edital não encontrado")
+        return historico_out(lido)
 
     @app.get("/api/analises/{id_publico:path}")
     def analise(id_publico: str, sessao: SessaoDep) -> AnaliseOut:

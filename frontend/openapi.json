@@ -72,6 +72,106 @@
         "title": "AnaliseOut",
         "type": "object"
       },
+      "ContratacaoPassadaOut": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "desconto": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Desconto"
+          },
+          "id_publico": {
+            "title": "Id Publico",
+            "type": "string"
+          },
+          "objeto": {
+            "title": "Objeto",
+            "type": "string"
+          },
+          "parcial": {
+            "title": "Parcial",
+            "type": "boolean"
+          },
+          "situacao": {
+            "title": "Situacao",
+            "type": "string"
+          },
+          "valor_estimado": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valor Estimado"
+          },
+          "valor_homologado": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valor Homologado"
+          },
+          "vencedor_nome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vencedor Nome"
+          },
+          "vencedor_porte": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vencedor Porte"
+          }
+        },
+        "required": [
+          "id_publico",
+          "objeto",
+          "data",
+          "situacao",
+          "valor_estimado",
+          "valor_homologado",
+          "desconto",
+          "parcial",
+          "vencedor_nome",
+          "vencedor_porte"
+        ],
+        "title": "ContratacaoPassadaOut",
+        "type": "object"
+      },
       "DocumentoAnaliseOut": {
         "properties": {
           "paginas": {
@@ -413,6 +513,73 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HistoricoOut": {
+        "properties": {
+          "contagens": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Contagens",
+            "type": "object"
+          },
+          "limite_inexequivel": {
+            "title": "Limite Inexequivel",
+            "type": "string"
+          },
+          "orgao_cnpj": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Orgao Cnpj"
+          },
+          "orgao_nome": {
+            "title": "Orgao Nome",
+            "type": "string"
+          },
+          "reguas": {
+            "items": {
+              "$ref": "#/components/schemas/ReguaOut"
+            },
+            "title": "Reguas",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "ultimas": {
+            "items": {
+              "$ref": "#/components/schemas/ContratacaoPassadaOut"
+            },
+            "title": "Ultimas",
+            "type": "array"
+          },
+          "vencedores": {
+            "items": {
+              "$ref": "#/components/schemas/VencedorOut"
+            },
+            "title": "Vencedores",
+            "type": "array"
+          }
+        },
+        "required": [
+          "orgao_cnpj",
+          "orgao_nome",
+          "contagens",
+          "total",
+          "ultimas",
+          "vencedores",
+          "reguas",
+          "limite_inexequivel"
+        ],
+        "title": "HistoricoOut",
+        "type": "object"
+      },
       "ItemAnaliseOut": {
         "properties": {
           "campo": {
@@ -526,6 +693,96 @@
         "title": "ListaOut",
         "type": "object"
       },
+      "ReguaOut": {
+        "properties": {
+          "casos": {
+            "title": "Casos",
+            "type": "integer"
+          },
+          "faixa": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Faixa"
+          },
+          "linha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linha"
+          },
+          "mediana": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mediana"
+          },
+          "p25": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P25"
+          },
+          "p75": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P75"
+          },
+          "poucos_casos": {
+            "title": "Poucos Casos",
+            "type": "boolean"
+          },
+          "uf": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uf"
+          }
+        },
+        "required": [
+          "linha",
+          "uf",
+          "faixa",
+          "casos",
+          "p25",
+          "mediana",
+          "p75",
+          "poucos_casos"
+        ],
+        "title": "ReguaOut",
+        "type": "object"
+      },
       "StatusOut": {
         "properties": {
           "atualizado_em": {
@@ -594,6 +851,48 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "VencedorOut": {
+        "properties": {
+          "desconto_mediano": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Desconto Mediano"
+          },
+          "nome": {
+            "title": "Nome",
+            "type": "string"
+          },
+          "porte": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Porte"
+          },
+          "vitorias": {
+            "title": "Vitorias",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "nome",
+          "porte",
+          "vitorias",
+          "desconto_mediano"
+        ],
+        "title": "VencedorOut",
         "type": "object"
       }
     }
@@ -769,6 +1068,46 @@
           }
         },
         "summary": "Detalhe"
+      }
+    },
+    "/api/historicos/{id_publico}": {
+      "get": {
+        "description": "Histórico do órgão do edital e régua de desconto; vazio (não 404) sem contratações.",
+        "operationId": "historico_api_historicos__id_publico__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id_publico",
+            "required": true,
+            "schema": {
+              "title": "Id Publico",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoricoOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Historico"
       }
     },
     "/api/status": {

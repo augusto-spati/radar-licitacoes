@@ -61,6 +61,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/historicos/{id_publico}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Historico
+         * @description Histórico do órgão do edital e régua de desconto; vazio (não 404) sem contratações.
+         */
+        get: operations["historico_api_historicos__id_publico__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/status": {
         parameters: {
             query?: never;
@@ -105,6 +125,29 @@ export interface components {
             veredito: "apto" | "inapto" | "verificar";
             /** Versao Prompt */
             versao_prompt: string;
+        };
+        /** ContratacaoPassadaOut */
+        ContratacaoPassadaOut: {
+            /** Data */
+            data: string | null;
+            /** Desconto */
+            desconto: string | null;
+            /** Id Publico */
+            id_publico: string;
+            /** Objeto */
+            objeto: string;
+            /** Parcial */
+            parcial: boolean;
+            /** Situacao */
+            situacao: string;
+            /** Valor Estimado */
+            valor_estimado: string | null;
+            /** Valor Homologado */
+            valor_homologado: string | null;
+            /** Vencedor Nome */
+            vencedor_nome: string | null;
+            /** Vencedor Porte */
+            vencedor_porte: string | null;
         };
         /** DocumentoAnaliseOut */
         DocumentoAnaliseOut: {
@@ -196,6 +239,27 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** HistoricoOut */
+        HistoricoOut: {
+            /** Contagens */
+            contagens: {
+                [key: string]: number;
+            };
+            /** Limite Inexequivel */
+            limite_inexequivel: string;
+            /** Orgao Cnpj */
+            orgao_cnpj: string | null;
+            /** Orgao Nome */
+            orgao_nome: string;
+            /** Reguas */
+            reguas: components["schemas"]["ReguaOut"][];
+            /** Total */
+            total: number;
+            /** Ultimas */
+            ultimas: components["schemas"]["ContratacaoPassadaOut"][];
+            /** Vencedores */
+            vencedores: components["schemas"]["VencedorOut"][];
+        };
         /** ItemAnaliseOut */
         ItemAnaliseOut: {
             /** Campo */
@@ -230,6 +294,25 @@ export interface components {
             /** Editais */
             editais: components["schemas"]["EditalResumoOut"][];
         };
+        /** ReguaOut */
+        ReguaOut: {
+            /** Casos */
+            casos: number;
+            /** Faixa */
+            faixa: string | null;
+            /** Linha */
+            linha: string | null;
+            /** Mediana */
+            mediana: string | null;
+            /** P25 */
+            p25: string | null;
+            /** P75 */
+            p75: string | null;
+            /** Poucos Casos */
+            poucos_casos: boolean;
+            /** Uf */
+            uf: string | null;
+        };
         /** StatusOut */
         StatusOut: {
             /** Atualizado Em */
@@ -252,6 +335,17 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** VencedorOut */
+        VencedorOut: {
+            /** Desconto Mediano */
+            desconto_mediano: string | null;
+            /** Nome */
+            nome: string;
+            /** Porte */
+            porte: string | null;
+            /** Vitorias */
+            vitorias: number;
         };
     };
     responses: never;
@@ -345,6 +439,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EditalDetalheOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    historico_api_historicos__id_publico__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id_publico: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoricoOut"];
                 };
             };
             /** @description Validation Error */

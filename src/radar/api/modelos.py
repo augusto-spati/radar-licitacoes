@@ -2,6 +2,7 @@
 
 import re
 from datetime import datetime
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
@@ -13,7 +14,14 @@ from radar.analise import (
     Veredito,
     pagina_no_documento,
 )
-from radar.editais import EditalDetalhe, EditalResumo, Fonte, Situacao, id_publico
+from radar.editais import (
+    EditalDetalhe,
+    EditalResumo,
+    Fonte,
+    HistoricoOrgao,
+    Situacao,
+    id_publico,
+)
 
 FUSO = ZoneInfo("America/Sao_Paulo")
 
@@ -183,4 +191,98 @@ def analise_out(lida: AnaliseLida) -> AnaliseOut:
             )
             for d in lida.documentos
         ],
+    )
+
+
+def _decimal(valor: Decimal | None) -> str | None:
+    return None if valor is None else str(valor)
+
+
+class ContratacaoPassadaOut(BaseModel):
+    id_publico: str
+    objeto: str
+    data: str | None
+    situacao: str
+    valor_estimado: str | None
+    valor_homologado: str | None
+    desconto: str | None
+    parcial: bool
+    vencedor_nome: str | None
+    vencedor_porte: str | None
+
+
+class VencedorOut(BaseModel):
+    nome: str
+    porte: str | None
+    vitorias: int
+    desconto_mediano: str | None
+
+
+class ReguaOut(BaseModel):
+    linha: str | None
+    uf: str | None
+    faixa: str | None
+    casos: int
+    p25: str | None
+    mediana: str | None
+    p75: str | None
+    poucos_casos: bool
+
+
+class HistoricoOut(BaseModel):
+    orgao_cnpj: str | None
+    orgao_nome: str
+    contagens: dict[str, int]
+    total: int
+    ultimas: list[ContratacaoPassadaOut]
+    vencedores: list[VencedorOut]
+    reguas: list[ReguaOut]
+    limite_inexequivel: str
+
+
+def historico_out(historico: HistoricoOrgao) -> HistoricoOut:
+    return HistoricoOut(
+        orgao_cnpj=historico.orgao_cnpj,
+        orgao_nome=historico.orgao_nome,
+        contagens=historico.contagens,
+        total=historico.total,
+        ultimas=[
+            ContratacaoPassadaOut(
+                id_publico=c.id_publico,
+                objeto=c.objeto,
+                # A data é o encerramento da proposta, hora de Brasília sem fuso no banco.
+                data=None if c.data is None else c.data.replace(tzinfo=FUSO).isoformat(),
+                situacao=c.situacao,
+                valor_estimado=_decimal(c.valor_estimado),
+                valor_homologado=_decimal(c.valor_homologado),
+                desconto=_decimal(c.desconto),
+                parcial=c.parcial,
+                vencedor_nome=c.vencedor_nome,
+                vencedor_porte=c.vencedor_porte,
+            )
+            for c in historico.ultimas
+        ],
+        vencedores=[
+            VencedorOut(
+                nome=v.nome,
+                porte=v.porte,
+                vitorias=v.vitorias,
+                desconto_mediano=_decimal(v.desconto_mediano),
+            )
+            for v in historico.vencedores
+        ],
+        reguas=[
+            ReguaOut(
+                linha=r.linha,
+                uf=r.uf,
+                faixa=r.faixa,
+                casos=r.casos,
+                p25=_decimal(r.p25),
+                mediana=_decimal(r.mediana),
+                p75=_decimal(r.p75),
+                poucos_casos=r.poucos_casos,
+            )
+            for r in historico.reguas
+        ],
+        limite_inexequivel=str(historico.limite_inexequivel),
     )
