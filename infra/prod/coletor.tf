@@ -141,11 +141,13 @@ resource "aws_ecs_task_definition" "coletor" {
   family                   = local.familia_coletor
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
-  cpu                      = 256
-  memory                   = 512
-  execution_role_arn       = aws_iam_role.coletor_execucao.arn
-  task_role_arn            = aws_iam_role.coletor_task.arn
-  skip_destroy             = true
+  # 1 GB: a analise da Compesa segura na memoria o pacote da obra vindo da nuvem dela (59 MB na
+  # LC 168/2026, limite de 150 MB) enquanto extrai o edital. ~US$ 0,02/mes a mais que 512 MB.
+  cpu                = 256
+  memory             = 1024
+  execution_role_arn = aws_iam_role.coletor_execucao.arn
+  task_role_arn      = aws_iam_role.coletor_task.arn
+  skip_destroy       = true
 
   runtime_platform {
     operating_system_family = "LINUX"
