@@ -1,7 +1,7 @@
 """janela fatiada: checkpoint, lote (fencing token) e lease em coleta_janela
 
 Revision ID: 0007
-Revises: 0005
+Revises: 0006
 Create Date: 2026-11-27 09:00:00.000000
 
 A coleta do PNCP passa a andar em fatias (uma por invocação da Lambda coletora). A janela
@@ -17,7 +17,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0007"
-down_revision: str | None = "0005"
+down_revision: str | None = "0006"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

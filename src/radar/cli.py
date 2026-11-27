@@ -159,17 +159,17 @@ def _falhas_da_fila(fila: Fila) -> int:
     return fila.falhas
 
 
-def _com_fila(sessao: Session, fila: Fila, coletar: Callable[[], int]) -> int:
-    """Relay, coleta, relay; devolve as falhas somadas.
+def _com_fila(sessao: Session, fila: Fila, coletar: Callable[[], int]) -> tuple[int, int, int]:
+    """Relay, coleta, relay; devolve as falhas (coleta, relay, fila) para `_encerrar`.
 
     O relay do começo recupera o que ficou na outbox se a execução anterior morreu entre
     coletar e publicar. O do fim roda depois de todas as coletas soltarem a trava da fonte
     (o consumidor local precisa dela).
     """
-    falhas = _publicar(sessao, fila)
-    falhas += coletar()
-    falhas += _publicar(sessao, fila)
-    return falhas + _falhas_da_fila(fila)
+    relay = _publicar(sessao, fila)
+    coleta = coletar()
+    relay += _publicar(sessao, fila)
+    return coleta, relay, _falhas_da_fila(fila)
 
 
 def _rodar_retrato(sessao: Session, fonte: FonteRetrato) -> int:
@@ -220,10 +220,19 @@ def _coletar(sessao: Session, cliente: ClientePNCP) -> int:
     return resumo.falhas
 
 
-def _encerrar(falhas: int) -> None:
-    """Última linha da execução; o alarme `radar-coletor-nao-rodou` conta `resultado:`."""
-    typer.echo(f"resultado: {falhas} falhas" if falhas else "resultado: sem falhas")
-    if falhas:
+def _encerrar(coleta: int = 0, relay: int = 0, fila: int = 0) -> None:
+    """Imprime a única linha `resultado:` da execução, por último, e sai com 1 se houve falha.
+
+    A linha é contada pelo filtro de log `radar-coletor-execucoes` em infra/prod/coletor.tf
+    (alarme `radar-coletor-nao-rodou`); não a remova.
+    """
+    total = coleta + relay + fila
+    typer.echo(
+        f"resultado: {total} falhas (coleta {coleta}, relay {relay}, fila {fila})"
+        if total
+        else "resultado: sem falhas"
+    )
+    if total:
         raise typer.Exit(code=1)
 
 
@@ -254,7 +263,7 @@ def carga_inicial(
             return _coletar(sessao, _criar_cliente())
 
         falhas = _com_fila(sessao, fila, coletar)
-    _encerrar(falhas)
+    _encerrar(*falhas)
 
 
 @app.command()
@@ -287,7 +296,7 @@ def atualizar(
             return falhas
 
         falhas = _com_fila(sessao, fila, coletar)
-    _encerrar(falhas)
+    _encerrar(*falhas)
 
 
 @app.command()
@@ -297,7 +306,7 @@ def processar() -> None:
     fila = _criar_fila(fontes_retrato())
     with _criar_sessao() as sessao:
         falhas = _com_fila(sessao, fila, lambda: _coletar(sessao, _criar_cliente()))
-    _encerrar(falhas)
+    _encerrar(*falhas)
 
 
 @app.command()
@@ -309,7 +318,7 @@ def publicar() -> None:
         falhas = _publicar(sessao, fila)
         apagadas = limpar_outbox(sessao, _agora())
     typer.echo(f"outbox: {apagadas} publicadas antigas apagadas")
-    _encerrar(falhas + _falhas_da_fila(fila))
+    _encerrar(relay=falhas, fila=_falhas_da_fila(fila))
 
 
 @app.command()
@@ -328,7 +337,7 @@ def planejar(
         novas, enfileiradas = planejar_e_enfileirar(sessao, criterios, _agora().date(), recuo)
         typer.echo(f"janelas novas: {novas}, enfileiradas: {enfileiradas}")
         falhas = _publicar(sessao, fila)
-    _encerrar(falhas + _falhas_da_fila(fila))
+    _encerrar(relay=falhas, fila=_falhas_da_fila(fila))
 
 
 def _atributos_da_fila(cliente: Any, url: str, *nomes: str) -> dict[str, str]:

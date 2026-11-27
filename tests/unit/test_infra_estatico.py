@@ -153,7 +153,10 @@ def test_alarmes_cabem_no_gratis() -> None:
 
 def test_coletor_so_retratos() -> None:
     coletor = _tf("coletor.tf")
-    assert 'command     = ["atualizar", "--fontes", "sanepar,compesa"]' in coletor
+    assert 'command     = ["atualizar", "--fontes", "sanepar"]' in coletor
+    # O agendamento sobrescreve o command: só retratos, sem o PNCP e sem a Compesa.
+    assert 'command = ["atualizar", "--fontes", "sanepar"]' in coletor
+    assert "compesa" not in "".join(re.findall(r"command\s*=\s*\[[^\]]*\]", coletor))
     assert '{ name = "RADAR_FILA_JANELAS_URL", value = aws_sqs_queue.janelas.url }' in coletor
     assert "aws_sqs_queue.janelas.arn" in _tf("fila.tf")  # o relay do coletor pode enviar
 
@@ -166,3 +169,13 @@ def test_deploy_atualiza_as_lambdas_novas() -> None:
     oidc = _tf("github_oidc.tf")
     assert "aws_lambda_function.coletora.arn" in oidc
     assert "aws_lambda_function.planejador.arn" in oidc
+
+
+def test_cli_imprime_a_linha_que_o_filtro_do_alarme_conta() -> None:
+    """O filtro `radar-coletor-execucoes` conta linhas `resultado:`; a CLI precisa imprimi-las."""
+    tf = (RAIZ / "infra" / "prod" / "coletor.tf").read_text(encoding="utf-8")
+    achado = re.search(r'pattern\s*=\s*"\\"([^"\\]+)\\""', tf)
+    assert achado, "padrao do filtro radar-coletor-execucoes nao encontrado em coletor.tf"
+    termo = achado.group(1)
+    cli = (RAIZ / "src" / "radar" / "cli.py").read_text(encoding="utf-8")
+    assert f"{termo} " in cli, f"cli.py nao imprime {termo!r}; o alarme nao-rodou dispararia"

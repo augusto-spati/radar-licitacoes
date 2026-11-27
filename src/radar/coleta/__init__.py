@@ -42,10 +42,10 @@ from radar.coleta.retratos import (
     marcar_retrato_processado,
     paginas_do_retrato,
     retratos_sem_processar,
-    trava_fonte,
     ultimo_retrato,
 )
 from radar.coleta.sanepar import FonteSanepar
+from radar.coleta.trava import trava_fonte
 
 __all__ = [
     "LEASE_S",

@@ -634,7 +634,8 @@ def test_atualizar_imprime_resultado(
     ruim = runner.invoke(cli.app, ["atualizar", "--lookback", "1", "--config", str(config_filtro)])
 
     assert ruim.exit_code == 1, ruim.output
-    assert _ultima_linha(ruim.output) == "resultado: 2 falhas"  # relay do começo e do fim
+    # relay do começo e do fim
+    assert _ultima_linha(ruim.output) == "resultado: 2 falhas (coleta 0, relay 2, fila 0)"
 
 
 @pytest.mark.parametrize("comando", [["processar"], ["carga-inicial", "--dias", "1"]])
@@ -810,3 +811,32 @@ def test_reprocessar_falhas_janelas_sem_urls_sai_com_2(
 
     assert resultado.exit_code == 2
     assert "RADAR_FILA_JANELAS_URL e RADAR_FILA_JANELAS_FALHAS_URL" in resultado.output
+
+
+@pytest.mark.parametrize("comando", ["atualizar", "carga-inicial", "processar"])
+@pytest.mark.parametrize(
+    ("falhas", "codigo", "linha"),
+    [
+        (0, 0, "resultado: sem falhas"),
+        (1, 1, "resultado: 1 falhas (coleta 1, relay 0, fila 0)"),
+    ],
+)
+def test_execucao_imprime_linha_resultado_que_o_alarme_conta(
+    fabrica: sessionmaker[Session],
+    config_filtro: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    comando: str,
+    falhas: int,
+    codigo: int,
+    linha: str,
+) -> None:
+    monkeypatch.setattr(cli, "fontes_retrato", lambda: {})
+    monkeypatch.setattr(cli, "_criar_cliente", lambda: como_cliente(ClienteFalso({})))
+    monkeypatch.setattr(cli, "_coletar", lambda sessao, cliente: falhas)
+    args = [comando] if comando == "processar" else [comando, "--config", str(config_filtro)]
+
+    resultado = runner.invoke(cli.app, args)
+
+    assert resultado.exit_code == codigo, resultado.output
+    linhas = [x for x in resultado.output.splitlines() if x.startswith("resultado: ")]
+    assert linhas == [linha]

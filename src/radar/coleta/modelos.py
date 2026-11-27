@@ -1,3 +1,4 @@
+import uuid
 from datetime import date, datetime
 from typing import Any
 
@@ -11,7 +12,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from radar.comum import Base
@@ -102,3 +103,14 @@ class PaginaBruta(Base):
     url: Mapped[str | None] = mapped_column(Text)
     coletada_em: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     processada_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TravaFonte(Base):
+    """Lease que garante um único trabalho por fonte de cada vez (veja `coleta.trava`)."""
+
+    __tablename__ = "trava_fonte"
+
+    fonte: Mapped[str] = mapped_column(Text, primary_key=True)
+    dono: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    expira_em: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    obtida_em: Mapped[datetime] = mapped_column(DateTime(timezone=True))

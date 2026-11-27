@@ -129,7 +129,7 @@ def test_migracao_devolve_em_andamento_a_pendente(
 ) -> None:
     # Na 4a, uma janela em_andamento só podia ser sobra de execução interrompida.
     config, alvo = banco_migracao
-    command.upgrade(config, "0005")
+    command.upgrade(config, "0006")
     with alvo.begin() as conexao:
         for dia, status in (("2026-11-24", "em_andamento"), ("2026-11-25", "concluida")):
             conexao.execute(
@@ -155,7 +155,7 @@ def test_migracao_devolve_em_andamento_a_pendente(
     ]
 
 
-def test_downgrade_da_0006_apaga_coletar_janela(
+def test_downgrade_da_0007_apaga_coletar_janela(
     banco_migracao: tuple[AlembicConfig, Engine],
 ) -> None:
     config, alvo = banco_migracao
@@ -169,7 +169,7 @@ def test_downgrade_da_0006_apaga_coletar_janela(
             )
         )
 
-    command.downgrade(config, "0005")
+    command.downgrade(config, "0006")
 
     with alvo.connect() as conexao:
         tipos = conexao.scalars(text("SELECT tipo FROM outbox")).all()

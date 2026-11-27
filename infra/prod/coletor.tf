@@ -1,6 +1,7 @@
 # Coleta agendada: EventBridge Scheduler -> ECS RunTask (Fargate, sem service, sem NAT).
-# A task sobe, roda `radar atualizar --fontes sanepar,compesa` e para; so cobra enquanto
-# roda. O PNCP e coletado por janela nas Lambdas (janelas.tf).
+# A task sobe, roda `radar atualizar --fontes sanepar` (so retratos) e para; so cobra
+# enquanto roda. O PNCP e coletado por janela nas Lambdas (janelas.tf); a Compesa fica
+# fora da nuvem (ver o schedule abaixo).
 
 locals {
   familia_coletor = "radar-coletor"
@@ -143,8 +144,10 @@ resource "aws_ecs_task_definition" "coletor" {
     image     = "${aws_ecr_repository.coletor.repository_url}:${var.tag_coletor}"
     essential = true
     # ENTRYPOINT ["radar"] vem da imagem; o deploy registra revisoes a partir da ultima,
-    # entao este command (so os retratos) e preservado.
-    command     = ["atualizar", "--fontes", "sanepar,compesa"]
+    # entao este command (so os retratos da nuvem) e preservado. O schedule repete o
+    # mesmo command no override; quem roda a task a mao sem override tambem nao pega a
+    # Compesa.
+    command     = ["atualizar", "--fontes", "sanepar"]
     stopTimeout = 30
 
     environment = [
@@ -241,6 +244,17 @@ resource "aws_scheduler_schedule" "atualizar_diario" {
   target {
     arn      = aws_ecs_cluster.radar.arn
     role_arn = aws_iam_role.scheduler_coletor.arn
+
+    # So retratos: o PNCP vai pelo planejador e pelas Lambdas coletoras (janelas.tf).
+    # A Compesa fica fora da nuvem: o portal dela nao responde a partir da AWS
+    # (ConnectTimeout em duas rodadas em us-east-2; responde em 0,6 s de uma conexao no
+    # Brasil). Ela continua coletavel localmente com `radar atualizar --fontes compesa`.
+    input = jsonencode({
+      containerOverrides = [{
+        name    = "coletor"
+        command = ["atualizar", "--fontes", "sanepar"]
+      }]
+    })
 
     ecs_parameters {
       task_definition_arn = local.arn_familia_coletor
