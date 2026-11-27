@@ -91,6 +91,8 @@ forbidden_modules = [
     "radar.analise.exigencias",
     "radar.analise.modelos",
     "radar.analise.normalizacao",
+    "radar.analise.perfil",
+    "radar.analise.comparacao",
 ]
 allow_indirect_imports = true
 
