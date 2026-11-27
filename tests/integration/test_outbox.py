@@ -115,3 +115,62 @@ def test_migracao_enfileira_paginas_pncp_pendentes(
         ("pagina_coletada", {"pagina_id": paginas[2]}, None),
         ("pagina_coletada", {"pagina_id": paginas[3]}, None),
     ]
+
+
+def test_coletar_janela_aceito_pelo_check(sessao: Session) -> None:
+    enfileirar(sessao, "coletar_janela", {"janela_id": 1, "lote": 0})
+    sessao.flush()
+
+    assert sessao.scalars(select(Outbox.tipo)).one() == "coletar_janela"
+
+
+def test_migracao_devolve_em_andamento_a_pendente(
+    banco_migracao: tuple[AlembicConfig, Engine],
+) -> None:
+    # Na 4a, uma janela em_andamento só podia ser sobra de execução interrompida.
+    config, alvo = banco_migracao
+    command.upgrade(config, "0006")
+    with alvo.begin() as conexao:
+        for dia, status in (("2026-11-24", "em_andamento"), ("2026-11-25", "concluida")):
+            conexao.execute(
+                text(
+                    "INSERT INTO coleta_janela (endpoint, data_ini, data_fim, modalidade, status,"
+                    " paginas, registros) VALUES ('atualizacao', :dia, :dia, 6, :status, 0, 0)"
+                ),
+                {"dia": dia, "status": status},
+            )
+
+    command.upgrade(config, "head")
+
+    with alvo.connect() as conexao:
+        linhas = conexao.execute(
+            text(
+                "SELECT status, proxima_pagina, lote, total_paginas, esperados, travada_por,"
+                " travada_ate FROM coleta_janela ORDER BY data_ini"
+            )
+        ).all()
+    assert [tuple(linha) for linha in linhas] == [
+        ("pendente", 1, 0, None, None, None, None),
+        ("concluida", 1, 0, None, None, None, None),
+    ]
+
+
+def test_downgrade_da_0007_apaga_coletar_janela(
+    banco_migracao: tuple[AlembicConfig, Engine],
+) -> None:
+    config, alvo = banco_migracao
+    command.upgrade(config, "head")
+    with alvo.begin() as conexao:
+        conexao.execute(
+            text(
+                "INSERT INTO outbox (tipo, carga) VALUES"
+                " ('coletar_janela', '{\"janela_id\": 1, \"lote\": 0}'),"
+                " ('pagina_coletada', '{\"pagina_id\": 1}')"
+            )
+        )
+
+    command.downgrade(config, "0006")
+
+    with alvo.connect() as conexao:
+        tipos = conexao.scalars(text("SELECT tipo FROM outbox")).all()
+    assert tipos == ["pagina_coletada"]

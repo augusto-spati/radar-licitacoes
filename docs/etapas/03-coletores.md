@@ -34,6 +34,8 @@ A segunda rodada seguida deu **0 editais alterados** nas duas fontes. Isso mostr
 
 **Correção.** Lease em tabela (`trava_fonte`, migração `0006`, módulo `coleta/trava.py`): uma linha por fonte com dono e prazo. Obter é um `INSERT ... ON CONFLICT DO UPDATE ... WHERE expira_em < now()` numa transação curta, commitada na hora, numa conexão separada da sessão. Liberar é um `DELETE` que só apaga se o dono for o mesmo, então um processo que passou do prazo não apaga o lease de quem o tomou. Nenhuma conexão fica presa entre as duas pontas. O prazo é de 30 min, e tanto o retrato quanto o coletor do PNCP (chave `pncp`, que pode levar horas) renovam o lease a cada página, sem mudar `obtida_em`. Quem perde o lease para: o retrato termina em falha ("perdeu a trava da fonte") e a janela do PNCP também, contada no `resultado:`. O custo: um processo morto deixa a fonte presa até o prazo vencer.
 
+Na etapa 4b o PNCP deixou de usar a chave `pncp`: cada janela tem o próprio lease (`travada_por`/`travada_ate` em `coleta_janela`, renovado a cada página), tanto na Lambda coletora quanto no `coletar_pendentes` local, e duas execuções em paralelo só disputam janela por janela. A `trava_fonte` segue valendo para os retratos.
+
 ## Perguntas de entrevista
 
 Responda com suas palavras, citando o arquivo ou o comportamento. A etapa só fecha quando estiverem respondidas.
@@ -152,4 +154,4 @@ se quer diagnosticar). As linhas de `coleta_retrato` ficam todas. O log é `brut
 
 Na primeira rodada na nuvem, o portal da Compesa deu `ConnectTimeout` duas vezes seguidas, em horários diferentes, a partir de us-east-2. Da conexão do Augusto, no Brasil, o mesmo endereço respondeu em 0,6 s. O mais provável é um bloqueio por origem do endereço IP.
 
-Por isso a execução agendada na nuvem coleta só `pncp,sanepar` (`infra/prod/coletor.tf`, campo `input` do agendamento). A Compesa continua funcionando localmente com `uv run radar atualizar --fontes compesa`. Decisão pendente com o Augusto: rodar a Compesa por um agendamento local, aceitar sem ela na nuvem, ou perguntar à Compesa.
+Por isso a execução agendada na nuvem coleta só `pncp,sanepar` (`infra/prod/coletor.tf`, campo `input` do agendamento). Com a etapa 4b o PNCP saiu do Fargate (vai pelo planejador e pelas Lambdas coletoras), e o agendamento ficou só com `sanepar`. A Compesa continua funcionando localmente com `uv run radar atualizar --fontes compesa`. Decisão pendente com o Augusto: rodar a Compesa por um agendamento local, aceitar sem ela na nuvem, ou perguntar à Compesa.

@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 
 from radar.comum.fila import (
+    FilaRoteada,
     FilaSQS,
     Mensagem,
     ResultadoEnvio,
@@ -86,3 +87,76 @@ def test_regiao_da_url() -> None:
     assert regiao_da_url("https://sqs.us-east-1.amazonaws.com/1/f.fifo") == "us-east-1"
     with pytest.raises(ValueError):
         regiao_da_url("http://localhost:9324/queue/fila")
+
+
+def test_coletar_janela_ida_e_volta() -> None:
+    m = Mensagem(outbox_id=9, tipo="coletar_janela", carga={"janela_id": 3, "lote": 2})
+
+    assert de_corpo(para_corpo(m)) == m
+
+
+@pytest.mark.parametrize(
+    "carga",
+    [{"janela_id": 3}, {"lote": 0}, {"janela_id": "3", "lote": 0}, {"janela_id": 3, "lote": True}],
+)
+def test_de_corpo_coletar_janela_sem_lote_e_invalido(carga: dict[str, object]) -> None:
+    import json
+
+    corpo = json.dumps({"tipo": "coletar_janela", "carga": carga, "outbox_id": 1})
+
+    with pytest.raises(ValueError):
+        de_corpo(corpo)
+
+
+# --- fila roteada por tipo ----------------------------------------------------------------
+
+
+class FilaFalsa:
+    def __init__(self, recusar: set[int] | None = None) -> None:
+        self.recusar = recusar or set()
+        self.recebidas: list[Mensagem] = []
+
+    def enviar_lote(self, mensagens: list[Mensagem]) -> ResultadoEnvio:
+        self.recebidas.extend(mensagens)
+        return ResultadoEnvio(
+            aceitas={m.outbox_id for m in mensagens if m.outbox_id not in self.recusar},
+            recusadas={m.outbox_id: "não" for m in mensagens if m.outbox_id in self.recusar},
+        )
+
+
+def _misturadas() -> list[Mensagem]:
+    return [
+        Mensagem(1, "pagina_coletada", {"pagina_id": 1}),
+        Mensagem(2, "coletar_janela", {"janela_id": 5, "lote": 0}),
+        Mensagem(3, "retrato_coletado", {"retrato_id": 9}),
+        Mensagem(4, "coletar_janela", {"janela_id": 6, "lote": 1}),
+    ]
+
+
+def test_fila_roteada_separa_por_tipo() -> None:
+    janelas, editais = FilaFalsa(), FilaFalsa()
+    fila = FilaRoteada({"coletar_janela": janelas}, editais)
+
+    resultado = fila.enviar_lote(_misturadas())
+
+    assert [m.outbox_id for m in janelas.recebidas] == [2, 4]
+    assert [m.outbox_id for m in editais.recebidas] == [1, 3]
+    assert resultado == ResultadoEnvio(aceitas={1, 2, 3, 4}, recusadas={})
+
+
+def test_fila_roteada_recusa_de_um_destino_nao_afeta_o_outro() -> None:
+    janelas, editais = FilaFalsa(recusar={2, 4}), FilaFalsa()
+    fila = FilaRoteada({"coletar_janela": janelas}, editais)
+
+    resultado = fila.enviar_lote(_misturadas())
+
+    assert resultado == ResultadoEnvio(aceitas={1, 3}, recusadas={2: "não", 4: "não"})
+
+
+def test_fila_roteada_nao_chama_destino_sem_mensagens() -> None:
+    janelas, editais = FilaFalsa(), FilaFalsa()
+    fila = FilaRoteada({"coletar_janela": janelas}, editais)
+
+    fila.enviar_lote([Mensagem(1, "pagina_coletada", {"pagina_id": 1})])
+
+    assert janelas.recebidas == []

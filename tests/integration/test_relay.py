@@ -4,7 +4,7 @@ from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import Engine, delete, select
+from sqlalchemy import Engine, delete, func, select, text
 from sqlalchemy.orm import Session
 
 from radar.comum.fila import Mensagem, ResultadoEnvio
@@ -60,13 +60,39 @@ def test_recusada_fica_pendente_com_erro(sessao: Session) -> None:
     assert primeiro.publicada_em is None
 
 
-def test_lote_inteiro_recusado_encerra(sessao: Session) -> None:
+def test_lote_inteiro_recusado_nao_bloqueia_o_resto(sessao: Session) -> None:
+    # Recusas permanentes na cabeça da outbox: o relay segue pelo cursor até o fim.
+    _pendentes(sessao, 5)
+    ids = sorted(sessao.scalars(select(Outbox.id)))
+    fila = FilaFalsa(recusar=set(ids[:4]))
+
+    resumo = publicar_outbox(sessao, fila, lote=2)
+
+    assert (resumo.publicadas, resumo.recusadas) == (1, 4)
+    assert fila.recebidas == [ids[4]]
+
+
+def test_cada_linha_tentada_uma_vez_por_chamada(sessao: Session) -> None:
     _pendentes(sessao, 3)
     ids = set(sessao.scalars(select(Outbox.id)))
 
     resumo = publicar_outbox(sessao, FilaFalsa(recusar=ids), lote=2)
 
-    assert (resumo.publicadas, resumo.recusadas) == (0, 2)
+    assert (resumo.publicadas, resumo.recusadas) == (0, 3)
+    assert {o.tentativas for o in sessao.scalars(select(Outbox))} == {1}
+
+
+def test_filtro_por_tipos_nao_toca_os_outros(sessao: Session) -> None:
+    _pendentes(sessao, 2)
+    enfileirar(sessao, "coletar_janela", {"janela_id": 1, "lote": 0})
+    sessao.flush()
+    fila = FilaFalsa()
+
+    resumo = publicar_outbox(sessao, fila, tipos={"pagina_coletada"})
+
+    assert (resumo.publicadas, resumo.recusadas) == (2, 0)
+    janela = sessao.scalars(select(Outbox).where(Outbox.tipo == "coletar_janela")).one()
+    assert (janela.publicada_em, janela.tentativas, janela.erro) == (None, 0, None)
 
 
 @pytest.fixture
@@ -166,3 +192,65 @@ def test_id_sem_resposta_conta_como_recusada(sessao: Session) -> None:
     assert omitida.tentativas == 1
     assert omitida.erro == "sem resposta da fila"
     assert omitida.publicada_em is None
+
+
+def _em_transacao(engine: Engine) -> int:
+    with engine.connect() as conexao:
+        total: int = conexao.scalar(
+            text(
+                "SELECT count(*) FROM pg_stat_activity"
+                " WHERE datname = current_database() AND pid <> pg_backend_pid()"
+                " AND state LIKE 'idle in transaction%'"
+            )
+        )
+        return total
+
+
+class FilaQueConsome(FilaFalsa):
+    """Como a FilaLocal: consome no envio (pode levar horas) e grava continuações."""
+
+    consome_no_envio = True
+
+    def __init__(self, engine: Engine, recusar: set[int] | None = None) -> None:
+        super().__init__(recusar)
+        self.engine = engine
+        self.durante: list[tuple[int, int, int]] = []  # (checkedout, em transação, publicadas)
+        self.gerar = 2
+
+    def enviar_lote(self, mensagens: list[Mensagem]) -> ResultadoEnvio:
+        with self.engine.connect() as conexao:
+            publicadas = conexao.scalar(
+                select(func.count()).where(Outbox.publicada_em.is_not(None))
+            )
+        self.durante.append(
+            (self.engine.pool.checkedout(), _em_transacao(self.engine), int(publicadas or 0))  # type: ignore[attr-defined]
+        )
+        if self.gerar:  # a continuação nasce durante o consumo e sai na mesma chamada
+            self.gerar -= 1
+            with Session(self.engine) as outra:
+                enfileirar(outra, "pagina_coletada", {"pagina_id": 99})
+                outra.commit()
+        return super().enviar_lote(mensagens)
+
+
+@pytest.mark.usefixtures("limpa_outbox")
+def test_fila_que_consome_nao_segura_transacao(engine: Engine) -> None:
+    with Session(engine) as inicial:
+        _pendentes(inicial, 3)
+        inicial.commit()
+        recusada = min(inicial.scalars(select(Outbox.id)))
+    fila = FilaQueConsome(engine, recusar={recusada})
+
+    with Session(engine) as sessao:
+        resumo = publicar_outbox(sessao, fila, lote=2)
+
+    assert (resumo.publicadas, resumo.recusadas) == (4, 1)
+    assert len(fila.durante) == 5  # uma mensagem por envio, cada uma uma vez
+    # Durante o consumo: a sessão do relay devolveu a conexão e nenhuma transação ficou aberta.
+    assert {(checkedout, abertas) for checkedout, abertas, _ in fila.durante} == {(0, 0)}
+    # Cada mensagem é marcada publicada numa transação curta, antes da próxima.
+    assert [publicadas for *_, publicadas in fila.durante] == [0, 0, 1, 2, 3]
+    with Session(engine) as sessao:
+        linha = sessao.get(Outbox, recusada)
+        assert linha is not None
+        assert (linha.publicada_em, linha.tentativas) == (None, 1)
