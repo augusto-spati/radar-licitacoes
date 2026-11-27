@@ -594,8 +594,20 @@ def auditar(
     if retratos or sem_processar:  # sem fontes de retrato, a saída do PNCP não muda
         typer.echo(f"retratos concluídos sem processar: {sem_processar}")
     fila_parada = pendentes or paradas or sem_processar or paradas_janela
+    problemas = {
+        "faltando": len(auditoria.faltando),
+        "falhas": len(auditoria.falhas),
+        "retratos_ruins": retratos_ruins,
+        "outbox_pendente": pendentes,
+        "paginas_paradas": paradas,
+        "retratos_sem_processar": sem_processar,
+        "janelas_paradas": len(paradas_janela),
+    }
     if auditoria.faltando or auditoria.falhas or retratos_ruins or fila_parada:
+        # O alarme "radar-auditoria-falhou" conta este evento (infra/prod/coletor.tf).
+        logger.warning("auditoria_falhou", extra={"endpoint": endpoint, **problemas})
         raise typer.Exit(code=1)
+    logger.info("auditoria_ok", extra={"endpoint": endpoint})
 
 
 def _onde(proxima: int, total: int | None) -> str:

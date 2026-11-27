@@ -255,7 +255,11 @@ def test_deploy_atualiza_as_lambdas_novas() -> None:
 def test_cli_imprime_a_linha_que_o_filtro_do_alarme_conta() -> None:
     """O filtro `radar-coletor-execucoes` conta linhas `resultado:`; a CLI precisa imprimi-las."""
     tf = (RAIZ / "infra" / "prod" / "coletor.tf").read_text(encoding="utf-8")
-    achado = re.search(r'pattern\s*=\s*"\\"([^"\\]+)\\""', tf)
+    bloco = re.search(
+        r'resource "aws_cloudwatch_log_metric_filter" "coletor_execucoes" \{(.*?)\n\}', tf, re.S
+    )
+    assert bloco, "filtro radar-coletor-execucoes nao encontrado em coletor.tf"
+    achado = re.search(r'pattern\s*=\s*"\\"([^"\\]+)\\""', bloco.group(1))
     assert achado, "padrao do filtro radar-coletor-execucoes nao encontrado em coletor.tf"
     termo = achado.group(1)
     cli = (RAIZ / "src" / "radar" / "cli.py").read_text(encoding="utf-8")
@@ -417,3 +421,12 @@ def test_perfil_real_so_do_bucket_privado_e_desligado_por_padrao() -> None:
     assert ': "/app/config/perfil.toml"' in analise
     variaveis = re.sub(r"\s+", " ", _tf("variables.tf"))
     assert re.search(r'variable "perfil_no_s3" \{[^}]*default = false', variaveis)
+
+
+def test_auditoria_diaria_com_alarme() -> None:
+    coletor = re.sub(r"\s+", " ", _tf("coletor.tf"))
+    assert 'name = "radar-auditoria-diaria"' in coletor
+    assert 'schedule_expression = "cron(0 11 * * ? *)"' in coletor
+    assert 'command = ["auditar", "--endpoint", "atualizacao"]' in coletor
+    assert 'pattern = "\\"auditoria_falhou\\""' in coletor
+    assert 'alarm_name = "radar-auditoria-falhou"' in coletor

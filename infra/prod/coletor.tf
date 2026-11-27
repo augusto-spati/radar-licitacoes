@@ -419,6 +419,78 @@ resource "aws_sns_topic_policy" "alertas" {
   policy = data.aws_iam_policy_document.alertas_publicar.json
 }
 
+# Auditoria diaria (11:00, depois das janelas do PNCP, dos retratos, dos resultados e da
+# analise): confere cobertura das janelas de atualizacao, retratos e fila. Falhou, a CLI loga
+# "auditoria_falhou" e o alarme abaixo avisa por e-mail.
+resource "aws_scheduler_schedule" "auditoria_diaria" {
+  name                         = "radar-auditoria-diaria"
+  schedule_expression          = "cron(0 11 * * ? *)"
+  schedule_expression_timezone = "America/Sao_Paulo"
+
+  flexible_time_window {
+    mode = "OFF"
+  }
+
+  target {
+    arn      = aws_ecs_cluster.radar.arn
+    role_arn = aws_iam_role.scheduler_coletor.arn
+
+    input = jsonencode({
+      containerOverrides = [{
+        name    = "coletor"
+        command = ["auditar", "--endpoint", "atualizacao"]
+      }]
+    })
+
+    ecs_parameters {
+      task_definition_arn = local.arn_familia_coletor
+      launch_type         = "FARGATE"
+      task_count          = 1
+      platform_version    = "LATEST"
+
+      network_configuration {
+        subnets          = data.aws_subnets.padrao.ids
+        security_groups  = [aws_security_group.coletor.id]
+        assign_public_ip = true
+      }
+    }
+
+    retry_policy {
+      maximum_retry_attempts       = 1
+      maximum_event_age_in_seconds = 3600
+    }
+  }
+}
+
+resource "aws_cloudwatch_log_metric_filter" "auditoria_falhou" {
+  name           = "radar-auditoria-falhou"
+  log_group_name = aws_cloudwatch_log_group.coletor.name
+  pattern        = "\"auditoria_falhou\""
+
+  metric_transformation {
+    name          = "RadarAuditoriaFalhou"
+    namespace     = "Radar"
+    value         = "1"
+    default_value = "0"
+  }
+}
+
+# Uma auditoria com problema basta. Sem dado (a auditoria nao rodou) nao dispara: quem cobre
+# "nao rodou" e o alarme do coletor.
+resource "aws_cloudwatch_metric_alarm" "auditoria_falhou" {
+  alarm_name          = "radar-auditoria-falhou"
+  alarm_description   = "A auditoria diaria achou janela faltando, retrato ruim ou fila parada."
+  namespace           = "Radar"
+  metric_name         = "RadarAuditoriaFalhou"
+  statistic           = "Sum"
+  period              = 3600
+  evaluation_periods  = 1
+  threshold           = 1
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.alertas.arn]
+}
+
 # (b) coletor nao rodou: a CLI imprime "resultado: ..." ao fim de toda execucao
 # (com ou sem falhas). Cada linha vira 1 na metrica.
 resource "aws_cloudwatch_log_metric_filter" "coletor_execucoes" {
