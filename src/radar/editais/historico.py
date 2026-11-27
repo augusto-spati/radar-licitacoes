@@ -34,7 +34,12 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY, array
 from sqlalchemy.orm import Session
 
-from radar.editais.externos import FONTE_TCEPE, ROTULOS_FONTE, numero_licitacao
+from radar.editais.externos import (
+    FONTE_TCEPE,
+    ROTULOS_FONTE,
+    OrigemHistorico,
+    numero_licitacao,
+)
 from radar.editais.filtro import Criterios, _casamentos, bruto_do_edital, id_publico, obter_edital
 from radar.editais.modelos import Edital, Fonte, ResultadoBusca, ResultadoExterno, ResultadoItem
 from radar.editais.resultados import PESSOA_FISICA
@@ -65,7 +70,7 @@ class ContratacaoPassada:
     parcial: bool
     vencedor_nome: str | None
     vencedor_porte: str | None
-    origem: str = "PNCP"  # de onde veio o resultado: "PNCP" ou "TCE-PE" (ROTULOS_FONTE)
+    origem: OrigemHistorico = "PNCP"  # de onde veio o resultado (ROTULOS_FONTE)
 
 
 @dataclass(frozen=True)
@@ -271,7 +276,7 @@ def _ultimas(
             parcial=linha.situacao == "parcial",
             vencedor_nome=linha.vencedor_nome,
             vencedor_porte=linha.vencedor_porte,
-            origem=ROTULOS_FONTE.get(linha.fonte, linha.fonte),
+            origem=ROTULOS_FONTE[linha.fonte],
         )
         for linha in sessao.execute(consulta)
     ]

@@ -4,16 +4,19 @@ import json
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 from zoneinfo import ZoneInfo
 
 from radar.editais import (
+    ROTULOS_FONTE,
+    OrigemHistorico,
     alvo_historico_tcepe,
     caso_tcepe,
     contratos_do_processo,
     vencedor_tcepe,
 )
 from radar.editais.externos import VencedorExterno, numero_licitacao
+from radar.editais.modelos import Fonte, FontesExternas
 
 DADOS = Path(__file__).resolve().parents[1] / "dados" / "tcepe"
 COMPESA = "09769035000164"
@@ -138,3 +141,27 @@ def test_numero_da_licitacao_do_portal() -> None:
     assert numero_licitacao("LC 068/2026 CPL") == "68/2026"
     assert numero_licitacao("ECR 001/2026") == "1/2026"
     assert numero_licitacao(None) is None
+
+
+def test_fracassado_e_deserto_viram_caso_sem_valores_de_resultado() -> None:
+    vencedor = VencedorExterno("10514594000102", "EMCOSA")
+    for estagio, situacao in (
+        ("Concluído - Fracassado", "fracassada"),
+        ("Concluído - Deserto", "deserta"),
+    ):
+        processo = {**_adutora(), "estagioNome": estagio}
+        assert alvo_historico_tcepe(processo)
+        caso = caso_tcepe(processo, ["redes"], vencedor)
+        assert caso is not None
+        assert caso.situacao == situacao
+        # Como a fracassada do PNCP: estimado para a tela, sem homologado, desconto nem vencedor.
+        assert caso.valor_estimado == Decimal("21883600.4800")
+        assert (caso.valor_homologado, caso.desconto) == (None, None)
+        assert (caso.vencedor_ni, caso.vencedor_nome, caso.vencedor_porte) == (None, None, None)
+
+
+def test_toda_fonte_do_historico_tem_rotulo() -> None:
+    fontes = {Fonte.pncp.value, *get_args(FontesExternas)}
+    assert set(ROTULOS_FONTE) == fontes
+    assert set(ROTULOS_FONTE.values()) == set(get_args(OrigemHistorico))
+    assert ROTULOS_FONTE["tce_pe"] == "TCE-PE"

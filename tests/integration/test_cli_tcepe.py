@@ -486,3 +486,189 @@ def test_falha_do_vencedor_conta_falha_e_nao_grava_o_caso(
     assert resultado.exit_code == 1
     assert "1 falhas" in resultado.output
     assert _casos(fabrica) == []
+
+
+def _adutora(**mudancas: str) -> dict[str, Any]:
+    return {**_ler("processos_compesa_historico")[0], **mudancas}
+
+
+def test_historico_nao_segura_transacao_aberta_durante_a_rede(
+    fabrica: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mesmo vigia do teste acima, agora no caminho do histórico do órgão: Adutora com contrato
+    (participantes do instrumento), uma sem contrato (participantes do processo) e uma
+    fracassada (sem rede), junto com os processos da 7b."""
+    sessoes: list[Session] = []
+
+    def criar() -> Session:
+        sessao = fabrica()
+        sessoes.append(sessao)
+        return sessao
+
+    abertas: list[str] = []
+
+    class Vigia(ClienteHistoricoFalso):
+        def _conferir(self, onde: str) -> None:
+            abertas.extend(onde for s in sessoes if s.in_transaction())
+
+        def processos(self, ano: int) -> list[dict[str, Any]]:
+            self.anos.append(ano)
+            if ano != 2026:
+                return []
+            sem_contrato = _adutora(processoContratacaoId="60120074", numeroContratacao="9999")
+            fracassada = _adutora(
+                processoContratacaoId="60120075",
+                estagioNome="Concluído - Fracassado",
+                valorHomologado="0",
+            )
+            return [*_ler("processos"), _adutora(), sem_contrato, fracassada]
+
+        def orcamento(self, processo_id: int | str) -> list[dict[str, Any]]:
+            self._conferir(f"orcamento {processo_id}")
+            arquivo = DADOS / f"orcamento_{processo_id}.json"
+            return _ler(f"orcamento_{processo_id}") if arquivo.exists() else []
+
+        def instrumentos(self, uj_id: int | str, numero: str, ano: int) -> list[dict[str, Any]]:
+            self._conferir(f"instrumentos {numero}")
+            if numero == "4044":
+                return super().instrumentos(uj_id, numero, ano)
+            self.chamadas.append(f"instrumentos:{numero}")
+            return ClienteTcepeFalso.instrumentos(self, uj_id, numero, ano)
+
+        def itens_instrumento(self, instrumento_id: int | str) -> list[dict[str, Any]]:
+            self._conferir(f"itens_instrumento {instrumento_id}")
+            return super().itens_instrumento(instrumento_id)
+
+        def participantes_instrumento(self, instrumento_id: int | str) -> list[dict[str, Any]]:
+            self._conferir(f"participantes_instrumento {instrumento_id}")
+            return super().participantes_instrumento(instrumento_id)
+
+        def participantes_processo(self, processo_id: int | str) -> list[dict[str, Any]]:
+            self._conferir(f"participantes_processo {processo_id}")
+            self.chamadas.append(f"participantes_processo:{processo_id}")
+            return _ler("participantes_processo_60120073")
+
+    ClienteTcepeFalso.instancias = []
+    monkeypatch.setattr(cli, "_criar_sessao", criar)
+    monkeypatch.setattr(cli, "_criar_cliente_tcepe", Vigia)
+    resultado = runner.invoke(cli.app, ["tcepe", "atualizar"])
+    assert resultado.exit_code == 0, resultado.output
+    assert abertas == []
+    vigia = ClienteTcepeFalso.instancias[0]
+    assert isinstance(vigia, Vigia)
+    # O vigia passou pelas duas buscas de vencedor (senão o teste não prova nada).
+    assert "participantes_instrumento:60332570" in vigia.chamadas
+    assert "participantes_processo:60120074" in vigia.chamadas
+    assert "histórico do órgão: 3 casos (2 com vencedor)" in resultado.output
+
+
+def test_rodada_sem_vencedor_mantem_o_vencedor_gravado(
+    fabrica: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ClienteTcepeFalso.instancias = []
+    monkeypatch.setattr(cli, "_criar_cliente_tcepe", ClienteHistoricoFalso)
+    assert runner.invoke(cli.app, ["tcepe", "atualizar", "--anos", "2026"]).exit_code == 0
+
+    class Instavel(ClienteHistoricoFalso):
+        """Homologado mudou (busca de novo) e o TCE-PE não devolve contrato nem participante."""
+
+        def processos(self, ano: int) -> list[dict[str, Any]]:
+            self.anos.append(ano)
+            return [_adutora(valorHomologado="20345000.00")] if ano == 2026 else []
+
+        def instrumentos(self, uj_id: int | str, numero: str, ano: int) -> list[dict[str, Any]]:
+            self.chamadas.append(f"instrumentos:{numero}")
+            return []
+
+        def participantes_processo(self, processo_id: int | str) -> list[dict[str, Any]]:
+            self.chamadas.append(f"participantes_processo:{processo_id}")
+            return []
+
+    monkeypatch.setattr(cli, "_criar_cliente_tcepe", Instavel)
+    resultado = runner.invoke(cli.app, ["tcepe", "atualizar", "--anos", "2026"])
+
+    assert resultado.exit_code == 0, resultado.output
+    [caso] = _casos(fabrica)
+    assert caso.valor_homologado == Decimal("20345000.00")
+    assert (caso.vencedor_ni, caso.vencedor_nome, caso.vencedor_porte) == (
+        "10514594000102",
+        "EMCOSA EMPRESA DE CONSTRUCOES E SANEAMENTO LTDA",
+        None,
+    )
+
+
+@pytest.mark.parametrize("listagem", ["falha", "vazia"])
+def test_listagem_que_falha_ou_vem_vazia_nao_apaga_nada(
+    fabrica: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch, listagem: str
+) -> None:
+    ClienteTcepeFalso.instancias = []
+    monkeypatch.setattr(cli, "_criar_cliente_tcepe", ClienteHistoricoFalso)
+    assert runner.invoke(cli.app, ["tcepe", "atualizar", "--anos", "2026"]).exit_code == 0
+    assert len(_casos(fabrica)) == 1
+
+    class SemListagem(ClienteHistoricoFalso):
+        def processos(self, ano: int) -> list[dict[str, Any]]:
+            if listagem == "falha":
+                raise ErroTcepe("fora do ar")
+            return []
+
+    monkeypatch.setattr(cli, "_criar_cliente_tcepe", SemListagem)
+    resultado = runner.invoke(cli.app, ["tcepe", "atualizar", "--anos", "2026"])
+
+    assert resultado.exit_code == (1 if listagem == "falha" else 0), resultado.output
+    assert "0 removidos" in resultado.output
+    [caso] = _casos(fabrica)
+    assert caso.vencedor_nome == "EMCOSA EMPRESA DE CONSTRUCOES E SANEAMENTO LTDA"
+
+
+def test_fracassada_e_deserta_entram_sem_buscar_vencedor(
+    fabrica: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Fracassos(ClienteHistoricoFalso):
+        def processos(self, ano: int) -> list[dict[str, Any]]:
+            self.anos.append(ano)
+            if ano != 2026:
+                return []
+            return [
+                _adutora(estagioNome="Concluído - Fracassado", valorHomologado="0"),
+                _adutora(processoContratacaoId="2", estagioNome="Concluído - Deserto"),
+                _adutora(processoContratacaoId="3", estagioNome="Concluído - Revogado"),
+                _adutora(processoContratacaoId="4", estagioNome="Concluído - Anulado"),
+            ]
+
+    ClienteTcepeFalso.instancias = []
+    monkeypatch.setattr(cli, "_criar_cliente_tcepe", Fracassos)
+    resultado = runner.invoke(cli.app, ["tcepe", "atualizar", "--anos", "2026"])
+
+    assert resultado.exit_code == 0, resultado.output
+    casos = {c.id_na_fonte: c for c in _casos(fabrica)}
+    assert {k: c.situacao for k, c in casos.items()} == {
+        "60120073": "fracassada",
+        "2": "deserta",
+    }
+    for caso in casos.values():
+        assert (caso.valor_homologado, caso.desconto, caso.vencedor_nome) == (None, None, None)
+        assert caso.valor_estimado == Decimal("21883600.4800")
+    cliente = ClienteTcepeFalso.instancias[0]
+    assert isinstance(cliente, ClienteHistoricoFalso)
+    assert cliente.chamadas == []  # sem vencedor a buscar
+
+
+def test_homologada_que_vira_fracassada_perde_o_vencedor(
+    fabrica: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ClienteTcepeFalso.instancias = []
+    monkeypatch.setattr(cli, "_criar_cliente_tcepe", ClienteHistoricoFalso)
+    assert runner.invoke(cli.app, ["tcepe", "atualizar", "--anos", "2026"]).exit_code == 0
+
+    class Fracassou(ClienteHistoricoFalso):
+        def __init__(self) -> None:
+            super().__init__()
+            self.estagio = "Concluído - Fracassado"
+
+    monkeypatch.setattr(cli, "_criar_cliente_tcepe", Fracassou)
+    assert runner.invoke(cli.app, ["tcepe", "atualizar", "--anos", "2026"]).exit_code == 0
+    [caso] = _casos(fabrica)
+    assert caso.situacao == "fracassada"
+    assert (caso.vencedor_ni, caso.vencedor_nome, caso.vencedor_porte) == (None, None, None)
+    assert (caso.valor_homologado, caso.desconto) == (None, None)

@@ -86,6 +86,7 @@ from radar.editais import (
     obter_edital,
     registrar,
     separar_id_publico,
+    situacao_tcepe,
     vencedor_gravado,
     vencedor_tcepe,
 )
@@ -1248,7 +1249,8 @@ def _linhas_tcepe(processo: dict[str, Any], criterios: Criterios) -> list[str]:
 def _alvos_historico_tcepe(
     brutos: list[dict[str, Any]], criterios: Criterios
 ) -> list[tuple[dict[str, Any], list[str]]]:
-    """Processos do histórico do órgão: Compesa, homologado, com alguma linha (etapa 7a.3)."""
+    """Processos do histórico do órgão: Compesa, homologado, fracassado ou deserto, com alguma
+    linha (etapa 7a.3)."""
     alvos = []
     for processo in brutos:
         if alvo_historico_tcepe(processo) and (linhas := _linhas_tcepe(processo, criterios)):
@@ -1284,13 +1286,17 @@ def _historico_de_um_processo(
 ) -> bool:
     """Grava o caso do processo no histórico do órgão e faz o commit; True se tem vencedor.
 
-    Caso já gravado com vencedor e o mesmo homologado não busca o vencedor de novo.
+    Fracassado ou deserto não tem vencedor: nada de rede. Homologado já gravado com vencedor e
+    o mesmo homologado não busca o vencedor de novo.
     """
     processo_id = str(processo["processoContratacaoId"]).strip()
-    vencedor = vencedor_gravado(sessao, FONTE_TCEPE, processo_id, processo.get("valorHomologado"))
-    sessao.rollback()  # fecha a leitura antes da rede (o Neon derruba transação ociosa)
-    if vencedor is None:
-        vencedor = _vencedor_de_um_processo(cliente, processo)
+    vencedor = None
+    if situacao_tcepe(processo) == "homologada":
+        homologado = processo.get("valorHomologado")
+        vencedor = vencedor_gravado(sessao, FONTE_TCEPE, processo_id, homologado)
+        sessao.rollback()  # fecha a leitura antes da rede (o Neon derruba transação ociosa)
+        if vencedor is None:
+            vencedor = _vencedor_de_um_processo(cliente, processo)
     caso = caso_tcepe(processo, linhas, vencedor)
     if caso is None:  # sem data: não dá para pôr no recorte de 24 meses
         apagar_casos_externos(sessao, FONTE_TCEPE, [processo_id])

@@ -10,9 +10,11 @@ a coleta nem os preços: quem compõe é a CLI (que também diz as linhas de ser
 com o casamento que trata o U+FFFD do TCE-PE).
 
 Regras (decisões registradas em `docs/etapas/07-historico.md`, seção TCE-PE):
-- Só órgãos de `ORGAOS_TCEPE` (hoje, a Compesa: unidade jurisdicionada 802) e só processo
-  homologado (estágio "...Homologado" e homologado > 0): fracassado, deserto, revogado, anulado e
-  em andamento ficam de fora.
+- Só órgãos de `ORGAOS_TCEPE` (hoje, a Compesa: unidade jurisdicionada 802). Processo
+  homologado (estágio "...Homologado" e homologado > 0) vira `homologada`; "Concluído -
+  Fracassado" e "Concluído - Deserto" viram `fracassada`/`deserta` sem homologado, desconto nem
+  vencedor (como o PNCP na 7a: entram nas contagens, ficam fora da régua e dos vencedores).
+  Revogado, anulado e em andamento ficam de fora.
 - Desconto = `1 − valorHomologado ÷ valorGlobal` (o processo inteiro: o TCE-PE não dá o
   homologado por item); orçamento sigiloso ou estimado ≤ 0 → sem desconto.
 - Vencedor: a contratada do contrato cujo valor bate com o homologado (±2%); com vários
@@ -26,19 +28,27 @@ from collections.abc import Collection, Iterable, Sequence
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import Any, Literal, get_args
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import and_, case, delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from radar.editais.modelos import ResultadoExterno
+from radar.editais.modelos import FONTES_EXTERNAS, Fonte, ResultadoExterno
 from radar.editais.resultados import PESSOA_FISICA
 
 FUSO = ZoneInfo("America/Sao_Paulo")
 FONTE_TCEPE = "tce_pe"
-ROTULOS_FONTE = {"pncp": "PNCP", FONTE_TCEPE: "TCE-PE"}
+# Origem de um caso do histórico, como a API e a tela mostram.
+OrigemHistorico = Literal["PNCP", "TCE-PE"]
+ROTULOS_FONTE: dict[str, OrigemHistorico] = {Fonte.pncp.value: "PNCP", FONTE_TCEPE: "TCE-PE"}
+# Toda fonte que entra no histórico (o PNCP e as externas) tem rótulo, e todo rótulo é usado:
+# uma fonte externa nova sem rótulo quebra no import, não numa resposta da API.
+if set(ROTULOS_FONTE) != {Fonte.pncp.value, *FONTES_EXTERNAS} or set(ROTULOS_FONTE.values()) != set(
+    get_args(OrigemHistorico)
+):
+    raise RuntimeError(f"ROTULOS_FONTE desalinhado das fontes do histórico: {ROTULOS_FONTE}")
 # Unidade jurisdicionada do TCE-PE → (CNPJ, nome do órgão). O CNPJ é o que os editais do órgão
 # têm em `edital.orgao_cnpj` (o da Compesa vem de `radar.coleta.compesa.CNPJ`).
 ORGAOS_TCEPE: dict[str, tuple[str, str]] = {"802": ("09769035000164", "COMPESA")}
@@ -133,9 +143,22 @@ def homologado_tcepe(processo: Registro) -> bool:
     )
 
 
+def situacao_tcepe(processo: Registro) -> str | None:
+    """`homologada`, `fracassada`, `deserta`, ou None (revogado, anulado, em andamento...)."""
+    if homologado_tcepe(processo):
+        return "homologada"
+    estagio = _texto(processo.get("estagioNome")).lower()
+    if "fracassad" in estagio:
+        return "fracassada"
+    if "desert" in estagio:
+        return "deserta"
+    return None
+
+
 def alvo_historico_tcepe(processo: Registro) -> bool:
-    """Processo de órgão do histórico e homologado (as linhas de serviço quem diz é a CLI)."""
-    return orgao_tcepe(processo) is not None and homologado_tcepe(processo)
+    """Processo de órgão do histórico, homologado, fracassado ou deserto (as linhas de serviço
+    quem diz é a CLI)."""
+    return orgao_tcepe(processo) is not None and situacao_tcepe(processo) is not None
 
 
 def _bate(valor: Decimal, alvo: Decimal) -> bool:
@@ -207,19 +230,26 @@ def vencedor_tcepe(
 def caso_tcepe(
     processo: Registro, linhas: Sequence[str], vencedor: VencedorExterno | None
 ) -> CasoExterno | None:
-    """O caso do histórico, ou None se o processo não é alvo (órgão, homologado, linha, data)."""
+    """O caso do histórico, ou None se o processo não é alvo (órgão, situação, linha, data).
+
+    Fracassado ou deserto: sem homologado, desconto nem vencedor (o `vencedor` é ignorado); o
+    estimado fica, para a tela mostrar como no PNCP.
+    """
     orgao = orgao_tcepe(processo)
+    situacao = situacao_tcepe(processo)
     processo_id = _texto(processo.get("processoContratacaoId"))
     data = (
         _data(processo.get("dataSessaoAbertura"))
         or _data(processo.get("dataPublicacao"))
         or _data(processo.get("dataResultado"))
     )
-    if orgao is None or not homologado_tcepe(processo) or not linhas or not processo_id:
+    if orgao is None or situacao is None or not linhas or not processo_id:
         return None
     if data is None:
         return None
-    homologado = _decimal(processo.get("valorHomologado"))
+    homologado = _decimal(processo.get("valorHomologado")) if situacao == "homologada" else None
+    if situacao != "homologada":
+        vencedor = None
     estimado = _decimal(processo.get("valorGlobal"))
     if str(processo.get("orcamentoSigiloso") or "0").strip() == "1" or (
         estimado is not None and estimado <= 0
@@ -241,7 +271,7 @@ def caso_tcepe(
         linhas=list(linhas),
         data=data,
         data_resultado=None if resultado is None else resultado.replace(tzinfo=FUSO),
-        situacao="homologada",
+        situacao=situacao,
         valor_estimado=estimado,
         valor_homologado=homologado,
         desconto=desconto,
@@ -273,19 +303,21 @@ def vencedor_gravado(
 def gravar_casos_externos(sessao: Session, casos: Iterable[CasoExterno]) -> int:
     """Upsert por (fonte, id_na_fonte); o mesmo processo duas vezes no lote: vale o último.
 
-    Vencedor gravado não é trocado por nulo (resposta instável do TCE-PE). Sem commit.
+    O vencedor é um par (CNPJ, nome, porte juntos): caso `homologada` que chega sem vencedor
+    (resposta instável do TCE-PE) mantém os três antigos; com vencedor, os três novos. Caso que
+    deixou de ser `homologada` (fracassada, deserta) fica sem vencedor. Sem commit.
     """
     unicos = {(c.fonte, c.id_na_fonte): asdict(c) for c in casos}
     if not unicos:
         return 0
     linhas = list(unicos.values())
     insercao = insert(ResultadoExterno).values(linhas)
-    preservados = {"vencedor_ni", "vencedor_nome", "vencedor_porte"}
+    vencedor = ("vencedor_ni", "vencedor_nome", "vencedor_porte")
     tabela = ResultadoExterno.__table__.c
+    novo = insercao.excluded
+    manter_antigo = and_(novo.situacao == "homologada", novo.vencedor_nome.is_(None))
     atualizar: dict[str, Any] = {
-        c: func.coalesce(insercao.excluded[c], tabela[c])
-        if c in preservados
-        else insercao.excluded[c]
+        c: case((manter_antigo, tabela[c]), else_=novo[c]) if c in vencedor else novo[c]
         for c in linhas[0]
         if c not in ("fonte", "id_na_fonte")
     }

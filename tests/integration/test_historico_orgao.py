@@ -494,3 +494,67 @@ def test_edital_do_pncp_em_pe_tem_a_compesa_na_regua(sessao: Session) -> None:
     assert historico.total == 0  # outro órgão
     assert historico.reguas[0].casos == 1
     assert historico.reguas[0].mediana == Decimal("0.1200")
+
+
+def test_fracassada_do_tcepe_conta_no_orgao_e_fica_fora_da_regua(sessao: Session) -> None:
+    from radar.editais import ResultadoExterno
+
+    _edital_compesa(sessao)
+    _caso_tcepe(sessao, "h", desconto="0.10")
+    _caso_tcepe(sessao, "f", desconto=None, vencedor=None, dias=30)
+    sessao.flush()
+    fracassada = sessao.get(ResultadoExterno, ("tce_pe", "f"))
+    assert fracassada is not None
+    fracassada.situacao = "fracassada"
+    fracassada.valor_homologado = None
+    sessao.flush()
+
+    historico = historico_do_edital(sessao, CRITERIOS_PE, "compesa", "2026LC213CEL-1", AGORA)
+
+    assert historico is not None
+    assert historico.contagens == {"fracassada": 1, "homologada": 1}
+    ultimas = {u.id_publico: u for u in historico.ultimas}
+    assert ultimas["tce_pe~f"].situacao == "fracassada"
+    assert ultimas["tce_pe~f"].valor_estimado == Decimal(2000000)  # o estimado, como no PNCP
+    assert (ultimas["tce_pe~f"].valor_homologado, ultimas["tce_pe~f"].desconto) == (None, None)
+    assert [(v.nome, v.vitorias) for v in historico.vencedores] == [("EMCOSA LTDA", 1)]
+    assert historico.reguas[0].casos == 1
+
+
+def _caso_gravado(sessao: Session) -> tuple[str | None, str | None, str | None]:
+    from radar.editais import ResultadoExterno
+
+    sessao.expire_all()
+    caso = sessao.get(ResultadoExterno, ("tce_pe", "60120073"))
+    assert caso is not None
+    return caso.vencedor_ni, caso.vencedor_nome, caso.vencedor_porte
+
+
+def test_vencedor_e_gravado_como_par(sessao: Session) -> None:
+    import json
+    from dataclasses import replace
+    from pathlib import Path
+
+    from radar.editais import VencedorExterno, caso_tcepe, gravar_casos_externos
+
+    dados = Path(__file__).resolve().parents[1] / "dados" / "tcepe"
+    processo = json.loads((dados / "processos_compesa_historico.json").read_text(encoding="utf-8"))[
+        0
+    ]
+    emcosa = VencedorExterno("10514594000102", "EMCOSA")
+    caso = caso_tcepe(processo, ["redes"], emcosa)
+    assert caso is not None
+    gravar_casos_externos(sessao, [replace(caso, vencedor_porte="Demais")])
+    assert _caso_gravado(sessao) == ("10514594000102", "EMCOSA", "Demais")
+
+    # Rodada sem vencedor (TCE-PE instável): os três antigos ficam juntos.
+    sem = caso_tcepe(processo, ["redes"], None)
+    assert sem is not None
+    gravar_casos_externos(sessao, [sem])
+    assert _caso_gravado(sessao) == ("10514594000102", "EMCOSA", "Demais")
+
+    # Vencedor novo sem CNPJ (pessoa física): os três novos, nunca CNPJ antigo com nome novo.
+    pf = caso_tcepe(processo, ["redes"], VencedorExterno(None, "Pessoa física"))
+    assert pf is not None
+    gravar_casos_externos(sessao, [pf])
+    assert _caso_gravado(sessao) == (None, "Pessoa física", None)

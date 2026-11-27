@@ -3,7 +3,6 @@
 import re
 from datetime import datetime
 from decimal import Decimal
-from typing import Literal
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
@@ -20,6 +19,7 @@ from radar.editais import (
     EditalResumo,
     Fonte,
     HistoricoOrgao,
+    OrigemHistorico,
     Situacao,
     id_publico,
 )
@@ -217,7 +217,7 @@ class ContratacaoPassadaOut(BaseModel):
     vencedor_porte: str | None
     # De onde veio o resultado: PNCP ou, para a Compesa (fora do PNCP), os dados abertos do
     # TCE-PE. Nesse caso `data` é a sessão de abertura e `id_publico` não é edital do radar.
-    origem: Literal["PNCP", "TCE-PE"]
+    origem: OrigemHistorico
 
 
 class VencedorOut(BaseModel):
@@ -268,7 +268,7 @@ def historico_out(historico: HistoricoOrgao) -> HistoricoOut:
                 parcial=c.parcial,
                 vencedor_nome=c.vencedor_nome,
                 vencedor_porte=c.vencedor_porte,
-                origem=c.origem,  # type: ignore[arg-type]
+                origem=c.origem,
             )
             for c in historico.ultimas
         ],

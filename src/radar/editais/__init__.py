@@ -3,7 +3,9 @@
 from radar.editais.externos import (
     FONTE_TCEPE,
     ORGAOS_TCEPE,
+    ROTULOS_FONTE,
     CasoExterno,
+    OrigemHistorico,
     VencedorExterno,
     alvo_historico_tcepe,
     apagar_casos_externos,
@@ -11,6 +13,7 @@ from radar.editais.externos import (
     casos_externos_gravados,
     contratos_do_processo,
     gravar_casos_externos,
+    situacao_tcepe,
     vencedor_gravado,
     vencedor_tcepe,
 )
@@ -61,7 +64,9 @@ from radar.editais.resultados import (
 __all__ = [
     "FONTE_TCEPE",
     "ORGAOS_TCEPE",
+    "ROTULOS_FONTE",
     "CasoExterno",
+    "OrigemHistorico",
     "ResultadoExterno",
     "VencedorExterno",
     "alvo_historico_tcepe",
@@ -70,6 +75,7 @@ __all__ = [
     "casos_externos_gravados",
     "contratos_do_processo",
     "gravar_casos_externos",
+    "situacao_tcepe",
     "vencedor_gravado",
     "vencedor_tcepe",
     "ContratacaoPassada",
