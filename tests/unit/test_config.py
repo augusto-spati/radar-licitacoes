@@ -57,3 +57,16 @@ def test_engine_com_nullpool_para_serverless(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setenv("RADAR_DB_NULLPOOL", "true")
     engine = criar_engine(obter_config())
     assert isinstance(engine.pool, NullPool)
+
+
+_URL_JANELAS = "https://sqs.us-east-2.amazonaws.com/1/radar-janelas"
+
+
+def test_config_le_urls_da_fila_de_janelas(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RADAR_FILA_JANELAS_URL", _URL_JANELAS)
+    monkeypatch.setenv("RADAR_FILA_JANELAS_FALHAS_URL", _URL_JANELAS + "-falhas")
+
+    config = obter_config()
+
+    assert config.fila_janelas_url == _URL_JANELAS
+    assert config.fila_janelas_falhas_url == _URL_JANELAS + "-falhas"

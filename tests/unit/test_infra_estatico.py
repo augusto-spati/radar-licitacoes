@@ -103,5 +103,87 @@ def test_fila_tem_dlq_e_alarmes() -> None:
     assert "maxReceiveCount     = 5" in fila
     assert "visibility_timeout_seconds = 720" in fila
     assert 'function_response_types = ["ReportBatchItemFailures"]' in fila
-    assert "maximum_concurrency = 2" in fila
+    # Sem maximum_concurrency na radar-editais: com ele, os pollers ociosos não são
+    # otimizados e o custo de ReceiveMessage do SQS sobe; o limite fica só na radar-janelas.
+    assert "maximum_concurrency" not in fila
     assert len(re.findall(r'resource\s+"aws_cloudwatch_metric_alarm"', fila)) == 3
+
+
+def _tf(nome: str) -> str:
+    return (RAIZ / "infra" / "prod" / nome).read_text(encoding="utf-8")
+
+
+def test_janelas_tem_dlq_agenda_e_alarmes() -> None:
+    janelas = _tf("janelas.tf")
+    assert "maxReceiveCount     = 5" in janelas
+    assert "visibility_timeout_seconds = 5400" in janelas
+    assert "message_retention_seconds  = 345600" in janelas
+    assert "message_retention_seconds = 1209600" in janelas
+    assert "timeout       = 900" in janelas
+    assert "timeout       = 120" in janelas
+    assert janelas.count("memory_size   = 256") == 2
+    assert "batch_size              = 1" in janelas
+    assert 'function_response_types = ["ReportBatchItemFailures"]' in janelas
+    assert "maximum_concurrency = 2" in janelas
+    assert 'schedule_expression          = "cron(0 6 * * ? *)"' in janelas
+    assert 'schedule_expression_timezone = "America/Sao_Paulo"' in janelas
+    assert '["radar.processador.lambda_coletora.handler"]' in janelas
+    assert '["radar.processador.lambda_planejador.handler"]' in janelas
+    # Confiança do Scheduler: aws:SourceAccount e aws:SourceArn da agenda do planejador.
+    assert "data.aws_iam_policy_document.scheduler_assume_planejador.json" in janelas
+    assert '"aws:SourceAccount"' in janelas and '"aws:SourceArn"' in janelas
+    # O aws:SourceArn do Scheduler é o do grupo de agendas, não o da agenda.
+    assert ':schedule-group/default"' in janelas
+    assert 'nome_agenda_planejador = "radar-planejar-diario"' in janelas
+    # Invocação assíncrona do planejador sem retry da Lambda (o retry é o do Scheduler).
+    assert 'resource "aws_lambda_function_event_invoke_config" "planejador"' in janelas
+    assert re.search(r"maximum_retry_attempts\s+= 0", janelas)
+    assert 'pattern        = "\\"janela_concluida\\""' in janelas
+    assert "threshold           = 21600" in janelas
+    assert len(re.findall(r'resource\s+"aws_cloudwatch_metric_alarm"', janelas)) == 3
+    # Recursos só na região do projeto: nenhum provider ou região fixa noutro lugar.
+    assert "provider" not in janelas and "us-east-1" not in janelas
+
+
+def test_alarmes_novos_publicam_no_topico() -> None:
+    coletor = _tf("coletor.tf")
+    for nome in ("janelas_dlq_com_mensagens", "janelas_fila_parada", "pncp_nao_concluiu"):
+        assert f"aws_cloudwatch_metric_alarm.{nome}.arn" in coletor
+
+
+def test_alarmes_cabem_no_gratis() -> None:
+    total = sum(
+        len(re.findall(r'resource\s+"aws_cloudwatch_metric_alarm"', arquivo.read_text("utf-8")))
+        for arquivo in (RAIZ / "infra" / "prod").glob("*.tf")
+    )
+    assert total <= 10
+
+
+def test_coletor_so_retratos() -> None:
+    coletor = _tf("coletor.tf")
+    assert 'command     = ["atualizar", "--fontes", "sanepar"]' in coletor
+    # O agendamento sobrescreve o command: só retratos, sem o PNCP e sem a Compesa.
+    assert 'command = ["atualizar", "--fontes", "sanepar"]' in coletor
+    assert "compesa" not in "".join(re.findall(r"command\s*=\s*\[[^\]]*\]", coletor))
+    assert '{ name = "RADAR_FILA_JANELAS_URL", value = aws_sqs_queue.janelas.url }' in coletor
+    assert "aws_sqs_queue.janelas.arn" in _tf("fila.tf")  # o relay do coletor pode enviar
+
+
+def test_deploy_atualiza_as_lambdas_novas() -> None:
+    deploy = (RAIZ / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
+    for funcao in ("radar-coletora", "radar-planejador"):
+        assert f"update-function-code --function-name {funcao}" in deploy
+        assert f"wait function-updated-v2 --function-name {funcao}" in deploy
+    oidc = _tf("github_oidc.tf")
+    assert "aws_lambda_function.coletora.arn" in oidc
+    assert "aws_lambda_function.planejador.arn" in oidc
+
+
+def test_cli_imprime_a_linha_que_o_filtro_do_alarme_conta() -> None:
+    """O filtro `radar-coletor-execucoes` conta linhas `resultado:`; a CLI precisa imprimi-las."""
+    tf = (RAIZ / "infra" / "prod" / "coletor.tf").read_text(encoding="utf-8")
+    achado = re.search(r'pattern\s*=\s*"\\"([^"\\]+)\\""', tf)
+    assert achado, "padrao do filtro radar-coletor-execucoes nao encontrado em coletor.tf"
+    termo = achado.group(1)
+    cli = (RAIZ / "src" / "radar" / "cli.py").read_text(encoding="utf-8")
+    assert f"{termo} " in cli, f"cli.py nao imprime {termo!r}; o alarme nao-rodou dispararia"

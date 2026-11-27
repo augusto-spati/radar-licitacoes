@@ -1,3 +1,4 @@
+import uuid
 from datetime import date, datetime
 from typing import Any
 
@@ -11,7 +12,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from radar.comum import Base
@@ -37,6 +38,19 @@ class ColetaJanela(Base):
     registros: Mapped[int] = mapped_column(Integer)
     iniciada_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     concluida_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Checkpoint: a próxima página a pedir, avançada no mesmo commit de cada página.
+    proxima_pagina: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    # totalPaginas e totalRegistros da página 1, para a completude valer entre fatias.
+    total_paginas: Mapped[int | None] = mapped_column(Integer)
+    esperados: Mapped[int | None] = mapped_column(Integer)
+    # Número da fatia: o fencing token da mensagem coletar_janela.
+    lote: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # Lease de quem coleta agora (o status em_andamento só diz "começada e não terminada").
+    travada_por: Mapped[str | None] = mapped_column(Text)
+    travada_ate: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Fatias que terminaram em falha desde a última conclusão (o planejador desiste em 5).
+    # `tentativas` conta reivindicações, inclusive continuações: fica como diagnóstico.
+    falhas: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
 
 class ColetaRetrato(Base):
@@ -92,3 +106,14 @@ class PaginaBruta(Base):
     url: Mapped[str | None] = mapped_column(Text)
     coletada_em: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     processada_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TravaFonte(Base):
+    """Lease que garante um único trabalho por fonte de cada vez (veja `coleta.trava`)."""
+
+    __tablename__ = "trava_fonte"
+
+    fonte: Mapped[str] = mapped_column(Text, primary_key=True)
+    dono: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    expira_em: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    obtida_em: Mapped[datetime] = mapped_column(DateTime(timezone=True))
