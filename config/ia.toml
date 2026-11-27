@@ -42,3 +42,23 @@ saida_usd_mtok = 0.60
 modo_saida = "json_schema"
 entrada_usd_mtok = 0.20
 saida_usd_mtok = 0.20
+
+# Etapa 7b.2: planilhas orçamentárias dos editais do PNCP (radar planilhas atualizar).
+# A IA só entra quando a leitura determinística acha menos de `minimo_linhas` linhas; os tetos
+# próprios cabem no teto mensal acima (estimativa do pior caso antes de cada chamada). Spike de
+# 2026-11-27: ~4 planilhas por IA por mês, ~US$ 0,001 cada (Nova Lite, só as páginas com R$).
+[planilhas]
+teto_edital_usd = 0.02
+teto_mensal_usd = 0.30
+max_editais_por_rodada = 10
+# Editais publicados nos últimos N dias, do mais antigo ao mais novo.
+janela_dias = 120
+minimo_linhas = 5
+minimo_rs_por_pagina = 8
+max_caracteres = 60000
+# Nova Lite: ~80 tokens por linha extraída; 5.000 cobrem ~60 linhas.
+max_tokens = 5000
+# Download desta etapa (o ZIP de Santa Bárbara d'Oeste tinha 25,6 MB; a análise usa 20 MB).
+limite_download_bytes = 40000000
+# Downloads por edital (título de planilha, "outros documentos", ZIPs, edital e TR).
+max_downloads = 6

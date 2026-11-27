@@ -113,6 +113,7 @@ forbidden_modules = [
     "radar.analise.extrator",
     "radar.analise.pipeline",
     "radar.analise.evals",
+    "radar.analise.planilhas",
     "radar.precos.modelos",
     "radar.precos.servicos",
     "radar.precos.consulta",

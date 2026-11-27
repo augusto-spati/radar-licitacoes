@@ -78,6 +78,20 @@ from radar.analise.pipeline import (
     recomparar,
     versao_prompt_atual,
 )
+from radar.analise.planilhas import (
+    Busca,
+    ConfigPlanilhas,
+    DocumentoPlanilha,
+    PuladoTeto,
+    RespostaPlanilhaIA,
+    carregar_config_planilhas,
+    documentos_do_edital,
+    extrair_planilha_ia,
+    nome_de_planilha,
+    paginas_com_precos,
+    procurar_planilhas,
+    texto_para_ia,
+)
 from radar.analise.provedor import (
     ConfigIA,
     Pedido,
@@ -88,6 +102,18 @@ from radar.analise.provedor import (
 )
 
 __all__ = [
+    "Busca",
+    "ConfigPlanilhas",
+    "DocumentoPlanilha",
+    "PuladoTeto",
+    "RespostaPlanilhaIA",
+    "carregar_config_planilhas",
+    "documentos_do_edital",
+    "extrair_planilha_ia",
+    "nome_de_planilha",
+    "paginas_com_precos",
+    "procurar_planilhas",
+    "texto_para_ia",
     "FONTES_ANALISADAS",
     "abrir_documento",
     "FONTES_PADRAO",
