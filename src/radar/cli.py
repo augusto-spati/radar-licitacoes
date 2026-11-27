@@ -25,6 +25,7 @@ from radar.coleta import (
     ClienteEducado,
     ClientePNCP,
     ClienteResultadosPNCP,
+    ErroResultados,
     FonteRetrato,
     carregar_historico,
     coletar_pendentes,
@@ -988,6 +989,9 @@ def historico_carregar(
     _sair_sem_resultado(resumo.falhas)
 
 
+FALHAS_SEGUIDAS_PNCP = 5
+
+
 @app_resultados.command("atualizar")
 def resultados_atualizar(
     limite: Annotated[int, typer.Option(min=1, help="Máximo de editais da rodada.")] = 300,
@@ -996,7 +1000,8 @@ def resultados_atualizar(
     """Busca no PNCP os itens e vencedores dos editais encerrados que casam com o filtro."""
     configurar_logs()
     criterios = carregar_criterios(config)
-    editais = itens_total = homologadas = falhas = 0
+    editais = itens_total = homologadas = falhas = seguidas = 0
+    interrompida = False
     with telemetria_do_processo("radar-resultados"), _criar_sessao() as sessao:
         alvos = alvos_resultado(sessao, criterios, _agora(), limite)
         sessao.rollback()  # só leitura: nada aberto durante a rede
@@ -1013,14 +1018,20 @@ def resultados_atualizar(
                         _agora(),
                     )
                     sessao.commit()
-                except Exception:  # um edital ruim não para a rodada
+                except Exception as erro:  # um edital ruim não para a rodada
                     sessao.rollback()
                     logger.exception(
                         "resultados_falhou",
                         extra={"fonte": alvo.fonte, "id_na_fonte": alvo.id_na_fonte},
                     )
                     falhas += 1
+                    # Disjuntor: PNCP fora do ar não vira 300 requisições com retentativas.
+                    seguidas = seguidas + 1 if isinstance(erro, ErroResultados) else 0
+                    if seguidas >= FALHAS_SEGUIDAS_PNCP:
+                        interrompida = True
+                        break
                     continue
+                seguidas = 0
                 editais += 1
                 itens_total += len(brutos)
                 homologadas += int(resumo.situacao == "homologada")
@@ -1029,6 +1040,11 @@ def resultados_atualizar(
     typer.echo(
         f"resultados: {editais} editais, {itens_total} itens, {homologadas} homologadas, "
         f"{falhas} falhas"
+        + (
+            f" (interrompida após {FALHAS_SEGUIDAS_PNCP} falhas seguidas do PNCP)"
+            if interrompida
+            else ""
+        )
     )
     _sair_sem_resultado(falhas)
 

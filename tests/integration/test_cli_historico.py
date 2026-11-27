@@ -147,6 +147,45 @@ def test_resultados_atualizar_falha_de_um_edital_segue_e_sai_com_1(
     assert "resultado:" not in resultado.output.replace("resultados:", "")
 
 
+def test_resultados_atualizar_para_apos_5_falhas_seguidas_do_pncp(
+    fabrica: sessionmaker[Session],
+    config_filtro: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from radar.coleta import ErroResultados
+
+    class Fora(ClienteResultadosFalso):
+        def itens_com_resultados(
+            self, cnpj: str, ano: int, sequencial: int
+        ) -> list[dict[str, Any]]:
+            # O 1º (o mais recente) dá certo; depois, o PNCP cai de vez.
+            if sequencial == 20:
+                return super().itens_com_resultados(cnpj, ano, sequencial)
+            ClienteResultadosFalso.chamadas.append((cnpj, ano, sequencial))
+            raise ErroResultados("503")
+
+    ClienteResultadosFalso.chamadas = []
+    monkeypatch.setattr(cli, "_criar_cliente_resultados", Fora)
+    with fabrica() as sessao:
+        registrar(
+            sessao,
+            [
+                _registro(
+                    f"{CNPJ}-1-{n:06d}/2026",
+                    "Leitura de hidrometro",
+                    AGORA - timedelta(days=30 - n),
+                )
+                for n in range(10, 21)
+            ],
+        )
+        sessao.commit()
+    resultado = runner.invoke(cli.app, ["resultados", "atualizar", "--config", str(config_filtro)])
+    assert resultado.exit_code == 1
+    assert [s for _, _, s in ClienteResultadosFalso.chamadas] == [20, 19, 18, 17, 16, 15]
+    assert "resultados: 1 editais, 1 itens, 1 homologadas, 5 falhas" in resultado.output
+    assert "interrompida após 5 falhas seguidas do PNCP" in resultado.output
+
+
 class ClientePNCPFalso:
     def buscar(
         self,
