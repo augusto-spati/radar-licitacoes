@@ -19,8 +19,24 @@ from radar.editais.registro import (
     registrar,
     registrar_normalizados,
 )
+from radar.editais.resultados import (
+    AlvoResultado,
+    ItemResultado,
+    ResumoContratacao,
+    alvos_resultado,
+    gravar_resultados,
+    interpretar_itens,
+    resumir,
+)
 
 __all__ = [
+    "AlvoResultado",
+    "ItemResultado",
+    "ResumoContratacao",
+    "alvos_resultado",
+    "gravar_resultados",
+    "interpretar_itens",
+    "resumir",
     "bruto_do_edital",
     "Criterios",
     "EditalDetalhe",
