@@ -9,7 +9,7 @@ sem escopo claro (só o tubo, só o assentamento ou os dois).
 import re
 import tomllib
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from functools import cache
 from pathlib import Path
@@ -75,6 +75,27 @@ class Classificacao:
     fator: Decimal
     # Só em escavação: faixa de profundidade (ver `faixa_profundidade`).
     faixa: Faixa | None = None
+    # Marca para separar depois sem mudar a chave: "adutora" na rede de água de adutora.
+    observacao: str | None = None
+
+
+Obra = Literal["agua", "esgoto"]
+
+
+@dataclass(frozen=True)
+class Contexto:
+    """Linha da obra de onde o item veio (título da seção da planilha ou objeto do edital).
+
+    Só vale quando a descrição do item não cita nem água nem esgoto ("TUBO PVC-O DN 250 MM"
+    numa seção "EXECUÇÃO ADUTORA").
+    """
+
+    obra: Obra | None
+    adutora: bool = False
+
+
+_TERMOS_AGUA = ("agua", "abastecimento", "adutora", "adutoras", "potavel", "saa")
+_TERMOS_ESGOTO = ("esgot", "coletor", "coletores", "interceptor", "emissario", "ses")
 
 
 def sem_acento(texto: str) -> str:
@@ -143,6 +164,8 @@ _SEM_FORNECIMENTO = (
 )
 _FORNECIMENTO = ("fornecimento", "aquisicao")
 _INCLUSIVE = ("inclusive fornecimento", "inclusive o fornecimento", "inclusive tubo")
+# Abreviações de planilha: "fornec./assent.", "forn. e assent.", "fornecimento/assentamento".
+_FORNECE_E_ASSENTA = re.compile(r"(?<![a-z])forn\w*\.?\s*(?:e/ou|e|/|\+|-)\s*assent")
 _SERVICO = (
     "assentamento",
     "assentar",
@@ -174,7 +197,7 @@ def escopo_de_rede(texto: str) -> Escopo | None:
     """
     if _algum(texto, _SEM_FORNECIMENTO):
         return "assentamento"
-    if _algum(texto, _INCLUSIVE):
+    if _algum(texto, _INCLUSIVE) or _FORNECE_E_ASSENTA.search(texto):
         return "completo"
     if _algum(texto, _SERVICO):
         return "completo" if _algum(texto, _FORNECIMENTO) else "assentamento"
@@ -257,6 +280,33 @@ def _casa_termos(servico: Servico, texto: str) -> bool:
     if not all(_algum(texto, grupo) for grupo in servico.termos_obrigatorios):
         return False
     return not servico.termos_qualquer or _algum(texto, servico.termos_qualquer)
+
+
+def contexto_da_obra(*textos: str | None) -> Contexto:
+    """Linha da obra pelo primeiro texto que cita só água ou só esgoto (seção, depois objeto).
+
+    "EXECUÇÃO DE COLETOR DE ESGOTOS" → esgoto; "SUBSTITUIÇÃO DA ADUTORA ETA II" → água, adutora.
+    Texto que cita os dois (ou nenhum) não decide e passa ao seguinte.
+    """
+    for bruto in textos:
+        if not bruto:
+            continue
+        texto = _AGUAS_SERVIDAS.sub(" esgoto ", sem_acento(bruto))
+        agua, esgoto = _algum(texto, _TERMOS_AGUA), _algum(texto, _TERMOS_ESGOTO)
+        if agua and not esgoto:
+            return Contexto("agua", adutora=_algum(texto, ("adutora", "adutoras")))
+        if esgoto and not agua:
+            return Contexto("esgoto")
+    return Contexto(None)
+
+
+def _com_contexto(texto: str, contexto: Contexto | None) -> str:
+    if contexto is None or contexto.obra is None:
+        return texto
+    sem_servidas = _AGUAS_SERVIDAS.sub(" ", texto)
+    if tem_termo(sem_servidas, "agua") or tem_termo(sem_servidas, "esgot"):
+        return texto
+    return f"{texto} {contexto.obra}"
 
 
 def _classificar_em(servico: Servico, texto: str, unidade: str) -> Classificacao | None:
@@ -372,11 +422,27 @@ def servicos_padrao() -> tuple[Servico, ...]:
 
 
 def classificar(
-    descricao: str, unidade: str, servicos: tuple[Servico, ...] | None = None
+    descricao: str,
+    unidade: str,
+    servicos: tuple[Servico, ...] | None = None,
+    contexto: Contexto | None = None,
 ) -> Classificacao | None:
-    """Serviço-padrão do item, ou None se não casar com exatamente um serviço."""
+    """Serviço-padrão do item, ou None se não casar com exatamente um serviço.
+
+    Com `contexto` (planilha do PNCP), a linha da obra entra na descrição que não cita nem
+    água nem esgoto. Rede de água de adutora (pela descrição ou pelo contexto) sai com
+    `observacao="adutora"`: compara-se com rede de água pelo material e DN, e dá para separar.
+    """
     texto = sem_acento(descricao)
+    texto_ctx = _com_contexto(texto, contexto)
     unidade_norm = normalizar_unidade(unidade)
     candidatos = servicos if servicos is not None else _servicos_padrao()
-    achados = [c for s in candidatos if (c := _classificar_em(s, texto, unidade_norm))]
-    return achados[0] if len(achados) == 1 else None
+    achados = [c for s in candidatos if (c := _classificar_em(s, texto_ctx, unidade_norm))]
+    if len(achados) != 1:
+        return None
+    achado = achados[0]
+    if achado.servico == "rede_agua" and (
+        _algum(texto, ("adutora", "adutoras")) or (contexto is not None and contexto.adutora)
+    ):
+        return replace(achado, observacao="adutora")
+    return achado
