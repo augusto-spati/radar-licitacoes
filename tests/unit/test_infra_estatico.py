@@ -105,3 +105,13 @@ def test_fila_tem_dlq_e_alarmes() -> None:
     assert 'function_response_types = ["ReportBatchItemFailures"]' in fila
     assert "maximum_concurrency = 2" in fila
     assert len(re.findall(r'resource\s+"aws_cloudwatch_metric_alarm"', fila)) == 3
+
+
+def test_cli_imprime_a_linha_que_o_filtro_do_alarme_conta() -> None:
+    """O filtro `radar-coletor-execucoes` conta linhas `resultado:`; a CLI precisa imprimi-las."""
+    tf = (RAIZ / "infra" / "prod" / "coletor.tf").read_text(encoding="utf-8")
+    achado = re.search(r'pattern\s*=\s*"\\"([^"\\]+)\\""', tf)
+    assert achado, "padrao do filtro radar-coletor-execucoes nao encontrado em coletor.tf"
+    termo = achado.group(1)
+    cli = (RAIZ / "src" / "radar" / "cli.py").read_text(encoding="utf-8")
+    assert f"{termo} " in cli, f"cli.py nao imprime {termo!r}; o alarme nao-rodou dispararia"

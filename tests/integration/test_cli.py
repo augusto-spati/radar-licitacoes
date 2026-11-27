@@ -568,3 +568,32 @@ def test_processar_com_sqs_recusando_sai_com_1_e_guarda_o_erro(
         assert (outbox.publicada_em, outbox.tentativas) == (None, 2)
         assert outbox.erro == "AWS.SimpleQueueService.Throttled: calma"
     assert _contar(fabrica, Edital) == 0
+
+
+@pytest.mark.parametrize("comando", ["atualizar", "carga-inicial", "processar"])
+@pytest.mark.parametrize(
+    ("falhas", "codigo", "linha"),
+    [
+        (0, 0, "resultado: sem falhas"),
+        (1, 1, "resultado: 1 falhas (coleta 1, relay 0, fila 0)"),
+    ],
+)
+def test_execucao_imprime_linha_resultado_que_o_alarme_conta(
+    fabrica: sessionmaker[Session],
+    config_filtro: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    comando: str,
+    falhas: int,
+    codigo: int,
+    linha: str,
+) -> None:
+    monkeypatch.setattr(cli, "fontes_retrato", lambda: {})
+    monkeypatch.setattr(cli, "_criar_cliente", lambda: como_cliente(ClienteFalso({})))
+    monkeypatch.setattr(cli, "_coletar", lambda sessao, cliente: falhas)
+    args = [comando] if comando == "processar" else [comando, "--config", str(config_filtro)]
+
+    resultado = runner.invoke(cli.app, args)
+
+    assert resultado.exit_code == codigo, resultado.output
+    linhas = [x for x in resultado.output.splitlines() if x.startswith("resultado: ")]
+    assert linhas == [linha]

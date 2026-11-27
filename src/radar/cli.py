@@ -140,16 +140,26 @@ def _falhas_da_fila(fila: Fila) -> int:
 
 
 def _com_fila(sessao: Session, fila: Fila, coletar: Callable[[], int]) -> int:
-    """Relay, coleta, relay; devolve as falhas somadas.
+    """Relay, coleta, relay; devolve as falhas somadas e imprime a linha `resultado:`.
 
     O relay do começo recupera o que ficou na outbox se a execução anterior morreu entre
     coletar e publicar. O do fim roda depois de todas as coletas soltarem a trava da fonte
     (o consumidor local precisa dela).
+
+    A linha `resultado:` é contada pelo filtro de log `radar-coletor-execucoes` em
+    infra/prod/coletor.tf (alarme `radar-coletor-nao-rodou`); não a remova.
     """
-    falhas = _publicar(sessao, fila)
-    falhas += coletar()
-    falhas += _publicar(sessao, fila)
-    return falhas + _falhas_da_fila(fila)
+    relay = _publicar(sessao, fila)
+    coleta = coletar()
+    relay += _publicar(sessao, fila)
+    na_fila = _falhas_da_fila(fila)
+    total = coleta + relay + na_fila
+    typer.echo(
+        f"resultado: {total} falhas (coleta {coleta}, relay {relay}, fila {na_fila})"
+        if total
+        else "resultado: sem falhas"
+    )
+    return total
 
 
 def _rodar_retrato(sessao: Session, fonte: FonteRetrato) -> int:
