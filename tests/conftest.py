@@ -56,4 +56,4 @@ def sessao(engine: Engine) -> Iterator[Session]:
 
 
 # Fixtures de telemetria e métricas em memória (`spans`, `metricas`).
-from telemetria_memoria import metricas  # noqa: E402, F401
+from telemetria_memoria import metricas, spans  # noqa: E402, F401

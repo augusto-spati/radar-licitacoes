@@ -4,8 +4,13 @@ from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 
 import pytest
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from radar.comum import metricas as modulo_metricas
+from radar.comum import telemetria
+from radar.comum.telemetria_sdk import AmostradorDoRadar
 
 
 @dataclass(frozen=True)
@@ -49,3 +54,17 @@ def metricas() -> Iterator[EmissorEmMemoria]:
         yield emissor
     finally:
         modulo_metricas.usar_emissor(None)
+
+
+@pytest.fixture
+def spans() -> Iterator[InMemorySpanExporter]:
+    """Provedor em memória (fração 1.0, exportação síncrona), sem o provedor global do OTel."""
+    exportador = InMemorySpanExporter()
+    provedor = TracerProvider(sampler=AmostradorDoRadar(1.0), shutdown_on_exit=False)
+    provedor.add_span_processor(SimpleSpanProcessor(exportador))
+    telemetria.usar_provedor(provedor)
+    try:
+        yield exportador
+    finally:
+        telemetria.usar_provedor(None)
+        provedor.shutdown()
