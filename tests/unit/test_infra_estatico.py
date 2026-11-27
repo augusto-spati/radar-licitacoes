@@ -187,3 +187,108 @@ def test_cli_imprime_a_linha_que_o_filtro_do_alarme_conta() -> None:
     termo = achado.group(1)
     cli = (RAIZ / "src" / "radar" / "cli.py").read_text(encoding="utf-8")
     assert f"{termo} " in cli, f"cli.py nao imprime {termo!r}; o alarme nao-rodou dispararia"
+
+
+def _todos_tf() -> str:
+    return "\n".join(
+        arquivo.read_text(encoding="utf-8")
+        for arquivo in (RAIZ / "infra").rglob("*.tf")
+        if ".terraform" not in arquivo.parts
+    )
+
+
+def test_no_maximo_dez_alarmes() -> None:
+    """Plano grátis: 10 alarmes padrão. Conta todos os de infra/ (hoje 9)."""
+    alarmes = re.findall(r'resource\s+"aws_cloudwatch_metric_alarm"\s+"(\w+)"', _todos_tf())
+    assert len(alarmes) <= 10, alarmes
+
+
+def test_no_maximo_dez_metricas_customizadas() -> None:
+    """Plano grátis: 10 métricas customizadas; cada combinação de dimensões conta uma.
+
+    Os filtros de log do Terraform mais o catálogo do código (hoje 3 + 6 = 9).
+    """
+    from math import prod
+
+    from radar.comum.metricas import CATALOGO
+
+    filtros = set(re.findall(r'metric_transformation\s*\{\s*name\s*=\s*"(\w+)"', _todos_tf()))
+    do_codigo = sum(
+        prod(len(v) for v in d.valores_dimensao.values()) if d.dimensoes else 1
+        for d in CATALOGO.values()
+    )
+    assert not filtros & set(CATALOGO), "nome repetido entre filtro e catálogo"
+    assert len(filtros) + do_codigo <= 10, (sorted(filtros), do_codigo)
+
+
+def test_um_dashboard() -> None:
+    assert len(re.findall(r'resource\s+"aws_cloudwatch_dashboard"', _todos_tf())) == 1
+
+
+def test_spans_com_retencao() -> None:
+    obs = _tf("observabilidade.tf")
+    bloco = re.search(r'resource "aws_cloudwatch_log_group" "spans" \{(.*?)\n\}', obs, re.S)
+    assert bloco, "log group aws/spans ausente"
+    assert 'name              = "aws/spans"' in bloco.group(1)
+    assert "retention_in_days = 7" in bloco.group(1)
+    # Transaction Search é ligado à mão; os comandos ficam registrados no .tf.
+    assert "update-trace-segment-destination --destination CloudWatchLogs" in obs
+
+
+def test_sem_application_signals() -> None:
+    tudo = _todos_tf()
+    for proibido in (
+        "application_signals",
+        "applicationsignals",
+        "CloudWatchAgentServerPolicy",
+        "aws-otel-collector",
+        "tracing_config",
+    ):
+        assert proibido not in tudo, proibido
+
+
+def test_alarmes_de_slo() -> None:
+    obs = re.sub(r"[ \t]+", " ", _tf("observabilidade.tf"))
+    frescor = re.search(r'"frescor_estourado" \{(.*?)\n\}', obs, re.S)
+    erro = re.search(r'"paginas_com_erro" \{(.*?)\n\}', obs, re.S)
+    assert frescor and erro
+    for trecho in (
+        'alarm_name = "radar-frescor-estourado"',
+        'metric_name = "FrescorHoras"',
+        'statistic = "Maximum"',
+        "period = 21600",
+        "evaluation_periods = 6",
+        "datapoints_to_alarm = 6",
+        "threshold = 36",
+        'treat_missing_data = "breaching"',
+    ):
+        assert trecho in frescor.group(1), trecho
+    for trecho in (
+        'alarm_name = "radar-paginas-com-erro"',
+        'metric_name = "PaginaComErro"',
+        'statistic = "Average"',
+        "period = 86400",
+        "threshold = 0.1",
+        'treat_missing_data = "notBreaching"',
+    ):
+        assert trecho in erro.group(1), trecho
+    coletor = _tf("coletor.tf")
+    for nome in ("frescor_estourado", "paginas_com_erro"):
+        assert f"aws_cloudwatch_metric_alarm.{nome}.arn" in coletor
+
+
+def test_telemetria_ligada_nos_processos() -> None:
+    coletor = _tf("coletor.tf")
+    assert '{ name = "RADAR_TELEMETRIA", value = "xray" }' in coletor
+    assert '{ name = "RADAR_METRICAS", value = "cloudwatch" }' in coletor
+    assert '{ name = "RADAR_TRACES_FRACAO", value = "0.25" }' in coletor
+    for arquivo in ("fila.tf", "janelas.tf"):
+        texto = re.sub(r"[ \t]+", " ", _tf(arquivo))
+        assert 'RADAR_TELEMETRIA = "xray"' in texto, arquivo
+        assert 'RADAR_METRICAS = "emf"' in texto, arquivo
+        assert 'RADAR_TRACES_FRACAO = "0.25"' in texto, arquivo
+    obs = _tf("observabilidade.tf")
+    for role in ("coletor_task", "processador", "coletora", "planejador"):
+        assert f"aws_iam_role.{role}.name" in obs, role
+    assert "AWSXrayWriteOnlyAccess" in obs
+    assert '"cloudwatch:namespace"' in obs and '"Radar"' in obs

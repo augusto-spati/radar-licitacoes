@@ -157,6 +157,10 @@ resource "aws_ecs_task_definition" "coletor" {
       { name = "RADAR_FILA_URL", value = aws_sqs_queue.editais.url },
       # O relay do coletor pode encontrar uma continuacao pendente na outbox.
       { name = "RADAR_FILA_JANELAS_URL", value = aws_sqs_queue.janelas.url },
+      # Observabilidade: traces para o X-Ray (25%) e metricas por PutMetricData.
+      { name = "RADAR_TELEMETRIA", value = "xray" },
+      { name = "RADAR_METRICAS", value = "cloudwatch" },
+      { name = "RADAR_TRACES_FRACAO", value = "0.25" },
     ]
 
     secrets = [
@@ -341,6 +345,8 @@ data "aws_iam_policy_document" "alertas_publicar" {
         aws_cloudwatch_metric_alarm.janelas_dlq_com_mensagens.arn,
         aws_cloudwatch_metric_alarm.janelas_fila_parada.arn,
         aws_cloudwatch_metric_alarm.pncp_nao_concluiu.arn,
+        aws_cloudwatch_metric_alarm.frescor_estourado.arn,
+        aws_cloudwatch_metric_alarm.paginas_com_erro.arn,
       ]
     }
   }

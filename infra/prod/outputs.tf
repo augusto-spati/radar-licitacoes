@@ -77,3 +77,8 @@ output "url_fila_janelas_falhas" {
   description = "URL da DLQ radar-janelas-falhas (RADAR_FILA_JANELAS_FALHAS_URL)."
   value       = aws_sqs_queue.janelas_falhas.url
 }
+
+output "dashboard" {
+  description = "Nome do dashboard do CloudWatch (SLOs do radar)."
+  value       = aws_cloudwatch_dashboard.radar.dashboard_name
+}

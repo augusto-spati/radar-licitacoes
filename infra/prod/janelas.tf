@@ -10,6 +10,9 @@ locals {
     RADAR_FILA             = "sqs"
     RADAR_FILA_URL         = aws_sqs_queue.editais.url
     RADAR_FILA_JANELAS_URL = aws_sqs_queue.janelas.url
+    RADAR_TELEMETRIA       = "xray"
+    RADAR_METRICAS         = "emf"
+    RADAR_TRACES_FRACAO    = "0.25"
   }
 }
 
