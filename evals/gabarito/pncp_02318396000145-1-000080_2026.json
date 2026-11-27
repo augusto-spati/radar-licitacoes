@@ -11,21 +11,33 @@
   "conferido": false,
   "conferido_por": null,
   "conferido_em": null,
-  "observacoes": "RASCUNHO DO CLAUDE, A CONFERIR PELO AUGUSTO: feito lendo o texto extraído (busca por palavras-chave nas seções de habilitação), sem rodar nenhum modelo avaliado. Exigência que a busca não achou pode estar faltando. Registro de preços exclusivo para ME/EPP (linha redes, R$ 73.255,97). Sem capital, patrimônio nem atestado com quantidade; garantia de execução expressamente não exigida (p16); balanço expressamente dispensado (p12). Prazo: só vigência de 12 meses (p20), ficou nulo. Declaração de menor não achada pela busca: conferir.",
+  "observacoes": "VALIDAÇÃO CRUZADA (rascunho + leitura cega + juiz adversarial, todos Claude; falta a conferência humana): DEMSUR Muriaé/MG, pregão eletrônico 064/2026, registro de preços para fornecimento parcelado de kits de varetas e peças para desobstrução de rede de esgoto, R$ 73.255,97, menor preço global, exclusivo ME/EPP. Habilitação no item 9 (p. 11-13), repetida no TR 8 (p. 28-31). Sem qualificação técnica nem atestado (a única menção é a regra matriz/filial do 9.22, p. 14). Sem capital e sem patrimônio líquido; balanço patrimonial dispensado expressamente (p. 12), por isso balanco_patrimonial não entra. Garantia de execução 'Não haverá exigência' (15.1, p. 16; TR 4.9, p. 24); sem garantia de proposta. Visita técnica: o edital não trata. Consórcio vedado (nota explicativa do 2.2, p. 3). Prazo (critério comum 1): é SRP de fornecimento; a vigência é 12 meses (TR 1.3, p. 23) e a entrega é em até 30 dias por pedido (TR 5.1.1, p. 25): ficou 30 dias. A leitura cega tinha 360 (vigência) e o rascunho null. 'outro' = Cartão CNPJ (9.5.1, p. 11), inscrição estadual/municipal e Declaração Unificada (9.7, p. 12). declaracao_menor: 9.5.10 (p. 12); o rascunho não a tinha.",
   "exigencias": {
+    "atestados": [],
+    "capital_social_minimo": null,
+    "patrimonio_liquido_minimo": null,
+    "garantia_proposta_percentual": null,
+    "garantia_contratual_percentual": null,
+    "prazo_execucao_dias": {
+      "numero": "30",
+      "trecho": "A entrega do material deverá ser feita em até 30 (trinta) dias para cada pedido",
+      "pagina": 25,
+      "conflito": false,
+      "observacao": "entrega em até 30 dias por pedido; vigência da ARP 12 meses"
+    },
+    "visita_tecnica": null,
     "consorcio": {
       "valor": "vedado",
-      "trecho": "é conveniente a vedação de participação de empresas em",
+      "trecho": "entende-se que é conveniente a vedação de participação de empresas em “consórcio” no Pregão em tela.",
       "pagina": 3,
       "conflito": false
     },
     "me_epp": {
       "valor": "exclusiva",
-      "trecho": "PROCESSO DESTINADO A PARTICIPAÇÃO EXCLUSIVA DE MICROEMPRESAS, EMPRESAS DE PEQUENO PORTE OU EQUIPARADAS",
+      "trecho": "PROCESSO DESTINADO A PARTICIPAÇÃO EXCLUSIVA DE MICROEMPRESAS, EMPRESAS DE PEQUENO PORTE OU EQUIPARADAS.",
       "pagina": 1,
       "conflito": false
     },
-    "atestados": [],
     "documentos": [
       {
         "valor": "contrato_social",
@@ -34,32 +46,44 @@
         "conflito": false
       },
       {
+        "valor": "outro",
+        "trecho": "Prova de inscrição no Cadastro Nacional de Pessoas Jurídicas (Cartão CNPJ)",
+        "pagina": 11,
+        "conflito": false
+      },
+      {
         "valor": "certidao_federal",
-        "trecho": "Prova de regularidade fiscal perante a Fazenda Nacional",
+        "trecho": "Prova de regularidade fiscal perante a Fazenda Nacional;",
         "pagina": 12,
         "conflito": false
       },
       {
         "valor": "certidao_estadual",
-        "trecho": "Prova de regularidade fiscal perante a Fazenda Estadual",
+        "trecho": "Prova de regularidade fiscal perante a Fazenda Estadual, relativo ao domicílio ou sede do fornecedor;",
         "pagina": 12,
         "conflito": false
       },
       {
         "valor": "certidao_municipal",
-        "trecho": "Prova de regularidade fiscal perante a Fazenda Municipal",
+        "trecho": "Prova de regularidade fiscal perante a Fazenda Municipal, relativo ao domicílio ou sede do fornecedor;",
         "pagina": 12,
         "conflito": false
       },
       {
         "valor": "certidao_fgts",
-        "trecho": "Fundo de Garantia do Tempo de Serviço (FGTS); 9.5.7 Prova de inexistência de débitos inad",
+        "trecho": "Prova de regularidade com o Fundo de Garantia do Tempo de Serviço (FGTS);",
         "pagina": 12,
         "conflito": false
       },
       {
         "valor": "certidao_trabalhista",
-        "trecho": "Prova de inexistência de débitos inad",
+        "trecho": "Prova de inexistência de débitos inadimplidos perante a Justiça do Trabalho;",
+        "pagina": 12,
+        "conflito": false
+      },
+      {
+        "valor": "declaracao_menor",
+        "trecho": "declaração de que não emprega em trabalho noturno, perigoso ou insalubre a menores de dezoito",
         "pagina": 12,
         "conflito": false
       },

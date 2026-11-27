@@ -11,27 +11,40 @@
   "conferido": false,
   "conferido_por": null,
   "conferido_em": null,
-  "observacoes": "RASCUNHO DO CLAUDE, A CONFERIR PELO AUGUSTO: feito lendo o texto extraído (busca por palavras-chave nas seções de habilitação), sem rodar nenhum modelo avaliado. Exigência que a busca não achou pode estar faltando. SAAE Cambuí/MG, compra de tubos de PVC DEFOFO. Sem capital, patrimônio, garantia, visita, consórcio ou ME/EPP achados; atestado sem quantidade. Prazo: só vigência de 1 ano (p20), ficou nulo. 'Registro empresarial na Junta Comercial' mapeado para contrato_social.",
+  "observacoes": "VALIDAÇÃO CRUZADA (rascunho + leitura cega + juiz adversarial, todos Claude; falta a conferência humana): SAAE Cambuí/MG, PE 37/2026, aquisição de 372 tubos PVC DEFOFO JEI DN 150 (R$ 334.956,24). Habilitação no Anexo II (p. 17-19). Prazo: pelo critério comum 1, prazo de entrega por pedido 'não poderá ser superior a 30 (trinta) dias' (TR 7.3.1, p. 14; repetido na minuta 3.3, p. 20) = 30 dias; a vigência de 1 ano (minuta 2.1, p. 20) não entra. Atestado de fornecimento de materiais hidráulicos sem quantidade (p. 18-19). declaracao_menor é declaração em campo do sistema no cadastramento da proposta (2.2.3, p. 3): entra pelo critério comum 5. ME/EPP: só tratamento favorecido (1.3, p. 3), sem exclusividade nem cota = ampla. 'outro' = inscrição no CNPJ (p. 17); também inscrição estadual/municipal, certidões de PcD e de aprendizes (p. 18). Sem capital, patrimônio líquido, garantias, visita; consórcio não mencionado (null).",
   "exigencias": {
     "atestados": [
       {
-        "descricao": "Fornecimento de materiais hidráulicos compatíveis (sem quantidade)",
+        "descricao": "Fornecimento anterior de materiais hidráulicos compatíveis com o objeto (sem quantidade)",
         "quantidade": null,
         "unidade": null,
         "trecho": "Comprovação de aptidão para fornecimento de materiais hidráulicos compatíveis em características e complexidade com o objeto licitado",
         "pagina": 18
       }
     ],
+    "prazo_execucao_dias": {
+      "numero": "30",
+      "trecho": "qual não poderá ser superior a 30 (trinta) dias",
+      "pagina": 14,
+      "conflito": false,
+      "observacao": "prazo de entrega por pedido"
+    },
+    "me_epp": {
+      "valor": "ampla",
+      "trecho": "Será concedido tratamento favorecido para as microempresas e empresas de pequeno porte",
+      "pagina": 3,
+      "conflito": false
+    },
     "documentos": [
       {
-        "valor": "declaracao_menor",
-        "trecho": "Não emprega menor de 18 anos em trabalho noturno, perigoso ou insalubre",
-        "pagina": 3,
+        "valor": "contrato_social",
+        "trecho": "Ato constitutivo, estatuto ou contrato social em vigor, devidamente registrado na Junta",
+        "pagina": 17,
         "conflito": false
       },
       {
-        "valor": "contrato_social",
-        "trecho": "Registro empresarial na Junta Comercial",
+        "valor": "outro",
+        "trecho": "Prova de Inscrição no Cadastro Nacional de Pessoa Jurídica (CNPJ) no Ministério da Fazenda",
         "pagina": 17,
         "conflito": false
       },
@@ -69,6 +82,18 @@
         "valor": "balanco_patrimonial",
         "trecho": "Balanço patrimonial, demonstração de resultado de exercício (DRE)",
         "pagina": 18,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_falencia",
+        "trecho": "Certidão negativa de falência expedida pelo distribuidor da sede do fornecedor",
+        "pagina": 18,
+        "conflito": false
+      },
+      {
+        "valor": "declaracao_menor",
+        "trecho": "Não emprega menor de 18 anos em trabalho noturno, perigoso ou insalubre",
+        "pagina": 3,
         "conflito": false
       }
     ]

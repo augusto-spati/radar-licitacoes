@@ -11,15 +11,22 @@
   "conferido": false,
   "conferido_por": null,
   "conferido_em": null,
-  "observacoes": "RASCUNHO DO CLAUDE, A CONFERIR PELO AUGUSTO: feito lendo o texto extraído (busca por palavras-chave nas seções de habilitação), sem rodar nenhum modelo avaliado. Exigência que a busca não achou pode estar faltando. SAAE Jaguariúna, registro de preços de hidrômetros. Sem capital, patrimônio, garantia nem atestado achados. Habilitação pelo SICAF (p16): os documentos não são listados um a um, só a declaração de menor. ME/EPP: itens de cota reservada e cota principal.",
+  "observacoes": "VALIDAÇÃO CRUZADA (rascunho + leitura cega + juiz adversarial, todos Claude; falta a conferência humana): SAAE Jaguariúna, PE 90022/2026, registro de preços de hidrômetros unijato, multijato e ultrassônicos, 12 itens, menor preço por item, valor estimado R$ 2.467.121,70. O texto tem só o corpo do edital (25 p.). FORA DO TEXTO: o 8.1 (p. 15) remete as exigências de habilitação ao Termo de Referência (Anexo I, tópico 'Exigências de habilitação'), que não foi publicado no PNCP; atestados, qualificação econômico-financeira, garantia e prazo de entrega, se existirem, estão lá. O gabarito cobre só o que o corpo do edital diz. Habilitação jurídica, fiscal, social, trabalhista e econômico-financeira 'abrangida pelo SICAF' (8.2, p. 16), sem lista de documentos: nenhuma certidão registrada. ME/EPP: itens pares em cota reservada exclusiva a ME/EPP e ímpares em cota principal (1.2, p. 3; 3.5-3.6, p. 4) = cota. DECISÃO DO AUGUSTO (critério comum 5): declaração de menor feita em campo do sistema no cadastramento da proposta (4.3.2, p. 6) entra. DECISÃO DO AUGUSTO (critério comum 1): registro de preços sem prazo de entrega no corpo do edital (o prazo de validade da ata está na minuta, não publicada) = prazo null. Garantia de proposta: null (12.9, p. 22, é texto padrão de sanção, sem percentual). Sem visita, consórcio, capital ou patrimônio no texto.",
   "exigencias": {
+    "atestados": [],
+    "capital_social_minimo": null,
+    "patrimonio_liquido_minimo": null,
+    "garantia_proposta_percentual": null,
+    "garantia_contratual_percentual": null,
+    "prazo_execucao_dias": null,
+    "visita_tecnica": null,
+    "consorcio": null,
     "me_epp": {
       "valor": "cota",
-      "trecho": "(Com itens Cota Principal e itens Cota Reservada)",
-      "pagina": 1,
+      "trecho": "Para os demais ITENS 02, 04, 06, 08, 10 e 12 ( Cota reservada ) a participação é exclusiva a microempresas e empresas de pequeno porte",
+      "pagina": 4,
       "conflito": false
     },
-    "atestados": [],
     "documentos": [
       {
         "valor": "declaracao_menor",

@@ -301,7 +301,7 @@ def test_preparar_grava_texto(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
 def test_preparar_mascara_cpf_e_rg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import httpx
 
-    import radar.analise
+    import radar.analise.pipeline
     from radar.analise import ClienteArquivosPNCP
     from radar.analise.extracao import TextoExtraido
 
@@ -327,7 +327,10 @@ def test_preparar_mascara_cpf_e_rg(tmp_path: Path, monkeypatch: pytest.MonkeyPat
         return ClienteArquivosPNCP(http, pausa_s=0, espera_base=0)
 
     monkeypatch.setattr(cli, "_criar_cliente_arquivos", cliente)
-    monkeypatch.setattr(radar.analise, "extrair_paginas", lambda dados: TextoExtraido([pagina], 0))
+    # O preparar extrai pelo pipeline (mesma leitura que o modelo recebe).
+    monkeypatch.setattr(
+        radar.analise.pipeline, "extrair_paginas", lambda dados: TextoExtraido([pagina], 0)
+    )
     resultado = runner.invoke(
         cli.app,
         ["avaliar", "preparar", "pncp~78200482000110-1-000298/2026", "--raiz", str(tmp_path)],

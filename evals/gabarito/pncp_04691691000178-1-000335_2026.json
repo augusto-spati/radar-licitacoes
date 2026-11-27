@@ -11,92 +11,107 @@
   "conferido": false,
   "conferido_por": null,
   "conferido_em": null,
-  "observacoes": "RASCUNHO DO CLAUDE, A CONFERIR PELO AUGUSTO: feito lendo o texto extraído (busca por palavras-chave nas seções de habilitação), sem rodar nenhum modelo avaliado. Exigência que a busca não achou pode estar faltando. SeMAE São José do Rio Preto, atendimento, leitura com entrega de faturas e vistorias (linha comercial). Sem capital nem patrimônio mínimo achados. Quantidades dos atestados são por ano (1.120.000 leituras/ano etc.); o atestado D é em postos de atendimento simultâneos/mês. Documentos da qualificação econômica além da falência (item C.2 em diante) não foram lidos: conferir balanço.",
+  "observacoes": "VALIDAÇÃO CRUZADA (rascunho + leitura cega + juiz adversarial, todos Claude; falta a conferência humana): SeMAE São José do Rio Preto/SP, PE 115/2026, atendimento, leitura com entrega de faturas, vistorias e arrecadação por POS (R$ 29.853.747,76). Habilitação no Anexo 12 (p. 202-204), com a qualificação técnica repetida no Memorial item 21 (p. 62-64). Atestados: quantidades por ano (e por mês no de atendimento); registrado o número absoluto escrito. DÚVIDA (p. 63 x p. 204): o atestado de vistoria com POS pede 'Comprovação mínima: 6.000/ano.' no Memorial 21.1-B (p. 63) e '12.000/ano.' no Anexo 12 F-1.2 (p. 204); ficou 12.000 (o Anexo 12 é a lista de habilitação e é o mais restritivo). DÚVIDA (p. 7): o edital 7.1 remete os documentos ao 'Anexo 10', que é o BDI; a lista real é o Anexo 12. DÚVIDA (p. 68): o Memorial 22 não lista certidão estadual, o Anexo 12 exige a de ICMS (B.3.2, aceita declaração de isenção); segui o Anexo 12. A prova de regularidade com o INSS (B.4) é a mesma certidão federal unificada (B.7). Visita facultativa e substituível por declaração (E.2, p. 203). Garantia de proposta: 'Não' (p. 1). Sem capital, patrimônio, índices ou balanço: a econômico-financeira só pede falência. O seguro de responsabilidade civil de 10% (G.2, p. 204) é entregue após a Ordem de Execução e não entrou. DECISÃO DO AUGUSTO: unidade do atestado de atendimento ficou 'postos' (a do texto); 'un' é a alternativa. Critérios comuns 1, 5 e 6 aplicados (prazo = execução de 12 meses; declaração de menor; CNPJ como 'outro').",
   "exigencias": {
+    "atestados": [
+      {
+        "descricao": "Leitura de medidores com impressão e entrega simultânea do resultado e rastreamento dos leituristas",
+        "quantidade": 1120000,
+        "unidade": "leitura",
+        "trecho": "Comprovação mínima: 1.120.000/ano.",
+        "pagina": 204
+      },
+      {
+        "descricao": "Vistoria para negociação de débitos com corte e arrecadação no local com máquina POS e software integrado via API",
+        "quantidade": 12000,
+        "unidade": "un",
+        "trecho": "Comprovação mínima: 12.000/ano.",
+        "pagina": 204
+      },
+      {
+        "descricao": "Vistorias técnicas com remoção de medidores para verificação de fraude em ligações de água",
+        "quantidade": 20000,
+        "unidade": "un",
+        "trecho": "Comprovação mínima: 20.000/ano.",
+        "pagina": 204
+      },
+      {
+        "descricao": "Atendimento de usuários (postos de atendimento simultâneos/mês)",
+        "quantidade": 40,
+        "unidade": "postos",
+        "trecho": "Comprovação mínima: 40 postos de atendimento",
+        "pagina": 204
+      }
+    ],
+    "capital_social_minimo": null,
+    "patrimonio_liquido_minimo": null,
+    "garantia_proposta_percentual": null,
     "garantia_contratual_percentual": {
-      "numero": "5",
-      "trecho": "em valor correspondente a 5% (cinco por cento) do valor total do contrato",
+      "numero": 5,
+      "trecho": "em valor correspondente a 5% (cinco por cento) do valor total",
       "pagina": 204,
       "conflito": false,
       "observacao": ""
     },
     "prazo_execucao_dias": {
-      "numero": "360",
-      "trecho": "Prazo de execução Em até 12 (doze) meses",
+      "numero": 360,
+      "trecho": "Em até 12 (doze) meses, conforme cronograma, a contar da",
       "pagina": 1,
       "conflito": false,
-      "observacao": ""
+      "observacao": "12 meses a contar da Ordem de Execução de Serviços"
+    },
+    "visita_tecnica": {
+      "valor": "facultativa",
+      "trecho": "licitante poderá realizar visita técnica aos locais e frentes representativas da operação",
+      "pagina": 203,
+      "conflito": false
     },
     "consorcio": {
       "valor": "permitido",
-      "trecho": "Admitir-se-á a participação de empresas isoladamente ou reunidas em consórcio",
-      "pagina": 24,
+      "trecho": "Permitida a participação de consórcio Sim, observadas as normas constantes no art. 15 da Lei 14.133/2021",
+      "pagina": 1,
       "conflito": false
     },
     "me_epp": {
       "valor": "ampla",
-      "trecho": "Benefícios ME/EPP Não",
+      "trecho": "Benefícios ME/EPP Não, conforme inc. I do §1º do art. 4º da Lei nº 14.133/2021",
       "pagina": 1,
       "conflito": false
     },
-    "atestados": [
-      {
-        "descricao": "Leitura de medidores com impressão e entrega simultânea e rastreamento",
-        "quantidade": "1120000",
-        "unidade": "leitura",
-        "trecho": "Comprovação mínima: 1.120.000/ano.",
-        "pagina": 63
-      },
-      {
-        "descricao": "Vistoria para negociação de débitos com corte e arrecadação com POS",
-        "quantidade": "6000",
-        "unidade": "un",
-        "trecho": "Comprovação mínima: 6.000/ano.",
-        "pagina": 63
-      },
-      {
-        "descricao": "Vistorias técnicas com remoção de medidores para verificação de fraude",
-        "quantidade": "20000",
-        "unidade": "un",
-        "trecho": "Comprovação mínima: 20.000/ano",
-        "pagina": 63
-      },
-      {
-        "descricao": "Atendimento de usuários (postos simultâneos/mês)",
-        "quantidade": "40",
-        "unidade": "postos",
-        "trecho": "Comprovação mínima: 40 postos de atendimento simultâneos/mês",
-        "pagina": 64
-      }
-    ],
     "documentos": [
       {
         "valor": "contrato_social",
-        "trecho": "Ato constitutivo, estatuto ou contrato social em vigor",
+        "trecho": "Ato constitutivo, estatuto ou contrato social em vigor, devidamente registrado na Junta",
+        "pagina": 202,
+        "conflito": false
+      },
+      {
+        "valor": "outro",
+        "trecho": "Prova de inscrição no Cadastro Nacional de Pessoas Jurídicas do Ministério da Fazenda",
         "pagina": 202,
         "conflito": false
       },
       {
         "valor": "certidao_federal",
-        "trecho": "Prova de regularidade para com as Fazendas Federal, Estadual e Municipal",
+        "trecho": "relativos a Tributos Federais e à Dívida Ativa da União, expedida pela Secretaria da Receita Federal",
         "pagina": 202,
         "conflito": false
       },
       {
         "valor": "certidao_estadual",
-        "trecho": "Prova de regularidade para com as Fazendas Federal, Estadual e Municipal",
+        "trecho": "Certidão de Regularidade de ICMS - Imposto sobre Circulação de Mercadorias e Serviços",
         "pagina": 202,
         "conflito": false
       },
       {
         "valor": "certidao_municipal",
-        "trecho": "Prova de regularidade para com as Fazendas Federal, Estadual e Municipal",
+        "trecho": "Certidão de Regularidade de ISSQN - Imposto sobre Serviço de Qualquer Natureza",
         "pagina": 202,
         "conflito": false
       },
       {
         "valor": "certidao_fgts",
-        "trecho": "Certificado de Regularidade do FGTS",
+        "trecho": "Prova de regularidade perante o Fundo de Garantia por Tempo de Serviço (FGTS)",
         "pagina": 202,
         "conflito": false
       },
@@ -110,6 +125,12 @@
         "valor": "certidao_falencia",
         "trecho": "Certidão negativa de falência expedida pelo distribuidor da sede da pessoa jurídica",
         "pagina": 202,
+        "conflito": false
+      },
+      {
+        "valor": "declaracao_menor",
+        "trecho": "não emprega menor de 18 anos em trabalho noturno, perigoso ou insalubre",
+        "pagina": 203,
         "conflito": false
       }
     ]

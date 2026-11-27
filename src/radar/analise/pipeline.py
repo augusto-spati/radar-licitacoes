@@ -291,6 +291,19 @@ def _extrator(dados: bytes) -> Callable[[bytes], TextoExtraido] | None:
     return None
 
 
+def abrir_documento(
+    dados: bytes, titulo: str
+) -> tuple[bytes, str, Callable[[bytes], TextoExtraido] | None]:
+    """O que o pipeline lê de um documento baixado: abre ZIP, devolve título e extrator.
+
+    Usado também por `radar avaliar preparar`, para o texto do eval ser o mesmo que o modelo
+    recebe. Extrator None = documento sem texto útil (`nao_pdf`).
+    """
+    valores: dict[str, Any] = {"titulo": titulo}
+    aberto = _abrir_se_pacote(dados, valores)
+    return aberto, str(valores["titulo"]), _extrator(aberto)
+
+
 def _arquivos_da_fonte(alvo: AlvoAnalise, dep: Dependencias) -> tuple[Baixador, list[ArquivoPNCP]]:
     """Quem baixa e o quê: API do PNCP, anexos guardados da Sanepar, portal/nuvem da Compesa."""
     if alvo.fonte == "pncp":
