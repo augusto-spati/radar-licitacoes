@@ -18,6 +18,7 @@ from radar.precos import (
     extrair_dn,
     faixa_profundidade,
     normalizar_unidade,
+    secao_de_ramal,
     sem_acento,
     tem_termo,
 )
@@ -532,3 +533,167 @@ def test_tcepe_de_teste_sem_mudanca() -> None:
         "63515394": ("escavacao_vala", None, None, None, "ate_1_5m"),
         "63515395": ("escavacao_vala", None, None, None, "ate_1_5m"),
     }
+
+
+# --- 7b.2: linhas reais da rodada de 2026-11-27 (PNCP) e do spike, depois do leitor ---
+
+AGUA = Contexto("agua")
+# SINAPI "PARA REDE DE ÁGUA OU ESGOTO" (Santa Bárbara d'Oeste, seção de adutora).
+PEAD_AGUA_OU_ESGOTO = (
+    "ASSENTAMENTO DE TUBO PEAD LISO PARA REDE DE ÁGUA OU ESGOTO, DIÂMETRO DE 110 MM, JUNTA "
+    "SOLDADA (NÃO INCLUI A EXECUÇÃO DE SOLDA)"
+)
+
+
+@pytest.mark.parametrize(
+    ("descricao", "unidade", "contexto", "esperado"),
+    [
+        # PNCP 25269069000146-1-000045/2026 (materiais hidráulicos): o tubo, por metro.
+        (
+            "TUBO EM FERRO FUNDIDO DÚCTIL PONTA/BOLSA, K7, DN 400 MM, CONFORME NBR 7675, PARA "
+            "ÁGUA BRUTA OU TRATADA.",
+            "METRO",
+            None,
+            _rede("rede_agua", "fofo", 400, "material"),
+        ),
+        (
+            "TUBO 100MM PARA ESGOTO FABRICADO EM PVC OCRE LISO JEI PARA REDE COLETORA DE ESGOTO "
+            "SANITÁRIO, FABRICADO DE ACORDO COM A NORMA NBR 10569, 10570, 7362-1.",
+            "METRO",
+            None,
+            _rede("rede_esgoto", "pvc", 100, "material"),
+        ),
+        (
+            "TUBO EM PVC NA COR MARROM CLASSE 15,JEI(JUNTA ELÁSTICA INTEGRADA INCLUSA) "
+            "DIÂMETRO:DN 50MM X DE 60MM,PONTA E BOLSA,PARA O SISTEMA DE ADUÇÃO E DISTRIBUIÇÃO DE "
+            "ÁGUA TRATADA",
+            "METRO",
+            None,
+            _rede("rede_agua", "pvc", 50, "material"),
+        ),
+        # PBA é PVC de água, mesmo sem "PVC" na linha.
+        ("TUBO PBA JE DN 100 CLASSE 15", "mts", AGUA, _rede("rede_agua", "pvc", 100, "material")),
+        # PNCP 76995422000106-1-000127/2026 (sistemas rurais de abastecimento).
+        (
+            "Tubo PEAD PE80 DN 50 mm PN 12,5, próprio para adução de água potável em sistemas "
+            "rurais de abastecimento",
+            "Metros",
+            AGUA,
+            _rede("rede_agua", "pead", 50, "material"),
+        ),
+        # "Água ou esgoto": a linha da obra desempata.
+        (
+            PEAD_AGUA_OU_ESGOTO,
+            "M",
+            AGUA_ADUTORA,
+            replace(_rede("rede_agua", "pead", 110, "assentamento"), observacao="adutora"),
+        ),
+        (PEAD_AGUA_OU_ESGOTO, "M", ESGOTO, _rede("rede_esgoto", "pead", 110, "assentamento")),
+        (
+            PEAD_AGUA_OU_ESGOTO.replace("ÁGUA OU ESGOTO", "ÁGUA/ESGOTO"),
+            "M",
+            ESGOTO,
+            _rede("rede_esgoto", "pead", 110, "assentamento"),
+        ),
+    ],
+)
+def test_planilhas_do_pncp_classificam(
+    descricao: str, unidade: str, contexto: Contexto | None, esperado: Classificacao
+) -> None:
+    assert classificar(descricao, unidade, contexto=contexto) == esperado
+
+
+@pytest.mark.parametrize(
+    ("descricao", "unidade", "contexto"),
+    [
+        # "Água ou esgoto" sem a linha da obra continua fora.
+        (PEAD_AGUA_OU_ESGOTO, "M", None),
+        (PEAD_AGUA_OU_ESGOTO, "M", Contexto(None)),
+        # Conexão e junta da mesma composição não são metro de rede.
+        (
+            "ASSENTAMENTO DE CONEXÃO COM 2 ACESSOS, EM PEAD LISO PARA REDE DE ÁGUA OU ESGOTO, "
+            "DIÂMETRO DE 110 MM, JUNTA SOLDADA (NÃO INCLUI O FORNECIMENTO)",
+            "UNID",
+            AGUA_ADUTORA,
+        ),
+        (
+            "EXECUÇÃO DE JUNTA SOLDADA POR TERMOFUSÃO, DE TUBO OU CONEXÃO EM PEAD LISO PARA "
+            "REDE DE ÁGUA OU ESGOTO, DIÂMETRO DE 110 MM",
+            "UNID",
+            AGUA_ADUTORA,
+        ),
+        # Ferro fundido sem água nem esgoto (objeto cita os dois): fica sem.
+        (
+            "TUBO DN 300MM DE FERRO FUNDIDO, CLASSE K7 COM JUNTAS JGS, FABRICADO EM FERRO "
+            "FUNDIDO DÚCTIL CONFORME NORMA NBR 7675, DN 300MM.",
+            "METRO",
+            Contexto(None),
+        ),
+        ('TUBO PEAD PE 80 RAMAL PREDIAL AZUL, DN 20MM (1/2"), CONFORME NBR', "METRO", None),
+        (
+            "TUBO EM PVC SOLDÁVEL CLASSE 15, DIÂMETRO: DE 20MM, NA COR MARROM, EM SISTEMA DE "
+            "JUNTA SOLDÁVEL COM PONTA E BOLSA PARA 75 MCA DE PRESSÃO DE SERVIÇO",
+            "METRO",
+            AGUA,
+        ),
+        ("TUBO CONCRETO 0,80X1,00MT MF. CLASSE PA-1 M/F SEÇÃO CIRCULAR", "METRO", ESGOTO),
+        (
+            "LUVA DE FERRO FUNDIDO DUCTIL, COM BOLSAS, ( LJGS), DN 400 MM, CONFORME NBR 7675, "
+            "PARA ÁGUA BRUTA OU TRATADA.",
+            "UNIDADE",
+            None,
+        ),
+        ("União PEAD DN 50 mm para interligação de adutora de água potável", "Und", AGUA),
+        (
+            "Cabo PP flexível 3x10 mm² em cobre, isolação mínima 0,6/1kV, próprio para "
+            "instalação submersa de bomba em poço tubular profundo",
+            "Metro",
+            AGUA,
+        ),
+        (
+            "HIDRÔMETRO R100, Q3 = 1,6 M³/H, Q4 = 2,00 M³/H, H (HORIZONTAL), T50, MULTIJATO, "
+            'DN 1/2", CLASSE B',
+            "UNIDADE",
+            None,
+        ),
+        # Spike: MND e escavação com faixa que atravessa 1,5 m continuam fora.
+        (
+            "Tubo PEAD liso DE 250 mm PE100 (com lista ocre), adequado à instalação por MND",
+            "m",
+            ESGOTO,
+        ),
+        ("Escavação mecanizada de valas prof. até 2,20m largura 0,80m", "m³", ESGOTO),
+        # Seção de ramal: o tubo é do ramal (Ribeirão Preto, "4.0 Ramal").
+        (
+            "Tubo, PVC Ocre, DN 100 - fornec./assent.",
+            "m",
+            Contexto("esgoto", ramal=True),
+        ),
+    ],
+)
+def test_planilhas_do_pncp_nao_classificam(
+    descricao: str, unidade: str, contexto: Contexto | None
+) -> None:
+    assert classificar(descricao, unidade, contexto=contexto) is None
+
+
+def test_secao_de_ramal_tira_so_a_rede() -> None:
+    ramal = Contexto("esgoto", ramal=True)
+    assert classificar("Ligação de esgoto completa com tubo PVC Ø 100 mm", "unid", contexto=ramal)
+    assert classificar("Tubo, PVC Ocre, DN 100 - fornec./assent.", "m", contexto=ESGOTO)
+
+
+@pytest.mark.parametrize(
+    ("secao", "esperado"),
+    [
+        ("Ramal", True),
+        ("LIGAÇÕES DOMICILIARES DE ESGOTO", True),
+        ("Ramais prediais", True),
+        ("REDE COLETORA E RAMAIS", False),
+        ("Coletor", False),
+        ("EXECUÇÃO ADUTORA", False),
+        (None, False),
+    ],
+)
+def test_secao_de_ramal(secao: str | None, esperado: bool) -> None:
+    assert secao_de_ramal(secao) is esperado

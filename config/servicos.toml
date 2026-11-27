@@ -10,7 +10,9 @@
 # Serviço de rede (com `materiais`) exige material reconhecível, DN dentro de [dn_min, dn_max]
 # e escopo claro (só o tubo, só o assentamento ou os dois); sem um deles o item fica sem serviço.
 # Linha de rede que cita água e esgoto ("PARA REDE DE AGUA OU ESGOTO") também fica sem, assim
-# como um item que casa com mais de um serviço.
+# como um item que casa com mais de um serviço. Exceção (7b.2): na planilha do PNCP, "água ou
+# esgoto" (ou "água/esgoto") é a composição genérica do SINAPI e a linha da obra (seção ou
+# objeto) desempata; em seção só de ramais ("4.0 Ramal") nenhum item é metro de rede.
 
 # Pré-filtro dos processos do TCE-PE (`radar.precos.tcepe.processo_de_saneamento`): substring
 # sobre o objeto, sem acento, sem palavras vazias e no singular. Os termos das linhas `redes` e
@@ -181,10 +183,12 @@ ml = "1"
 mt = "1"
 metro = "1"
 metros = "1"
+mts = "1"
 km = "1000"
 [[servico.materiais]]
 nome = "pvc"
-termos = ["pvc", "defofo"]
+# PBA é o tubo de PVC da rede de água ("TUBO PBA JE DN 100").
+termos = ["pvc", "defofo", "pba"]
 [[servico.materiais]]
 nome = "pead"
 termos = ["pead", "polietileno"]
@@ -221,6 +225,7 @@ ml = "1"
 mt = "1"
 metro = "1"
 metros = "1"
+mts = "1"
 km = "1000"
 [[servico.materiais]]
 nome = "pvc"

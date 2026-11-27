@@ -213,3 +213,17 @@ def test_dn_nao_se_ancora_na_quantidade() -> None:
     for forma in ("DN 100", "DN100", "Ø100", "100 mm"):
         com_dn = sem_dn.replace("PVC", f"PVC {forma}")
         assert len(linhas_da_ia([linha], com_dn, total_planilha="5.000,00")) == 1, forma
+
+
+def test_tubo_da_secao_de_ramal_nao_e_rede() -> None:
+    """Ribeirão Preto (Anexo IV do ZIP): o mesmo tubo em "Coletor" é rede; em "Ramal", não."""
+
+    def tubo(item: str, secao: str) -> LinhaPlanilha:
+        dn = "100" if secao == "Ramal" else "150"
+        descricao = f"Tubo, PVC Ocre, DN {dn} - fornec./assent."
+        return replace(_linha(item, "120", "100"), descricao=descricao, secao=secao)
+
+    itens = itens_da_planilha(RIBEIRAO, SHA, [tubo("2.11", "Coletor"), tubo("4.12", "Ramal")])
+    assert [(i.chave_origem.rsplit("#", 1)[-1], i.servico, i.dn) for i in itens] == [
+        ("2.11", "rede_esgoto", 150)
+    ]
