@@ -135,7 +135,9 @@ class PrecoItemNovo:
     observacao: str | None = None
 
 
-StatusPlanilha = Literal["extraida", "sem_planilha", "pulado_teto", "falhou", "republicada"]
+StatusPlanilha = Literal[
+    "extraida", "sem_planilha", "pulado_teto", "falhou", "republicada", "ia_invalida", "aguarda_ia"
+]
 STATUS_PLANILHA: tuple[str, ...] = get_args(StatusPlanilha)
 MetodoPlanilha = Literal["deterministico", "ia"]
 METODOS_PLANILHA: tuple[str, ...] = get_args(MetodoPlanilha)
@@ -146,9 +148,11 @@ class PlanilhaEdital(Base):
 
     `extraida`: linhas lidas (determinístico ou IA) e as com serviço gravadas em `preco_item`;
     `sem_planilha`: nada achado (não reprocessa); `pulado_teto`: a IA passaria do teto (tenta
-    de novo no mês seguinte); `falhou`: erro (tenta de novo depois de uma semana);
-    `republicada`: a mesma planilha saiu num edital mais novo (`republicada_em`), onde as
-    linhas ficaram.
+    de novo no mês seguinte); `falhou`: erro (tenta de novo com espera que dobra a cada
+    tentativa: 7, 14, 28, 56 dias); `republicada`: a mesma planilha saiu num edital mais novo
+    (`republicada_em`), onde as linhas ficaram; `ia_invalida`: a IA foi paga e a resposta não
+    serviu (inválida ou cortada em `max_tokens`): não compra de novo (só com `--refazer` ou
+    `--edital`); `aguarda_ia`: pede IA e ela está desligada (volta quando a IA for ligada).
     """
 
     __tablename__ = "planilha_edital"
@@ -177,6 +181,23 @@ class PlanilhaEdital(Base):
     custo_usd: Mapped[Decimal] = mapped_column(Numeric, default=Decimal(0), server_default="0")
     republicada_em: Mapped[str | None] = mapped_column(Text)
     motivo: Mapped[str | None] = mapped_column(Text)
+    # Falhas seguidas (zera em qualquer outro estado): dobra a espera de `falhou`.
+    tentativas: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     processada_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class GastoPlanilha(Base):
+    """Cada chamada paga da IA da 7b.2 (válida, inválida ou de um edital que falhou depois).
+
+    O teto mensal da 7b.2 soma esta tabela, não `planilha_edital.custo_usd` (que é
+    sobrescrito quando o edital é refeito). Acerto de cache não paga e não entra.
+    """
+
+    __tablename__ = "gasto_planilha"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id_pncp: Mapped[str] = mapped_column(Text)
+    custo_usd: Mapped[Decimal] = mapped_column(Numeric)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

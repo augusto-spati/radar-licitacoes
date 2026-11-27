@@ -185,3 +185,36 @@ def test_copia_repetida_conta_uma() -> None:
 def test_pagina_de_composicao() -> None:
     assert pagina_de_composicao("COMPOSIÇÕES - AD CINTEC_META 6\nTOTAL DA COMPOSIÇÃO 1,80")
     assert not pagina_de_composicao("2.1 ADMINISTRAÇÃO LOCAL CP-01 COMPOSICAO ago/26 MÊS 6,00")
+
+
+# --- BDI: só o plausível (5% a 45%) e coerente com o com e o sem ---
+
+
+def _uma(linha: str) -> LinhaPlanilha:
+    (lida,) = ler_planilha([linha])
+    return lida
+
+
+def test_peso_da_curva_abc_nao_e_bdi() -> None:
+    lida = _uma("1.1 Tubo PVC DN 150 m 10,00 90,00 112,50 1.125,00 0,35%")
+    assert (lida.preco_sem_bdi, lida.preco_com_bdi, lida.bdi) == (
+        Decimal("90.00"),
+        Decimal("112.50"),
+        None,
+    )
+
+
+def test_bdi_da_linha_que_nao_confere_com_sem_e_com_e_ignorado() -> None:
+    assert _uma("1.1 Tubo PVC DN 150 m 10,00 90,00 112,50 1.125,00 30,00%").bdi is None
+    assert _uma("1.1 Tubo PVC DN 150 m 10,00 90,00 112,50 1.125,00 25,00%").bdi == Decimal("0.25")
+
+
+def test_material_mais_mao_de_obra_nao_e_sem_bdi() -> None:
+    # Material 30 + mão de obra 70 = unitário 100: nenhum dos dois é o "sem BDI".
+    assert _uma("1.1 Tubo PVC DN 150 m 10,00 30,00 70,00 100,00 1.000,00").preco_sem_bdi is None
+    com_totais = _uma("1.1 Tubo PVC DN 150 m 10,00 30,00 300,00 70,00 700,00 100,00 1.000,00")
+    assert (com_totais.preco_sem_bdi, com_totais.preco_com_bdi) == (None, Decimal("100.00"))
+
+
+def test_razao_fora_da_faixa_nao_e_sem_bdi() -> None:
+    assert _uma("1.1 Tubo PVC DN 150 m 10,00 50,00 112,50 1.125,00").preco_sem_bdi is None

@@ -23,13 +23,14 @@ import json
 import logging
 import re
 import tomllib
+import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from radar.analise.arquivos_pncp import ArquivoPNCP, escolher_documentos
+from radar.analise.arquivos_pncp import ArquivoPNCP, GrandeDemais, escolher_documentos
 from radar.analise.cache import ProvedorComCache
 from radar.analise.custos import estimar
 from radar.analise.extracao import ErroExtracao, eh_pdf, extrair_paginas
@@ -58,6 +59,9 @@ class ConfigPlanilhas:
     max_tokens: int
     limite_download_bytes: int
     max_downloads: int
+    # Por edital, dentro dos ZIPs: PDFs com nome de planilha lidos e bytes descompactados.
+    max_planilhas_por_edital: int
+    limite_descompactado_bytes: int
 
 
 def carregar_config_planilhas(caminho: Path) -> ConfigPlanilhas:
@@ -78,6 +82,8 @@ def carregar_config_planilhas(caminho: Path) -> ConfigPlanilhas:
         max_tokens=int(secao["max_tokens"]),
         limite_download_bytes=int(secao["limite_download_bytes"]),
         max_downloads=int(secao["max_downloads"]),
+        max_planilhas_por_edital=int(secao["max_planilhas_por_edital"]),
+        limite_descompactado_bytes=int(secao["limite_descompactado_bytes"]),
     )
     teto_ia = Decimal(str(dados["teto_mensal_usd"]))
     if not Decimal(0) < config.teto_edital_usd <= config.teto_mensal_usd <= teto_ia:
@@ -133,6 +139,9 @@ class Busca:
     editais: list[DocumentoPlanilha]
     sequenciais_baixados: set[int]
     downloads: int = 0
+    descompactados: int = 0
+    # Entradas puladas (grandes demais, acima do teto do edital ou do número de planilhas).
+    puladas: int = 0
 
 
 Baixar = Callable[[str, int], bytes]
@@ -168,7 +177,26 @@ def _ordem_de_download(arquivos: list[ArquivoPNCP]) -> list[ArquivoPNCP]:
     return sorted(nomeados, key=lambda a: a.sequencial) + sorted(outros, key=lambda a: a.sequencial)
 
 
-def _abrir_zip(nome_zip: str, dados: bytes, busca: Busca) -> None:
+def _ler_do_zip(
+    pacote: zipfile.ZipFile, nome: str, busca: Busca, config: ConfigPlanilhas
+) -> bytes | None:
+    """A entrada, ou None (pulada) se for grande demais ou estourar o teto do edital."""
+    declarado = pacote.getinfo(nome).file_size
+    if busca.descompactados + declarado > config.limite_descompactado_bytes:
+        busca.puladas += 1
+        logger.warning("planilha_zip_teto_do_edital", extra={"bytes": declarado})
+        return None
+    try:
+        dados = ler_entrada(pacote, nome)
+    except GrandeDemais:
+        busca.puladas += 1
+        logger.warning("planilha_zip_entrada_grande", extra={"bytes": declarado})
+        return None
+    busca.descompactados += len(dados)
+    return dados
+
+
+def _abrir_zip(nome_zip: str, dados: bytes, busca: Busca, config: ConfigPlanilhas) -> None:
     pacote = ler_pacote(dados)
     if pacote is None:
         return
@@ -178,15 +206,19 @@ def _abrir_zip(nome_zip: str, dados: bytes, busca: Busca) -> None:
             legivel_ = legivel(nome)
             if not sem_acento(legivel_).endswith(".pdf") or not nome_de_planilha(legivel_):
                 continue
-            if (doc := _documento(legivel_, ler_entrada(pacote, nome))) is not None:
+            if len(busca.planilhas) >= config.max_planilhas_por_edital:
+                busca.puladas += 1
+                continue
+            entrada = _ler_do_zip(pacote, nome, busca, config)
+            if entrada is not None and (doc := _documento(legivel_, entrada)) is not None:
                 busca.planilhas.append(doc)
         if busca.planilhas:
             return
         for escolhido in escolher_no_pacote(nomes):
             if escolhido.tipo not in ("Edital", "Termo de referência"):
                 continue
-            entrada = ler_entrada(pacote, escolhido.nome)
-            if (doc := _documento(legivel(escolhido.nome), entrada)) is not None:
+            entrada = _ler_do_zip(pacote, escolhido.nome, busca, config)
+            if entrada is not None and (doc := _documento(legivel(escolhido.nome), entrada)):
                 busca.editais.append(doc)
     logger.debug("planilha_zip_aberto", extra={"zip": nome_zip})
 
@@ -203,9 +235,11 @@ def procurar_planilhas(
         busca.downloads += 1
         busca.sequenciais_baixados.add(arquivo.sequencial)
         if dados[:4] == b"PK\x03\x04":
-            _abrir_zip(arquivo.titulo, dados, busca)
+            _abrir_zip(arquivo.titulo, dados, busca, config)
         elif nome_de_planilha(arquivo.titulo):
-            if (doc := _documento(arquivo.titulo, dados)) is not None:
+            if len(busca.planilhas) >= config.max_planilhas_por_edital:
+                busca.puladas += 1
+            elif (doc := _documento(arquivo.titulo, dados)) is not None:
                 busca.planilhas.append(doc)
     return busca
 
@@ -283,6 +317,15 @@ class PuladoTeto(Exception):
     """A estimativa da chamada passaria do teto por edital ou do teto mensal da 7b.2."""
 
 
+class PlanilhaIAInvalida(Exception):
+    """A IA respondeu (e cobrou, quando não veio do cache) e a resposta não serve: inválida,
+    sem a lista de linhas ou cortada em `max_tokens`. `custo_usd` é o que esta chamada custou."""
+
+    def __init__(self, mensagem: str, custo_usd: Decimal) -> None:
+        super().__init__(mensagem)
+        self.custo_usd = custo_usd
+
+
 @dataclass(frozen=True)
 class RespostaPlanilhaIA:
     linhas: list[dict[str, Any]]
@@ -300,6 +343,7 @@ def pedido_planilha(texto: str, modelo: str, config: ConfigPlanilhas) -> Pedido:
         texto=delimitado,
         esquema=esquema_planilha(),
         max_tokens=config.max_tokens,
+        recusar_truncada=True,
     )
 
 
@@ -312,7 +356,9 @@ def extrair_planilha_ia(
     gasto_mes_usd: Decimal,
 ) -> RespostaPlanilhaIA:
     """Uma chamada (ou o cache). `PuladoTeto` antes de chamar se a estimativa não couber;
-    `TetoAtingido` e `RespostaAusente` propagam do provedor; resposta inválida → `ErroProvedor`.
+    `TetoAtingido` e `RespostaAusente` propagam do provedor; resposta paga que não serve →
+    `PlanilhaIAInvalida` com o custo. O custo é medido no provedor (antes e depois): acerto de
+    cache custa zero, chamada inválida custa o que custou.
     """
     pedido = pedido_planilha(texto, modelo, config)
     estimativa = estimar(pedido, config_ia.preco(modelo))
@@ -326,15 +372,18 @@ def extrair_planilha_ia(
             f"US$ {config.teto_mensal_usd}"
         )
     antes = provedor.custo_usd
-    resposta = provedor.gerar(pedido)
+    try:
+        resposta = provedor.gerar(pedido)
+    except ErroProvedor as erro:
+        raise PlanilhaIAInvalida(str(erro), provedor.custo_usd - antes) from erro
     custo = provedor.custo_usd - antes
     try:
         dados = json.loads(resposta.texto)
     except ValueError as erro:
-        raise ErroProvedor("resposta da planilha não é JSON") from erro
+        raise PlanilhaIAInvalida("resposta da planilha não é JSON", custo) from erro
     linhas = dados.get("linhas") if isinstance(dados, dict) else None
     if not isinstance(linhas, list):
-        raise ErroProvedor("resposta da planilha sem a lista de linhas")
+        raise PlanilhaIAInvalida("resposta da planilha sem a lista de linhas", custo)
     return RespostaPlanilhaIA(
         linhas=[linha for linha in linhas if isinstance(linha, dict)],
         total_planilha=dados.get("total_planilha"),

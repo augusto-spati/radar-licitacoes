@@ -62,3 +62,7 @@ max_tokens = 5000
 limite_download_bytes = 40000000
 # Downloads por edital (título de planilha, "outros documentos", ZIPs, edital e TR).
 max_downloads = 6
+# Dentro dos ZIPs, por edital: PDFs com nome de planilha lidos e bytes descompactados. Entrada
+# grande demais ou acima do teto é pulada (o edital segue com o resto).
+max_planilhas_por_edital = 5
+limite_descompactado_bytes = 100000000

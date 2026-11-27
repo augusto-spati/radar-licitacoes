@@ -11,6 +11,7 @@ from radar.precos.consulta import (
 from radar.precos.modelos import (
     ORIGENS,
     STATUS_PLANILHA,
+    GastoPlanilha,
     Origem,
     PlanilhaEdital,
     PrecoItem,
@@ -32,6 +33,7 @@ from radar.precos.planilhas import (
     gravar_planilha,
     itens_da_planilha,
     planilhas_a_ignorar,
+    registrar_gasto_planilha,
     registrar_planilha,
 )
 from radar.precos.servicos import (
@@ -84,6 +86,8 @@ __all__ = [
     "pagina_de_composicao",
     "planilhas_a_ignorar",
     "registrar_planilha",
+    "registrar_gasto_planilha",
+    "GastoPlanilha",
     "CASOS_MINIMOS",
     "CASOS_REDE",
     "CASOS_UF",

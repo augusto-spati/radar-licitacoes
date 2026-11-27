@@ -8,8 +8,9 @@ compõe com os documentos e a IA é a CLI.
 - Classificação com o contexto da obra: título da seção da planilha e, sem ele, o objeto.
 - BDI: com e sem BDI na linha → `bdi = com ÷ sem − 1` (ou o `%` da linha); um preço só e
   nenhum BDI declarado → `bdi_desconhecido` (regra da 7b.1). Compara-se sempre o com BDI.
-- Republicação: a mesma planilha (sha256) ou, do mesmo órgão, 80%+ das linhas com o mesmo
-  (código, quantidade, preço) de outro edital já gravado. As linhas ficam uma vez só, no edital
+- Republicação: a mesma planilha (sha256) ou, do mesmo órgão, 80%+ das linhas (das duas
+  planilhas: um lote só de uma planilha de vários não conta) com o mesmo (código,
+  quantidade, preço) de outro edital já gravado. As linhas ficam uma vez só, no edital
   processado por último (a rodada vai do mais antigo ao mais novo); o anterior vira
   `republicada`.
 """
@@ -26,6 +27,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from radar.precos.modelos import (
+    GastoPlanilha,
     MetodoPlanilha,
     Origem,
     PlanilhaEdital,
@@ -33,7 +35,7 @@ from radar.precos.modelos import (
     PrecoItemNovo,
     StatusPlanilha,
 )
-from radar.precos.planilha_leitura import LinhaPlanilha
+from radar.precos.planilha_leitura import LinhaPlanilha, bdi_plausivel
 from radar.precos.servicos import Servico, classificar, contexto_da_obra
 from radar.precos.tcepe import gravar_precos
 
@@ -44,7 +46,7 @@ REPUBLICACAO_MINIMA = Decimal("0.8")
 LINHAS_MINIMAS_REPUBLICACAO = 3
 # `falhou` tenta de novo depois disso; `pulado_teto`, no mês seguinte.
 ESPERA_FALHA = timedelta(days=7)
-_FINAIS = ("extraida", "sem_planilha", "republicada")
+_FINAIS = ("extraida", "sem_planilha", "republicada", "ia_invalida")
 
 type _Assinatura = tuple[str | None, Decimal | None, Decimal | None]
 
@@ -70,10 +72,13 @@ class Gravacao:
 
 
 def _bdi(linha: LinhaPlanilha) -> tuple[Decimal | None, bool]:
-    if linha.bdi is not None:
+    """BDI da linha (já conferido na leitura) ou com ÷ sem − 1, só se plausível (5% a 45%)."""
+    if linha.bdi is not None and bdi_plausivel(linha.bdi):
         return linha.bdi, False
     if linha.preco_sem_bdi is not None and linha.preco_sem_bdi > 0:
-        return (linha.preco_com_bdi / linha.preco_sem_bdi - 1).quantize(Decimal("0.0001")), False
+        razao = (linha.preco_com_bdi / linha.preco_sem_bdi - 1).quantize(Decimal("0.0001"))
+        if bdi_plausivel(razao):
+            return razao, False
     return None, True
 
 
@@ -140,33 +145,56 @@ def _inicio_do_mes(agora: datetime) -> datetime:
     return agora.astimezone(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
 
-def planilhas_a_ignorar(sessao: Session, agora: datetime) -> set[str]:
-    """Editais que a rodada não refaz: estado final, `falhou` há menos de 7 dias ou
-    `pulado_teto` neste mês."""
-    consulta = select(PlanilhaEdital.id_pncp).where(
-        or_(
-            PlanilhaEdital.status.in_(_FINAIS),
-            and_(
-                PlanilhaEdital.status == "falhou",
-                PlanilhaEdital.processada_em > agora - ESPERA_FALHA,
-            ),
-            and_(
-                PlanilhaEdital.status == "pulado_teto",
-                PlanilhaEdital.processada_em >= _inicio_do_mes(agora),
-            ),
-        )
+def _espera_da_falha(tentativas: int) -> timedelta:
+    """7, 14, 28, 56 dias: dobra a cada falha seguida (para em 56)."""
+    fator: int = 2 ** (min(max(tentativas, 1), 4) - 1)
+    return ESPERA_FALHA * fator
+
+
+def planilhas_a_ignorar(sessao: Session, agora: datetime, ia_ligada: bool = True) -> set[str]:
+    """Editais que a rodada não refaz: estado final (`extraida`, `sem_planilha`, `republicada`,
+    `ia_invalida`), `falhou` dentro da espera (que dobra), `pulado_teto` neste mês e, com a IA
+    desligada, `aguarda_ia`."""
+    finais = [*_FINAIS, *(() if ia_ligada else ("aguarda_ia",))]
+    ignorar = set(
+        sessao.scalars(
+            select(PlanilhaEdital.id_pncp).where(
+                or_(
+                    PlanilhaEdital.status.in_(finais),
+                    and_(
+                        PlanilhaEdital.status == "pulado_teto",
+                        PlanilhaEdital.processada_em >= _inicio_do_mes(agora),
+                    ),
+                )
+            )
+        ).all()
     )
-    return set(sessao.scalars(consulta).all())
+    falhas = sessao.execute(
+        select(
+            PlanilhaEdital.id_pncp, PlanilhaEdital.tentativas, PlanilhaEdital.processada_em
+        ).where(PlanilhaEdital.status == "falhou")
+    ).all()
+    ignorar.update(
+        f.id_pncp for f in falhas if f.processada_em > agora - _espera_da_falha(f.tentativas)
+    )
+    return ignorar
 
 
 def gasto_planilhas_do_mes(sessao: Session, agora: datetime) -> Decimal:
-    """Custo da IA da 7b.2 no mês UTC de `agora` (teto próprio, dentro do teto da IA)."""
+    """Custo da IA da 7b.2 no mês UTC de `agora`: toda chamada paga, válida ou não."""
     total = sessao.scalar(
-        select(func.coalesce(func.sum(PlanilhaEdital.custo_usd), 0)).where(
-            PlanilhaEdital.processada_em >= _inicio_do_mes(agora)
+        select(func.coalesce(func.sum(GastoPlanilha.custo_usd), 0)).where(
+            GastoPlanilha.criado_em >= _inicio_do_mes(agora)
         )
     )
     return Decimal(total or 0)
+
+
+def registrar_gasto_planilha(sessao: Session, id_pncp: str, custo_usd: Decimal) -> None:
+    """Anota uma chamada paga (sem commit). Custo zero (acerto de cache) não é anotado."""
+    if custo_usd > 0:
+        sessao.add(GastoPlanilha(id_pncp=id_pncp, custo_usd=custo_usd))
+        sessao.flush()
 
 
 def registrar_planilha(
@@ -196,14 +224,16 @@ def registrar_planilha(
         "custo_usd": custo_usd,
         "republicada_em": None,
         "motivo": motivo,
+        "tentativas": 1 if status == "falhou" else 0,
         "processada_em": func.now(),
     }
     comando = insert(PlanilhaEdital).values(**valores)
+    atualizar: dict[str, Any] = {
+        k: comando.excluded[k] for k in valores if k not in ("id_pncp", "tentativas")
+    }
+    atualizar["tentativas"] = PlanilhaEdital.__table__.c.tentativas + 1 if status == "falhou" else 0
     sessao.execute(
-        comando.on_conflict_do_update(
-            index_elements=[PlanilhaEdital.id_pncp],
-            set_={k: comando.excluded[k] for k in valores if k != "id_pncp"},
-        )
+        comando.on_conflict_do_update(index_elements=[PlanilhaEdital.id_pncp], set_=atualizar)
     )
 
 
@@ -242,7 +272,10 @@ def _republicadas(
                 ).where(PrecoItem.origem == ORIGEM, PrecoItem.processo == outro)
             ).all()
             antiga: set[_Assinatura] = {(c, q, p) for c, q, p in linhas}
-            if antiga and Decimal(len(nova & antiga)) >= REPUBLICACAO_MINIMA * len(nova):
+            # Simétrico: a nova não pode ser só um pedaço da antiga (um lote de várias), nem a
+            # antiga um pedaço da nova; senão as linhas do outro edital seriam apagadas.
+            maior = max(len(nova), len(antiga))
+            if antiga and Decimal(len(nova & antiga)) >= REPUBLICACAO_MINIMA * maior:
                 mesma.add(outro)
     return sorted(mesma)
 

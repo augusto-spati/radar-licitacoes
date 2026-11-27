@@ -15,16 +15,19 @@ Descrição quebrada em várias linhas: junta as linhas desde o último número 
 """
 
 import re
+import unicodedata
 from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
-from radar.precos.servicos import normalizar_unidade, sem_acento
+from radar.precos.servicos import extrair_dn, normalizar_unidade, sem_acento
 
 TOLERANCIA_RELATIVA = Decimal("0.003")
 TOLERANCIA_ABSOLUTA = Decimal("0.05")
-# Unitário sem BDI logo antes do com BDI: com ÷ sem em (1; 1,6].
-RAZAO_BDI_MAX = Decimal("1.6")
+# BDI plausível de obra (fração): fora disso o "%" da linha é outra coisa ("Peso (%)" da
+# curva ABC, encargos) e com ÷ sem − 1 é outro par (material e mão de obra, por exemplo).
+BDI_MIN = Decimal("0.05")
+BDI_MAX = Decimal("0.45")
 MIN_NUMEROS = 2
 MAX_NUMEROS = 7
 MAX_LINHAS_DESCRICAO = 6
@@ -197,9 +200,37 @@ def _precos(quantidade: Decimal, tokens: list[str]) -> _Precos | None:
     menores = [numeros[j] for _, j in pares if numeros[j] < com]
     if menores:
         sem = max(menores)
-    elif j_com > 0 and numeros[j_com - 1] < com <= numeros[j_com - 1] * RAZAO_BDI_MAX:
+    elif j_com > 0:
         sem = numeros[j_com - 1]
+    if sem is not None and (
+        not bdi_plausivel(com / sem - 1) or _material_mais_mao_de_obra(numeros[:j_com], com)
+    ):
+        sem = None
+    if bdi is not None and not (
+        bdi_plausivel(bdi) and (sem is None or _bdi_confere(bdi, com, sem))
+    ):
+        bdi = None
     return _Precos(quantidade, com, total, sem, bdi)
+
+
+def bdi_plausivel(bdi: Decimal) -> bool:
+    """BDI (fração) entre 5% e 45%."""
+    return BDI_MIN <= bdi <= BDI_MAX
+
+
+def _bdi_confere(bdi: Decimal, com: Decimal, sem: Decimal) -> bool:
+    """`sem × (1 + bdi) ≈ com` (1% ou 2 centavos: o BDI vem arredondado)."""
+    return abs(sem * (1 + bdi) - com) <= max(Decimal("0.02"), com * Decimal("0.01"))
+
+
+def _material_mais_mao_de_obra(antes: list[Decimal], com: Decimal) -> bool:
+    """Dois unitários antes do preço que somam o preço: material + mão de obra, não sem BDI."""
+    tolerancia = max(TOLERANCIA_ABSOLUTA, com * TOLERANCIA_RELATIVA)
+    return any(
+        abs(antes[i] + antes[k] - com) <= tolerancia
+        for i in range(len(antes))
+        for k in range(i + 1, len(antes))
+    )
 
 
 def _fonte_e_codigo(tokens: list[str]) -> tuple[str | None, str | None, set[int]]:
@@ -397,7 +428,24 @@ def ler_planilha(paginas: list[str]) -> list[LinhaPlanilha]:
 # --- Linhas vindas da IA (texto picotado): a conta e o texto são a ancoragem ---
 
 TOLERANCIA_TOTAL_PLANILHA = Decimal("0.02")
+# Distância máxima (caracteres do texto corrido, sem espaços) entre a quantidade, o preço e
+# o total da mesma linha, e quanto antes deles a descrição (DN, material) pode estar.
+JANELA_NUMEROS = 250
+JANELA_DESCRICAO = 400
 _SEM_ESPACO = re.compile(r"\s+")
+_NUMERO_CORRIDO = re.compile(r"\d[\d.,]*\d|\d")
+# Material citado na descrição → como aparece no texto corrido (sem acento e sem espaço).
+_MATERIAIS_IA = {
+    "pvc": ("pvc",),
+    "defofo": ("defofo",),
+    "pead": ("pead", "polietileno"),
+    "polietileno": ("pead", "polietileno"),
+    "ferro fundido": ("ferrofundido", "fofo"),
+    "fofo": ("ferrofundido", "fofo"),
+    "ferro ductil": ("ferroductil", "fofo"),
+    "ceramic": ("ceramic", "manilha"),
+    "manilha": ("ceramic", "manilha"),
+}
 
 
 def _decimal_ia(valor: object) -> Decimal | None:
@@ -424,21 +472,104 @@ def formato_br(valor: Decimal) -> str:
     return f"{grupos},{decimais or '00'}"
 
 
-def _no_texto(valor: Decimal, texto_sem_espaco: str) -> bool:
-    return formato_br(valor) in texto_sem_espaco
+def _minusculo_sem_acento(texto: str) -> str:
+    """NFD (não NFKD: "m²" não pode virar "m2" e colar na quantidade "6,00")."""
+    decomposto = unicodedata.normalize("NFD", texto)
+    return "".join(c for c in decomposto if not unicodedata.combining(c)).lower()
+
+
+@dataclass(frozen=True)
+class _Leitura:
+    texto: str
+    numeros: list[tuple[int, Decimal]]
+
+    @classmethod
+    def de(cls, texto: str) -> "_Leitura":
+        numeros = [
+            (m.start(), valor)
+            for m in _NUMERO_CORRIDO.finditer(texto)
+            if (valor := numero_br(m.group(0).rstrip(".,"))) is not None
+        ]
+        return cls(texto, numeros)
+
+    def posicoes(self, valor: Decimal) -> list[int]:
+        return [p for p, v in self.numeros if v == valor]
+
+
+@dataclass(frozen=True)
+class _TextoCorrido:
+    """Duas leituras do texto, com os números em tokens inteiros ("1.088,69" não casa dentro
+    de "11.088,69"): a com espaços (planilha normal: "6,00 870,95") e a corrida, sem espaços,
+    para o texto picotado ("R$ 1.08 8,69" quebrado em linhas → "|1.088,69"). Basta casar
+    numa delas."""
+
+    leituras: tuple[_Leitura, ...]
+
+    @classmethod
+    def de(cls, bruto: str) -> "_TextoCorrido":
+        normal = _minusculo_sem_acento(bruto)
+        # "R$" separa: "3,0 0 R $ 1.94 1,48" quebrado em linhas vira "3,00|1.941,48", não
+        # "3,001.941,48".
+        com_espacos = re.sub(r"r\s*\$", " | ", normal)
+        corrido = _SEM_ESPACO.sub("", normal).replace("r$", "|")
+        return cls((_Leitura.de(com_espacos), _Leitura.de(corrido)))
+
+    def tem(self, valor: Decimal) -> bool:
+        return any(leitura.posicoes(valor) for leitura in self.leituras)
+
+
+def _ancorada_em(
+    leitura: _Leitura, descricao: str, quantidade: Decimal, com: Decimal, total: Decimal
+) -> bool:
+    pos_q, pos_p, pos_t = (leitura.posicoes(v) for v in (quantidade, com, total))
+    janelas = [
+        (min(q, p, t), max(q, p, t))
+        for p in pos_p
+        for t in pos_t
+        for q in pos_q
+        if max(q, p, t) - min(q, p, t) <= JANELA_NUMEROS
+    ]
+    if not janelas:
+        return False
+    normalizada = sem_acento(descricao)
+    dn = extrair_dn(normalizada)
+    materiais = [grafias for termo, grafias in _MATERIAIS_IA.items() if termo in normalizada]
+    for inicio, fim in janelas:
+        comeco = max(0, inicio - JANELA_DESCRICAO)
+        if dn is not None and not any(v == dn and comeco <= p < fim for p, v in leitura.numeros):
+            continue
+        trecho = _SEM_ESPACO.sub("", leitura.texto[comeco:fim])
+        if all(any(g in trecho for g in grafias) for grafias in materiais):
+            return True
+    return False
+
+
+def _ancorada(
+    corrido: _TextoCorrido, descricao: str, quantidade: Decimal, com: Decimal, total: Decimal
+) -> bool:
+    """Quantidade, preço e total como números inteiros no texto, perto uns dos outros; DN e
+    material da descrição no texto logo antes deles (numa das duas leituras)."""
+    return any(
+        _ancorada_em(leitura, descricao, quantidade, com, total) for leitura in corrido.leituras
+    )
 
 
 def linhas_da_ia(
     brutas: list[dict[str, object]], texto: str, total_planilha: object = None
 ) -> list[LinhaPlanilha]:
-    """Linhas que a IA devolveu e que passam na guarda; vazia se a soma não bate com o total.
+    """Linhas que a IA devolveu e que passam na guarda; vazia se a planilha não confere.
 
     Cada linha precisa de quantidade, preço com BDI e total com `quantidade × preço ≈ total`,
-    e o preço e o total precisam estar no texto (sem espaços: o texto vem picotado, "1.08\n8,69").
-    Com `total_planilha` presente no texto, a soma dos totais das linhas válidas tem de ficar
-    a ±2% dele; senão nenhuma linha vale (a IA pulou ou inventou linhas).
+    os três como números inteiros no texto e perto uns dos outros (`JANELA_NUMEROS`), e o DN
+    e o material da descrição no texto logo antes deles: um "TUBO PVC DN 200" colado no preço
+    e no total de outra linha cai. O `total_planilha` é obrigatório: precisa estar no texto e
+    a soma dos totais das linhas válidas tem de ficar a ±2% dele; sem isso, nenhuma linha
+    vale (a IA pulou ou inventou linhas e não há como conferir).
     """
-    corrido = _SEM_ESPACO.sub("", texto).replace("R$", "")
+    corrido = _TextoCorrido.de(texto)
+    declarado = _decimal_ia(total_planilha)
+    if declarado is None or not corrido.tem(declarado):
+        return []
     validas: list[LinhaPlanilha] = []
     for bruta in brutas:
         descricao = str(bruta.get("descricao") or "").strip()
@@ -457,10 +588,10 @@ def linhas_da_ia(
             or com is None
             or total is None
             or not coerente(quantidade, com, total)
-            or not (_no_texto(com, corrido) and _no_texto(total, corrido))
+            or not _ancorada(corrido, descricao, quantidade, com, total)
         ):
             continue
-        if sem is not None and not sem < com:
+        if sem is not None and not (sem < com and corrido.tem(sem)):
             sem = None
         item = str(bruta.get("item") or "").strip() or None
         codigo = str(bruta.get("codigo") or "").strip() or None
@@ -483,9 +614,7 @@ def linhas_da_ia(
                 pagina=0,  # a IA não diz a página
             )
         )
-    declarado = _decimal_ia(total_planilha)
-    if declarado is not None and _no_texto(declarado, corrido):
-        soma = sum((linha.total for linha in validas), Decimal(0))
-        if abs(soma - declarado) > declarado * TOLERANCIA_TOTAL_PLANILHA:
-            return []
+    soma = sum((linha.total for linha in validas), Decimal(0))
+    if abs(soma - declarado) > declarado * TOLERANCIA_TOTAL_PLANILHA:
+        return []
     return validas

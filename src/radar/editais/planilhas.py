@@ -16,6 +16,9 @@ from radar.editais.resultados import FUSO, _chave
 logger = logging.getLogger(__name__)
 
 LINHAS_PLANILHA = ("redes", "perdas")
+# PE fica fora: o TCE-PE (7b.1) já traz o estimado de lá item a item; contar os dois seria o
+# mesmo processo duas vezes na mediana.
+UFS_FORA = ("PE",)
 
 
 @dataclass(frozen=True)
@@ -71,7 +74,8 @@ def alvos_planilha(
     linhas: Sequence[str] = LINHAS_PLANILHA,
 ) -> list[AlvoPlanilha]:
     """Editais do PNCP das `linhas` (redes e perdas), UFs e modalidades do filtro, publicados
-    nos últimos `janela_dias`, do mais antigo ao mais novo, fora os de `ignorar`.
+    nos últimos `janela_dias`, do mais antigo ao mais novo, fora os de `ignorar` e os de PE
+    (`UFS_FORA`).
 
     Na publicação, e não só depois de homologados: a planilha sai com o edital.
     """
@@ -82,6 +86,7 @@ def alvos_planilha(
         .where(Edital.fonte == Fonte.pncp.value)
         .where(or_(*casamentos) if casamentos else false())
         .where(Edital.uf.in_(criterios.ufs))
+        .where(Edital.uf.not_in(UFS_FORA))
         .where(Edital.modalidade_id.in_(criterios.modalidades))
         .where(Edital.data_publicacao >= desde)
         .order_by(Edital.data_publicacao.asc(), Edital.id_na_fonte.asc())

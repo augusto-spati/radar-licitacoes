@@ -15,6 +15,7 @@ from radar.analise import (
     CacheArquivos,
     ConfigIA,
     Pedido,
+    PlanilhaIAInvalida,
     ProvedorComCache,
     PuladoTeto,
     Resposta,
@@ -28,6 +29,7 @@ from radar.analise import (
     procurar_planilhas,
     texto_para_ia,
 )
+from radar.analise.provedor import ErroProvedor
 
 RAIZ = Path(__file__).resolve().parents[2]
 CONFIG_IA = carregar_config_ia(RAIZ / "config" / "ia.toml")
@@ -237,3 +239,54 @@ def test_ia_respeita_o_teto_mensal_da_ia(tmp_path: Path) -> None:
             "texto", provedor, "amazon.nova-lite-v1:0", CONFIG_IA, CONFIG, Decimal(0)
         )
     assert falso.pedidos == []
+
+
+def test_zip_com_planilhas_demais_le_so_o_teto() -> None:
+    entradas = {f"Lote {i}/Planilha Orçamentária.pdf": PLANILHA for i in range(8)}
+    busca = procurar_planilhas(
+        [_arquivo(1, "Anexos")],
+        Baixador({1: _zip(entradas)}),
+        replace(CONFIG, max_planilhas_por_edital=5),
+    )
+    assert (len(busca.planilhas), busca.puladas) == (5, 3)
+
+
+def test_entrada_grande_demais_e_pulada_sem_derrubar_o_edital() -> None:
+    entradas = {"A/Planilha orcamentaria.pdf": PLANILHA, "B/Planilha orcamentaria.pdf": PLANILHA}
+    pequeno = replace(CONFIG, limite_descompactado_bytes=len(PLANILHA) + 10)
+    busca = procurar_planilhas([_arquivo(1, "Anexos")], Baixador({1: _zip(entradas)}), pequeno)
+    # A segunda passaria do teto descompactado do edital: pulada, a primeira fica.
+    assert [d.nome for d in busca.planilhas] == ["A/Planilha orcamentaria.pdf"]
+    assert busca.puladas == 1
+
+
+def test_entrada_acima_do_limite_por_entrada_e_pulada(monkeypatch: pytest.MonkeyPatch) -> None:
+    import radar.analise.pacotes as pacotes
+
+    monkeypatch.setattr(pacotes, "LIMITE_ENTRADA", 10)
+    entradas = {"Planilha orcamentaria.pdf": PLANILHA}
+    busca = procurar_planilhas([_arquivo(1, "Anexos")], Baixador({1: _zip(entradas)}), CONFIG)
+    assert (busca.planilhas, busca.puladas) == ([], 1)
+
+
+def test_ia_invalida_ou_cortada_sai_com_o_custo(tmp_path: Path) -> None:
+    class Cortada:
+        def gerar(self, pedido: Pedido) -> Resposta:
+            assert pedido.recusar_truncada  # a planilha pede para recusar saída cortada
+            paga = Resposta(texto="", tokens_entrada=2500, tokens_saida=3600, latencia_ms=1)
+            raise ErroProvedor("resposta cortada em max_tokens", resposta=paga)
+
+    provedor = ProvedorComCache(Cortada(), CacheArquivos(tmp_path), "gravar", CONFIG_IA)
+    with pytest.raises(PlanilhaIAInvalida) as erro:
+        extrair_planilha_ia(
+            "texto", provedor, "amazon.nova-lite-v1:0", CONFIG_IA, CONFIG, Decimal(0)
+        )
+    assert erro.value.custo_usd == Decimal("0.001014")
+    assert list(tmp_path.rglob("*.json")) == []  # não virou cache
+
+    lixo = ProvedorComCache(
+        ProvedorFalso("não é json"), CacheArquivos(tmp_path), "gravar", CONFIG_IA
+    )
+    with pytest.raises(PlanilhaIAInvalida) as erro:
+        extrair_planilha_ia("texto 2", lixo, "amazon.nova-lite-v1:0", CONFIG_IA, CONFIG, Decimal(0))
+    assert erro.value.custo_usd == Decimal("0.001014")

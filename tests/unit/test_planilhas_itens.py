@@ -1,6 +1,7 @@
 """Linhas das planilhas → `preco_item` (sem banco) e a guarda das linhas que a IA devolve."""
 
 import re
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -103,60 +104,99 @@ def test_um_preco_so_e_bdi_desconhecido_e_item_repetido() -> None:
     assert (itens[1].bdi, itens[1].bdi_desconhecido) == (Decimal("0.2000"), False)
 
 
-# --- IA ---
+# --- IA: a guarda das linhas que a IA devolve (texto picotado de Ibaté) ---
 
 IBATE = (DADOS / "ibate.txt").read_text(encoding="utf-8")
+SUBTOTAL = "16.122,94"  # "SUB TOTAL 1 R$ 16.122,94": soma de 1.1, 1.2 e 1.3
 
 
-def _ia(**campos: object) -> dict[str, object]:
-    base: dict[str, object] = {
-        "item": "2.2",
-        "codigo": "103091",
-        "fonte": "SINAPI",
-        "descricao": "ASSENTAMENTO DE TUBO DE FERRO FUNDIDO PARA REDE DE ÁGUA, DN 150",
-        "unidade": "m",
-        "quantidade": "24,00",
-        "preco_sem_bdi": "24,10",
-        "preco_com_bdi": "30,13",
-        "total": "723,12",
+def _ia(
+    item: str, descricao: str, unidade: str, q: str, sem: str, com: str, total: str
+) -> dict[str, object]:
+    return {
+        "item": item,
+        "descricao": descricao,
+        "unidade": unidade,
+        "quantidade": q,
+        "preco_sem_bdi": sem,
+        "preco_com_bdi": com,
+        "total": total,
     }
-    base.update(campos)
-    return base
+
+
+PLACA = _ia("1.1", "Placa de identificação de obra", "m²", "6,00", "870,95", "1.088,69", "6.532,13")
+ESCRITORIO = _ia(
+    "1.2",
+    "Locação de container tipo escritório",
+    "unid/mês",
+    "3,00",
+    "1.553,18",
+    "1.941,48",
+    "5.824,43",
+)
+DEPOSITO = _ia(
+    "1.3",
+    "Locação de container tipo depósito",
+    "unid/mês",
+    "3,00",
+    "1.004,37",
+    "1.255,46",
+    "3.766,39",
+)
 
 
 def test_linhas_da_ia_ancoradas_no_texto_picotado() -> None:
-    # "R$\n870,\n95" no texto: sem espaços o número aparece inteiro.
-    placa = _ia(
-        item="1.1",
-        descricao="Placa de identificação de obra",
-        unidade="m²",
-        quantidade=6,
-        preco_sem_bdi="870,95",
-        preco_com_bdi="1.088,69",
-        total="6.532,13",
-    )
-    linhas = linhas_da_ia([placa], IBATE)
+    linhas = linhas_da_ia([PLACA, ESCRITORIO, DEPOSITO], IBATE, total_planilha=SUBTOTAL)
     assert [(linha.item, linha.preco_com_bdi, linha.preco_sem_bdi) for linha in linhas] == [
-        ("1.1", Decimal("1088.69"), Decimal("870.95"))
+        ("1.1", Decimal("1088.69"), Decimal("870.95")),
+        ("1.2", Decimal("1941.48"), Decimal("1553.18")),
+        ("1.3", Decimal("1255.46"), Decimal("1004.37")),
     ]
 
 
-def test_linha_da_ia_sem_conta_ou_fora_do_texto_cai() -> None:
-    inventada = _ia(preco_com_bdi="31,00", total="744,00")  # fecha a conta, não está no texto
-    sem_conta = _ia(preco_com_bdi="1.088,69", total="6.532,13", quantidade=7)
-    assert linhas_da_ia([inventada, sem_conta], IBATE) == []
+def test_sem_total_da_planilha_nada_vale() -> None:
+    assert linhas_da_ia([PLACA, ESCRITORIO, DEPOSITO], IBATE) == []
+    # Total que não está no texto também não confere nada.
+    assert linhas_da_ia([PLACA, ESCRITORIO, DEPOSITO], IBATE, total_planilha="16.122,95") == []
 
 
 def test_soma_longe_do_total_da_planilha_derruba_tudo() -> None:
-    placa = _ia(
-        item="1.1",
-        descricao="Placa de identificação de obra",
-        unidade="m²",
-        quantidade=6,
-        preco_com_bdi="1.088,69",
-        total="6.532,13",
+    assert linhas_da_ia([PLACA], IBATE, total_planilha=SUBTOTAL) == []
+
+
+def test_tubo_colado_no_preco_e_total_de_outra_linha_cai() -> None:
+    """O preço e o total são do tubo de FoFo DN 150 (item 2.1); a descrição é de outro tubo."""
+    colado = _ia(
+        "9.9", "TUBO PVC DN 200 PARA REDE DE ÁGUA", "m", "24,00", "625,02", "781,28", "18.750,60"
     )
-    # "R$ 16.122,94" é o subtotal no texto: uma linha só fica a mais de 2% dele.
-    assert linhas_da_ia([placa], IBATE, total_planilha="16.122,94") == []
-    # Total que não está no texto não vale como conferência.
-    assert len(linhas_da_ia([placa], IBATE, total_planilha="99.999,99")) == 1
+    certo = {**colado, "item": "2.1", "descricao": 'Tubo de ferro fundido classe K7, DN 6" (150mm)'}
+    # O total geral não está no trecho: o total da própria linha serve de total da planilha.
+    assert linhas_da_ia([colado], IBATE, total_planilha="18.750,60") == []
+    assert [linha.item for linha in linhas_da_ia([certo], IBATE, total_planilha="18.750,60")] == [
+        "2.1"
+    ]
+
+
+def test_numero_dentro_de_outro_numero_nao_ancora() -> None:
+    """ "1.088,69" não pode casar dentro de "11.088,69"; quantidade longe do preço não vale."""
+    texto = "Placa m² 6,00 R$ 11.088,69 R$ 66.532,14 total R$ 66.532,14"
+    falsa = _ia("1.1", "Placa", "m²", "6,00", "", "1.088,69", "6.532,14")
+    assert linhas_da_ia([falsa], texto, total_planilha="66.532,14") == []
+    longe = "Placa m² 6,00 " + "x" * 300 + " R$ 1.088,69 R$ 6.532,14 TOTAL R$ 6.532,14"
+    assert linhas_da_ia([falsa], longe, total_planilha="6.532,14") == []
+    perto = "Placa m² 6,00 R$ 1.088,69 R$ 6.532,14 TOTAL R$ 6.532,14"
+    assert len(linhas_da_ia([falsa], perto, total_planilha="6.532,14")) == 1
+
+
+def test_linha_da_ia_sem_conta_cai() -> None:
+    sem_conta = {**PLACA, "quantidade": "7,00"}
+    assert linhas_da_ia([sem_conta, ESCRITORIO, DEPOSITO], IBATE, total_planilha=SUBTOTAL) == []
+
+
+def test_bdi_implausivel_vira_desconhecido() -> None:
+    linha = replace(_linha("1.1", "120", "50"))  # 120 ÷ 50 − 1 = 140%
+    (item,) = itens_da_planilha(RIBEIRAO, SHA, [linha])
+    assert (item.bdi, item.bdi_desconhecido) == (None, True)
+    peso = replace(_linha("1.2", "100"), bdi=Decimal("0.0035"))  # "Peso (%)" que escapasse
+    (item_peso,) = itens_da_planilha(RIBEIRAO, SHA, [peso])
+    assert (item_peso.bdi, item_peso.bdi_desconhecido) == (None, True)

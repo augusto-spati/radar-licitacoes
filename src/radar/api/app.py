@@ -138,7 +138,12 @@ def criar_app(
         edital = None if chave is None else obter_edital(sessao, *chave, criterios)
         if edital is None:
             raise HTTPException(status_code=404, detail="edital não encontrado")
-        return precos_out(edital.uf, referencias(sessao, edital.linhas, edital.uf))
+        # A planilha do próprio edital (7b.2) não é referência para ele mesmo.
+        proprio = edital.id_na_fonte if edital.fonte == "pncp" else None
+        return precos_out(
+            edital.uf,
+            referencias(sessao, edital.linhas, edital.uf, excluir_planilha_de=proprio),
+        )
 
     @app.get("/api/analises/{id_publico:path}")
     def analise(id_publico: str, sessao: SessaoDep) -> AnaliseOut:

@@ -69,6 +69,7 @@ from radar.comum import (
 from radar.comum.telemetria import telemetria_do_processo, tracer
 from radar.editais import (
     FONTE_TCEPE,
+    UFS_FORA_PLANILHAS,
     AlvoPlanilha,
     Criterios,
     EditalResumo,
@@ -110,6 +111,7 @@ from radar.precos import (
     processo_de_saneamento,
     processo_homologado,
     processos_gravados,
+    registrar_gasto_planilha,
     registrar_planilha,
 )
 from radar.processador import (
@@ -1525,7 +1527,12 @@ def _planilha_de_um_edital(
     rodada: _Rodada,
 ) -> str:
     """Acha, lê e grava a planilha de um edital; commita e devolve o desfecho."""
-    from radar.analise import PuladoTeto, documentos_do_edital, extrair_planilha_ia
+    from radar.analise import (
+        PlanilhaIAInvalida,
+        PuladoTeto,
+        documentos_do_edital,
+        extrair_planilha_ia,
+    )
     from radar.analise import procurar_planilhas as procurar
 
     edital = _edital_planilha(alvo)
@@ -1566,8 +1573,23 @@ def _planilha_de_um_edital(
                 )
                 sessao.commit()
                 return "pulado_teto"
+            except PlanilhaIAInvalida as erro:
+                # Paga e inútil (inválida ou cortada em max_tokens): estado final, para não
+                # comprar a mesma resposta de novo toda semana. Só o tipo no motivo.
+                registrar_planilha(
+                    sessao,
+                    edital.id_pncp,
+                    "ia_invalida",
+                    metodo="ia",
+                    sha256=alvo_ia.sha256,
+                    documento=alvo_ia.nome,
+                    orgao_cnpj=edital.orgao_cnpj,
+                    custo_usd=erro.custo_usd,
+                    motivo="resposta da IA inválida ou cortada",
+                )
+                sessao.commit()
+                return "ia_invalida"
             custo = resposta.custo_usd
-            rodada.custo_usd += custo
             linhas_ia = linhas_da_ia(resposta.linhas, texto, resposta.total_planilha)
             if len(linhas_ia) > len(linhas):
                 documento, linhas, metodo = alvo_ia, linhas_ia, "ia"
@@ -1586,10 +1608,10 @@ def _planilha_de_um_edital(
                 sessao.commit()
                 return "sem_planilha"
         elif alvo_ia is not None and texto.strip() and not linhas:
-            # Pede IA e ela está desligada: tenta de novo depois (`falhou`).
-            registrar_planilha(sessao, edital.id_pncp, "falhou", motivo="IA desligada")
+            # Pede IA e ela está desligada: volta quando a IA for ligada (`aguarda_ia`).
+            registrar_planilha(sessao, edital.id_pncp, "aguarda_ia", orgao_cnpj=edital.orgao_cnpj)
             sessao.commit()
-            return "falhou"
+            return "aguarda_ia"
     if documento is None or not linhas:
         registrar_planilha(sessao, edital.id_pncp, "sem_planilha", orgao_cnpj=edital.orgao_cnpj)
         sessao.commit()
@@ -1620,6 +1642,23 @@ def _planilha_de_um_edital(
     return f"extraida_{metodo}"
 
 
+def _pago(provedor: "ProvedorComCache | None", antes: Decimal) -> Decimal:
+    return Decimal(0) if provedor is None else provedor.custo_usd - antes
+
+
+def _anotar_gasto(sessao: Session, id_pncp: str, custo: Decimal, rodada: _Rodada) -> None:
+    """Anota a chamada paga no teto mensal da 7b.2 (transação própria, depois do edital)."""
+    if custo <= 0:
+        return
+    rodada.custo_usd += custo
+    try:
+        registrar_gasto_planilha(sessao, id_pncp, custo)
+        sessao.commit()
+    except Exception:
+        sessao.rollback()
+        logger.exception("planilha_gasto_nao_anotado", extra={"id_pncp": id_pncp})
+
+
 def _alvos_planilhas(
     sessao: Session,
     criterios: Criterios,
@@ -1627,14 +1666,18 @@ def _alvos_planilhas(
     edital: str | None,
     limite: int | None,
     refazer: bool,
+    ia_ligada: bool,
 ) -> list[AlvoPlanilha]:
     if edital is not None:
         unico = alvo_planilha(sessao, edital)
         if unico is None:
             typer.echo(f"edital do PNCP não encontrado: {edital}", err=True)
             raise typer.Exit(code=2)
+        if unico.uf in UFS_FORA_PLANILHAS:
+            typer.echo(f"edital de {unico.uf}: o preço vem do TCE-PE (7b.1)", err=True)
+            raise typer.Exit(code=2)
         return [unico]
-    ignorar = set() if refazer else planilhas_a_ignorar(sessao, _agora())
+    ignorar = set() if refazer else planilhas_a_ignorar(sessao, _agora(), ia_ligada)
     return alvos_planilha(
         sessao,
         criterios,
@@ -1683,7 +1726,10 @@ def planilhas_atualizar(
             typer.echo("planilhas: outra rodada em andamento; nada feito")
             return
         try:
-            alvos = _alvos_planilhas(sessao, criterios, config_planilhas, edital, limite, refazer)
+            ia_ligada = ambiente.ia_provedor != "desligado"
+            alvos = _alvos_planilhas(
+                sessao, criterios, config_planilhas, edital, limite, refazer, ia_ligada
+            )
             gasto_mes = gasto_planilhas_do_mes(sessao, _agora())
             sessao.rollback()  # só leitura: nada aberto durante a rede e o Bedrock
             provedor = None
@@ -1703,6 +1749,9 @@ def planilhas_atualizar(
                         typer.echo("trava das planilhas perdida: rodada interrompida", err=True)
                         falhas += 1
                         break
+                    # Gasto medido no provedor: chamada paga válida, inválida ou de um edital
+                    # que falhou depois conta; acerto de cache (--refazer, --edital) não.
+                    antes = provedor.custo_usd if provedor is not None else Decimal(0)
                     try:
                         desfecho = _planilha_de_um_edital(
                             sessao,
@@ -1716,6 +1765,7 @@ def planilhas_atualizar(
                         )
                     except TetoAtingido:
                         sessao.rollback()
+                        _anotar_gasto(sessao, alvo.id_na_fonte, _pago(provedor, antes), rodada)
                         teto = True
                         typer.echo("teto mensal da IA atingido: rodada interrompida")
                         break
@@ -1726,16 +1776,22 @@ def planilhas_atualizar(
                         try:
                             # Só o tipo: a mensagem pode trazer texto do edital ou do modelo.
                             registrar_planilha(
-                                sessao, alvo.id_na_fonte, "falhou", motivo=type(erro).__name__
+                                sessao,
+                                alvo.id_na_fonte,
+                                "falhou",
+                                motivo=type(erro).__name__,
+                                custo_usd=_pago(provedor, antes),
                             )
                             sessao.commit()
                         except Exception:
                             sessao.rollback()
+                        _anotar_gasto(sessao, alvo.id_na_fonte, _pago(provedor, antes), rodada)
                         seguidas = seguidas + 1 if isinstance(erro, ErroArquivos) else 0
                         if seguidas >= FALHAS_SEGUIDAS_PLANILHAS:
                             interrompida = True
                             break
                         continue
+                    _anotar_gasto(sessao, alvo.id_na_fonte, _pago(provedor, antes), rodada)
                     seguidas = 0
                     rodada.contar(desfecho)
             finally:
@@ -1747,7 +1803,8 @@ def planilhas_atualizar(
     typer.echo(
         f"planilhas: {len(alvos)} editais, {rodada.de('extraida_deterministico')} lidas sem IA, "
         f"{rodada.de('extraida_ia')} com IA, {rodada.de('sem_planilha')} sem planilha, "
-        f"{rodada.de('pulado_teto')} puladas pelo teto, {falhas + rodada.de('falhou')} falhas, "
+        f"{rodada.de('pulado_teto')} puladas pelo teto, {rodada.de('ia_invalida')} IA inválida, "
+        f"{rodada.de('aguarda_ia')} aguardando IA, {falhas + rodada.de('falhou')} falhas, "
         f"{rodada.linhas_gravadas} linhas gravadas, US$ {rodada.custo_usd:.4f}"
         + (
             f" (interrompida após {FALHAS_SEGUIDAS_PLANILHAS} falhas seguidas do PNCP)"

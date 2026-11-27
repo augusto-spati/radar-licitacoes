@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -183,3 +184,14 @@ def test_carregar_config_ia_recusa_perfil(tmp_path: Path) -> None:
     arquivo.write_text(texto.replace('regiao = "us-east-2"', 'regiao = "us-east-1"'), "utf-8")
     with pytest.raises(ValueError):
         carregar_config_ia(arquivo)
+
+
+def test_saida_cortada_em_max_tokens_recusada_quando_pedido() -> None:
+    """7b.2: lista de linhas cortada no meio parece válida; não pode virar cache."""
+    cortada = {**_fixture("converse_ferramenta.json"), "stopReason": "max_tokens"}
+    provedor = ProvedorBedrock(_config("ferramenta"), cliente=BedrockFalso(cortada))
+    with pytest.raises(ErroProvedor, match="max_tokens") as erro:
+        provedor.gerar(replace(_pedido(), recusar_truncada=True))
+    assert erro.value.resposta is not None  # paga: entra no gasto
+    # Sem o pedido (etapa 6), o comportamento não muda.
+    assert provedor.gerar(_pedido()).texto

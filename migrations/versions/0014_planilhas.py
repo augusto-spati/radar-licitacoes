@@ -44,6 +44,7 @@ def upgrade() -> None:
         sa.Column("custo_usd", sa.Numeric(), server_default="0", nullable=False),
         sa.Column("republicada_em", sa.Text(), nullable=True),
         sa.Column("motivo", sa.Text(), nullable=True),
+        sa.Column("tentativas", sa.Integer(), server_default="0", nullable=False),
         sa.Column(
             "processada_em",
             sa.DateTime(timezone=True),
@@ -51,15 +52,27 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.CheckConstraint(
-            "status IN ('extraida', 'sem_planilha', 'pulado_teto', 'falhou', 'republicada')",
+            "status IN ('extraida', 'sem_planilha', 'pulado_teto', 'falhou', 'republicada', "
+            "'ia_invalida', 'aguarda_ia')",
             name="ck_planilha_edital_status",
         ),
         sa.CheckConstraint("metodo IN ('deterministico', 'ia')", name="ck_planilha_edital_metodo"),
     )
     op.create_index("ix_planilha_edital_sha256", "planilha_edital", ["sha256"])
+    # Cada chamada paga da IA da 7b.2: o teto mensal dela soma esta tabela.
+    op.create_table(
+        "gasto_planilha",
+        sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
+        sa.Column("id_pncp", sa.Text(), nullable=False),
+        sa.Column("custo_usd", sa.Numeric(), nullable=False),
+        sa.Column(
+            "criado_em", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+    )
 
 
 def downgrade() -> None:
+    op.drop_table("gasto_planilha")
     op.drop_index("ix_planilha_edital_sha256", table_name="planilha_edital")
     op.drop_table("planilha_edital")
     op.drop_index("ix_preco_item_origem_processo", table_name="preco_item")

@@ -19,13 +19,15 @@ from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal, cast
 
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
 from radar.precos.modelos import Origem, PrecoItem
 from radar.precos.servicos import Servico, servicos_padrao
 from radar.precos.tcepe import ORIGEM as ORIGEM_TCEPE
 from radar.precos.tcepe import processo_da_chave
+
+ORIGEM_PLANILHA: Origem = "pncp_planilha"
 
 Abrangencia = Literal["uf", "outras_ufs"]
 
@@ -170,8 +172,12 @@ def referencias(
     linhas: Iterable[str],
     uf: str | None,
     servicos: tuple[Servico, ...] | None = None,
+    excluir_planilha_de: str | None = None,
 ) -> list[Referencia]:
     """Referências dos serviços das `linhas` do edital; vazia se nenhuma linha tem serviço.
+
+    `excluir_planilha_de`: id do edital do PNCP cuja própria planilha (origem `pncp_planilha`)
+    não entra na referência dele mesmo.
 
     Ordem: serviços na ordem de `config/servicos.toml`, depois mais processos primeiro. Chave
     sem nenhum processo não aparece; com menos de `CASOS_MINIMOS`, vem com `poucos_casos`.
@@ -197,7 +203,20 @@ def referencias(
             PrecoItem.fator_unidade,
             PrecoItem.bdi_desconhecido,
             PrecoItem.data_base,
-        ).where(PrecoItem.servico.in_(por_nome), PrecoItem.suspeito.is_(False))
+        ).where(
+            PrecoItem.servico.in_(por_nome),
+            PrecoItem.suspeito.is_(False),
+            *(
+                ()
+                if excluir_planilha_de is None
+                else (
+                    ~and_(
+                        PrecoItem.origem == ORIGEM_PLANILHA,
+                        PrecoItem.processo == excluir_planilha_de,
+                    ),
+                )
+            ),
+        )
     ).all()
     grupos: dict[_Chave, list[_Caso]] = defaultdict(list)
     for linha in linhas_db:
