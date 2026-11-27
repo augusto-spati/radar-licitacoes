@@ -1,5 +1,6 @@
 """Serviços-padrão: descrições reais da pesquisa (TCE-PE, planilhas do PNCP) e as que não casam."""
 
+from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 
@@ -7,10 +8,12 @@ import pytest
 
 from radar.precos import (
     Classificacao,
+    Contexto,
     Escopo,
     carregar_servicos,
     carregar_termos_processo,
     classificar,
+    contexto_da_obra,
     escopo_de_rede,
     extrair_dn,
     faixa_profundidade,
@@ -294,6 +297,11 @@ def test_nao_casa(descricao: str, unidade: str) -> None:
         ("FORNECIMENTO E ASSENTAMENTO DE TUBO PVC DN 150", "completo"),
         ("EXECUCAO DE REDE DE AGUA DN 100 INCLUSIVE FORNECIMENTO", "completo"),
         ("ASSENTAMENTO DE TUBO PVC DN 150 EXCLUSIVE FORNECIMENTO", "assentamento"),
+        # SINAPI: "(NÃO INCLUI O FORNECIMENTO)" (Ibaté, 7b.2) era lido como completo.
+        (
+            "ASSENTAMENTO DE TUBO DE FERRO FUNDIDO DN 150 (NÃO INCLUI O FORNECIMENTO)",
+            "assentamento",
+        ),
         (f"FORNECIMENTO E INSTALA{FFFD}{FFFD}O DE TUBO PVC DN 150", "completo"),
         ("REDE DE AGUA PVC DN 150, MAO DE OBRA", "assentamento"),
         # Sem verbo nem "TUBO" no começo: não dá para saber se inclui o tubo.
@@ -363,3 +371,164 @@ def test_termos_de_processo_na_config() -> None:
     termos = carregar_termos_processo()
     assert {"esgotamento sanitario", "rede coletora", "rede de agua"} <= set(termos)
     assert all(t == sem_acento(t) for t in termos)
+
+
+# --- 7b.2: planilhas do PNCP (descrições reais do spike de 2026-11-27) ---
+
+AGUA_ADUTORA = Contexto("agua", adutora=True)
+ESGOTO = Contexto("esgoto")
+
+
+@pytest.mark.parametrize(
+    ("textos", "esperado"),
+    [
+        (("EXECUÇÃO DE COLETOR DE ESGOTOS", "obra"), Contexto("esgoto")),
+        (("FORNECIMENTO DE MATERIAIS", "Substituição da adutora de água tratada."), AGUA_ADUTORA),
+        (("EXECUÇÃO ADUTORA", None), AGUA_ADUTORA),
+        (("Coletor", None), ESGOTO),
+        ((None, "Melhorias no sistema de abastecimento de água"), Contexto("agua")),
+        # Cita os dois: não decide.
+        (("rede adutora de água ... saída para consumo, esgotamento e registros",), Contexto(None)),
+        (("CANTEIRO DE OBRAS", "Pavimentação"), Contexto(None)),
+    ],
+)
+def test_contexto_da_obra(textos: tuple[str | None, ...], esperado: Contexto) -> None:
+    assert contexto_da_obra(*textos) == esperado
+
+
+@pytest.mark.parametrize(
+    ("descricao", "unidade", "contexto", "esperado"),
+    [
+        (
+            "TUBO PVC-O DN 250 MM PN12,5",
+            "M",
+            AGUA_ADUTORA,
+            replace(_rede("rede_agua", "pvc", 250, "material"), observacao="adutora"),
+        ),
+        (
+            "Tubo, PVC Ocre, DN 200 - fornec./assent.",
+            "m",
+            ESGOTO,
+            _rede("rede_esgoto", "pvc", 200, "completo"),
+        ),
+        (
+            "Tubo PEAD Ocre, corrugado externo, liso interno, com parede dupla estruturada e "
+            "sistema ponta/bolsa com junta elástica - DN/DI 200mm PE100, rigidez anular mínima "
+            "SN8, fornecimento e assentamento",
+            "m",
+            ESGOTO,
+            _rede("rede_esgoto", "pead", 200, "completo"),
+        ),
+        (
+            "Ligação de esgoto completa com tubo PVC Ø 100 mm no terço",
+            "unid",
+            ESGOTO,
+            Classificacao("ligacao_esgoto", None, None, None, "un", Decimal(1)),
+        ),
+        (
+            "LIGACAO DE AGUA EM PEAD DN 20",
+            "UN",
+            None,
+            Classificacao("ligacao_agua", None, None, None, "un", Decimal(1)),
+        ),
+        # O contexto não vence a descrição que cita a outra linha.
+        (
+            "TUBO PVC P/ REDE DE ESGOTO DN 150",
+            "M",
+            AGUA_ADUTORA,
+            _rede("rede_esgoto", "pvc", 150, "material"),
+        ),
+        # A descrição já diz água: o contexto não muda nada, mas a adutora marca.
+        (
+            "ASSENTAMENTO DE TUBO DE PVC DEFOFO OU PRFV OU RPVC PARA REDE DE ÁGUA, DN 400 MM, "
+            "JUNTA ELÁSTICA INTEGRADA (NÃO INCLUI FORNECIMENTO). AF_05/2024",
+            "m",
+            AGUA_ADUTORA,
+            replace(_rede("rede_agua", "pvc", 400, "assentamento"), observacao="adutora"),
+        ),
+        (
+            "FORNECIMENTO E ASSENTAMENTO DE TUBO PVC DN 150 PARA ADUTORA DE AGUA",
+            "m",
+            None,
+            replace(_rede("rede_agua", "pvc", 150, "completo"), observacao="adutora"),
+        ),
+    ],
+)
+def test_classifica_com_contexto_da_obra(
+    descricao: str, unidade: str, contexto: Contexto | None, esperado: Classificacao
+) -> None:
+    assert classificar(descricao, unidade, contexto=contexto) == esperado
+
+
+@pytest.mark.parametrize(
+    ("descricao", "unidade", "contexto"),
+    [
+        # Sem contexto, a descrição sem água nem esgoto continua fora.
+        ("TUBO PVC-O DN 250 MM PN12,5", "M", None),
+        ("Tubo, PVC Ocre, DN 200 - fornec./assent.", "m", Contexto(None)),
+        # Método não destrutivo: outro preço por metro.
+        (
+            "PERFURAÇÃO HORIZONTAL DIRECIONAL E INSTALAÇÃO DE TUBULAÇÃO PEAD 500 MM, EM SOLO DE "
+            "1ª CATEGORIA - INCLUSO ABERTURA DE VALA, EXCLUSO TUBO PEAD",
+            "M",
+            AGUA_ADUTORA,
+        ),
+        (
+            "Execução de rede por Método Não-Destrutivo (MND) em PEAD DE 250 mm, inclusive "
+            "juntas soldadas por termofusão ou eletrofusão",
+            "m",
+            ESGOTO,
+        ),
+        (
+            "SUBSTITUICAO DE REDE DE AGUA PVC DN 100 POR PIPE BURSTING, INCLUSIVE ASSENTAMENTO",
+            "m",
+            None,
+        ),
+        # Escavação sem faixa e recomposição em m³ continuam fora.
+        ("Escavação em solo de 1º Categoria", "m³", AGUA_ADUTORA),
+        (
+            "Recomposição de revestimento em concreto asfáltico (aquisição em usina), para o "
+            "fechamento de valas - incluso demolição do pavimento.",
+            "m³",
+            AGUA_ADUTORA,
+        ),
+        # Peças e serviços auxiliares com o contexto da obra.
+        ("Tubo, FoFo, flange/ponta, DN 250", "unid", AGUA_ADUTORA),
+        ("Locação de rede", "m", ESGOTO),
+        ("Escoramento de vala", "m2", ESGOTO),
+    ],
+)
+def test_nao_casa_mesmo_com_contexto(
+    descricao: str, unidade: str, contexto: Contexto | None
+) -> None:
+    assert classificar(descricao, unidade, contexto=contexto) is None
+
+
+@pytest.mark.parametrize(
+    "descricao",
+    ["Tubo, PVC Ocre, DN 150 - fornec./assent.", "TUBO PVC DN 150 FORN. E ASSENT.",
+     "TUBO PVC DN 150 - FORNECIMENTO/ASSENTAMENTO"],
+)  # fmt: skip
+def test_fornec_assent_abreviado_e_completo(descricao: str) -> None:
+    assert escopo_de_rede(sem_acento(descricao)) == "completo"
+
+
+def test_tcepe_de_teste_sem_mudanca() -> None:
+    """Regressão da 7b.1: os orçamentos de `tests/dados/tcepe` classificam como antes."""
+    import json
+
+    raiz = Path(__file__).resolve().parents[1] / "dados" / "tcepe"
+    achados = {}
+    for arquivo in sorted(raiz.glob("orcamento_*.json")):
+        for item in json.loads(arquivo.read_text(encoding="utf-8")):
+            c = classificar(str(item["itemDescricao"]), str(item["UnidadeMedida"]))
+            if c is not None:
+                achados[item["itemId"]] = (c.servico, c.material, c.dn, c.escopo, c.faixa)
+    assert achados == {
+        "63978669": ("rede_esgoto", "pvc", 200, "completo", None),
+        "63978670": ("ligacao_esgoto", None, None, None, None),
+        "63978671": ("escavacao_vala", None, None, None, "ate_1_5m"),
+        "63978683": ("ligacao_esgoto", None, None, None, None),
+        "63515394": ("escavacao_vala", None, None, None, "ate_1_5m"),
+        "63515395": ("escavacao_vala", None, None, None, "ate_1_5m"),
+    }

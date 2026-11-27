@@ -396,6 +396,7 @@ def itens_de_processo(
                 fator_unidade=classificacao.fator,
                 suspeito=suspeito,
                 valor_homologado=homologado,
+                observacao=classificacao.observacao,
             )
         )
     return novos

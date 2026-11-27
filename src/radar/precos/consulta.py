@@ -7,8 +7,8 @@ chave; senão, de todas as UFs com dados. Item `suspeito` nunca entra.
 
 Caso é processo, não item: a mediana de cada chave é a mediana das medianas de cada processo
 (um orçamento grande com muitos itens iguais não domina), e todo corte conta processos. `ufs`
-diz de onde vieram os números (hoje só PE: a base é o TCE-PE); `abrangencia` é `uf` quando
-todos são da UF do edital e `outras_ufs` quando não.
+diz de onde vieram os números e `origens` de que fonte (TCE-PE, planilhas do PNCP); `abrangencia`
+é `uf` quando todos são da UF do edital e `outras_ufs` quando não.
 """
 
 import statistics
@@ -17,15 +17,17 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Literal
+from typing import Literal, cast
 
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
-from radar.precos.modelos import PrecoItem
+from radar.precos.modelos import Origem, PrecoItem
 from radar.precos.servicos import Servico, servicos_padrao
 from radar.precos.tcepe import ORIGEM as ORIGEM_TCEPE
 from radar.precos.tcepe import processo_da_chave
+
+ORIGEM_PLANILHA: Origem = "pncp_planilha"
 
 Abrangencia = Literal["uf", "outras_ufs"]
 
@@ -58,6 +60,8 @@ class Referencia:
     abrangencia: Abrangencia
     # UFs de onde vieram os números, em ordem.
     ufs: tuple[str, ...]
+    # Origens do estimado ("tce_pe", "pncp_planilha"), em ordem; o contratado é só do TCE-PE.
+    origens: tuple[Origem, ...]
     processos_estimado: int
     itens_estimado: int
     # Mediana das medianas por processo.
@@ -143,6 +147,7 @@ def _referencia(
         unidade=servico.unidade,
         abrangencia=abrangencia,
         ufs=ufs,
+        origens=tuple(sorted({cast(Origem, c.origem) for c in estimados})),
         processos_estimado=processos_estimado,
         itens_estimado=len(estimados),
         mediana_estimado=_mediana_por_processo(
@@ -167,8 +172,12 @@ def referencias(
     linhas: Iterable[str],
     uf: str | None,
     servicos: tuple[Servico, ...] | None = None,
+    excluir_planilha_de: str | None = None,
 ) -> list[Referencia]:
     """Referências dos serviços das `linhas` do edital; vazia se nenhuma linha tem serviço.
+
+    `excluir_planilha_de`: id do edital do PNCP cuja própria planilha (origem `pncp_planilha`)
+    não entra na referência dele mesmo.
 
     Ordem: serviços na ordem de `config/servicos.toml`, depois mais processos primeiro. Chave
     sem nenhum processo não aparece; com menos de `CASOS_MINIMOS`, vem com `poucos_casos`.
@@ -194,7 +203,20 @@ def referencias(
             PrecoItem.fator_unidade,
             PrecoItem.bdi_desconhecido,
             PrecoItem.data_base,
-        ).where(PrecoItem.servico.in_(por_nome), PrecoItem.suspeito.is_(False))
+        ).where(
+            PrecoItem.servico.in_(por_nome),
+            PrecoItem.suspeito.is_(False),
+            *(
+                ()
+                if excluir_planilha_de is None
+                else (
+                    ~and_(
+                        PrecoItem.origem == ORIGEM_PLANILHA,
+                        PrecoItem.processo == excluir_planilha_de,
+                    ),
+                )
+            ),
+        )
     ).all()
     grupos: dict[_Chave, list[_Caso]] = defaultdict(list)
     for linha in linhas_db:

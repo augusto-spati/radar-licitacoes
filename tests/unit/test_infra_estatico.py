@@ -494,3 +494,17 @@ def test_imagens_apontam_os_configs_copiados() -> None:
         texto = (RAIZ / "docker" / arquivo).read_text(encoding="utf-8")
         assert f"RADAR_CONFIG_FILTRO={raiz}/config/filtro.toml" in texto
         assert f"RADAR_CONFIG_SERVICOS={raiz}/config/servicos.toml" in texto
+
+
+def test_planilhas_tem_agenda_diaria_1000_depois_do_analisar() -> None:
+    analise = _tf("analise.tf")
+    bloco = re.sub(r"\s+", " ", analise)
+    trecho = bloco[bloco.index('resource "aws_scheduler_schedule" "planilhas_diario"') :]
+    assert 'name = "radar-planilhas-diario"' in trecho
+    assert 'schedule_expression = "cron(0 10 * * ? *)"' in trecho
+    assert 'schedule_expression_timezone = "America/Sao_Paulo"' in trecho
+    assert 'Command = ["planilhas", "atualizar"]' in trecho
+    # Mesma role do analisar (Bedrock), mesma família e rede do coletor.
+    assert "TaskRoleArn = aws_iam_role.analisador_task.arn" in trecho
+    assert "role_arn = aws_iam_role.scheduler_coletor.arn" in trecho
+    assert 'Name = "RADAR_IA_PROVEDOR", Value = "bedrock"' in trecho

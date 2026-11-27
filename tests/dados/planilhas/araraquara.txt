@@ -1,0 +1,80 @@
+=====PAGINA 1
+Título:
+Local:
+Item Descrição Unidade Quant. Memorial de Cálculo Fonte Referência Data Referência Data Consult a Valor Unit. Sem BDI (R$) Valor Unit. com BDI (R$) Valor Total com BDI  (R$)
+1 SERVIÇOS PRELIMINARES
+1.1 Placa de obra padrão DAAE (aquisição e assentamento) m² 5,00       Largura: 2,50m x Altura: 2,00m SINAPI 103689U jul-26 ago/26 508,95         636,19           3.180,94                   
+1.2 Placa de obra padrão FEHIDRO (aquisição e assentamento) m² 24,00      Placa Principal - Largura 6m x Altura 3m = 18m² Placa de Apoio - Largura 2m x Altura 3m = 6m² SINAPI 103689U jul-26 ago/26 508,95         636,19           15.268,50                 
+1.3 Locação de Banheiro químico - incluso transporte, instalação e manutenção unid 2,00       2 meses ORSE 10389 abr-26 ago/26 535,21         669,01           1.338,03                   
+1.4 Locação de contêiner (almoxarifado, escritório, refeitorio, etc) unid 2,00       2 meses SINAPI 10775 jul-26 ago/26 872,50         1.090,63        2.181,25                   
+1.5
+Mobilização e Desmobilização de canteiro de obra 
+(almoxarifado, escritório, banheiro, refeitório, abrigo provisório 
+tipo container)
+unid 1,00       1 unidade  SBC 12689 ago-26 ago/26 6.431,08      8.038,85        8.038,85                   
+1.6 Levantamento de interferências, locação, nivelamento, cadastro e acompanhamento para assentamento dos tubos m 854,00   Comprimento total do trecho: 854m SINAPI 99063U jul-26 ago/26 12,27           15,34             13.098,23                 
+1.7
+Cadastro georreferenciado e amarrações da rede com base no 
+projeto apresentado pelo DAAE, com uso de equipamento 
+topográfico
+m 854,00   Comprimento total do trecho: 854m SINAPI 105008U jul-26 ago/26 5,44             6,80               5.807,20                   
+SUBTOTAL 1 48.913,00                
+2 EXECUÇÃO DE COLETOR DE ESGOTOS
+2.1
+Sinalização de trânsito com cavalete de madeira, cones de 
+borracha, placas de advertência, tela tapume, fita zebrada, 
+inclusive sinalização noturna
+m 845,00 Comprimento do trecho por método destrutivo: 845m SINAPI 102656 jul-26 ago/26 7,12             8,90               7.520,50                   
+2.2 Corte pavimento asfaltico m² 676,00 Comprimento do trecho por método destrutivo: 845m x 0,80 m SBC 172510 ago-26 set/26 43,87           54,84             37.070,15                 
+2.3
+Demolição de Pavimentação Asfáltica com utilização de 
+martelo perfurador, espessura até 15cm, exclusive carga e 
+transporte
+m² 676,00 Trecho linear 845m x 0,80m de largura da vala SINAPI 97636U jul-26 ago/26 27,05           33,81             22.857,25                 
+2.4 Remoção de entulho inclusive a carga, transporte e descarga em bota fora a qualquer distância m³ 101,40 Trecho linear 845m x 0,80m de largura da vala x 0,15m de altura SINAPI 100982 jul-26 ago/26 10,11           12,64             1.281,44                   
+2.5 Escavação mecanizada de valas prof. até 2,20m largura 0,80m m³ 1487,20 Trecho linear 845m x 0,80m de largura da vala x 2,2m de altura SINAPI 90084 jul-26 ago/26 10,88           13,60             20.225,92                 
+2.6
+Tubo PEAD Ocre, corrugado externo, liso interno, com parede 
+dupla estruturada e sistema ponta/bolsa com junta elástica - 
+DN/DI 200mm PE100, rigidez anular mínima SN8, 
+fornecimento e assentamento
+m 845,00 Comprimento do trecho por método destrutivo: 845m SINAPI 94869U jul-26 ago/26 117,11         146,39           123.697,44               
+2.7 Ligação de esgoto completa com tubo PVC Ø 100 mm no terço unid 12,00 Ponto de esgoto primário - unidade SBC 53171 ago-26 set/26 207,16         258,95           3.107,40                   
+2.8 Reaterro mecanizado de vala empregando compactador de placa vibratória em camadas de 20 cm m³ 1460,67  Trecho linear 845m x 0,80m de largura da vala x 2,2m de altura Área do tubo 200mm x comprimento linear 845m SINAPI 104741 jul-26 ago/26 28,24           35,30             51.561,65                 
+2.9 Base de BGS - brita graduada simples, espessura minima 10 cm, material e aplicação m³ 67,60 Trecho linear 845m x 0,80m de largura da vala x 0,1m de altura SINAPI 105727 jul-26 ago/26 162,51         203,14           13.732,10                 
+2.10 Pintura asfaltica - Imprimação ligante betuminosa para pavimentação, incluindo material, preparo e aplicação m² 676,00 Trecho linear 845m x 0,80m de largura da vala SBC 171266 ago-26 ago/26 23,71           29,64             20.034,95                 
+Departamento Autônomo de Água e Esgotos
+Rua Domingos Barbieri, 100  – CEP 14802-510 – Araraquara/SP
+Telefone: (16) 3324 9555  – Atendimento 0800 602 2324
+ CNPJ 44.239.770/0001-67 – IE: Isento
+www.daaeararaquara.com.br 
+Estrada Vicinal Doutor Nelson Barbieri (ARA-060) - Araraquara/SP.
+ANEXO III - ESCOPO DE FORNECIMENTO E ESTIMATIVA DE PREÇOS
+Execução de Coletor de Esgotos na Estrada Vicinal Doutor Nelson Barbieri
+
+=====PAGINA 2
+2.11 CBUQ - concreto asfáltico usinado a quente para aplicação em pavimentação, esp. 5 cm - preparo e aplicação m³ 42,25 Trecho linear 845m x 1m de largura da vala x 0,05m de altura SBC 172234 ago-26 ago/26 1.740,02      2.175,03        91.894,81                 
+2.12
+Poço de visita de aneis de concreto pre-moldados,para 
+esgotos sanitarios, com profundidade de variavel, mão de obra 
+e material.
+unid 11,00 11 unidades SINAPI 101809 jul-26 ago/26 3.190,80      3.988,50        43.873,50                 
+2.13
+Tampão de ferro fundido  tipo TD-600 para poço de visita Ø 
+0,66 m, para poço de visita assentado com argamassa de 
+cimento e areia traço 1:3 incluso mão de obra
+unid 11,00 11 unidades SBC 53614 ago-26 ago/26 620,92         776,15           8.537,65                   
+2.14 Escoramento contínuo em valas com retirada material - reaproveitamento de 5 vezes m² 743,60 Trecho linear 845m x 2,2m de altura x 2 lados, reaproveitadas 5x  SINAPI 101578U jul-26 ago/26 45,04           56,30             41.864,68                 
+SUBTOTAL 2 487.259,44              
+3 TRAVESSIA POR MÉTODO NÃO-DESTRUTIVO (MND)
+3.1 Mobilização e desmobilização de equipe e equipamentos para perfuração MND un 1,00 1 unidade jun-26 ago/26 - 28.208,33      28.208,33                 
+3.2 Sondagem de reconhecimento do subsolo com tubo de revestimento Ø 2 1/2" - SPT m 30,00 2 sondagens de 15m de profundidade jun-26 ago/26 - 472,43           14.172,90                 
+3.3 Mapeamento de interferências para MND m 19,00 Comprimento do trecho por método não-destrutivo: 19m jun-26 ago/26 - 121,06           2.300,14                   
+3.4 Plano de furo para perfuração direcional m 19,00 Comprimento do trecho por método não-destrutivo: 19m jun-26 ago/26 - 67,60             1.284,40                   
+3.5
+Execução de rede por Método Não-Destrutivo (MND) em 
+PEAD DE 250 mm, inclusive juntas soldadas por termofusão 
+ou eletrofusão
+m 19,00 Comprimento do trecho por método não-destrutivo: 19m jun-26 ago/26 - 1.474,15        28.008,85                 
+3.6 Tubo PEAD liso DE 250 mm PE100 (com lista ocre), adequado à instalação por MND m 19,00 Comprimento do trecho por método não-destrutivo: 19m jun-26 ago/26 - 410,69           7.803,11                   
+SUBTOTAL 3 81.777,73                

@@ -34,9 +34,19 @@ function casos(processos: number, itens: number): string {
   return `${p} (${itens === 1 ? '1 item' : `${itens} itens`})`;
 }
 
-/** "PE"; fora da UF do edital, "PE — sem dados na UF do edital". Nunca "Brasil". */
+// Fontes do estimado (src/radar/precos/modelos.py, `Origem`).
+const ORIGENS: Record<string, string> = {
+  tce_pe: 'TCE-PE',
+  pncp_planilha: 'planilhas de editais do PNCP',
+};
+
+/**
+ * "PE (TCE-PE)"; fora da UF do edital, "SP (planilhas de editais do PNCP) — sem dados na
+ * UF do edital". Nunca "Brasil".
+ */
 function origem(r: ReferenciaPreco, ufEdital: string | null): string {
-  const ufs = r.ufs.join(', ');
+  const fontes = r.origens.map(o => nome(ORIGENS, o)).join(', ');
+  const ufs = fontes === '' ? r.ufs.join(', ') : `${r.ufs.join(', ')} (${fontes})`;
   if (r.abrangencia === 'uf' || ufEdital === null) return ufs;
   const falta = r.ufs.includes(ufEdital) ? 'poucos dados' : 'sem dados';
   return `${ufs} — ${falta} na UF do edital`;
@@ -125,8 +135,8 @@ function Lista({precos}: {precos: Precos}) {
         ))}
       </List>
       <Text type="supporting" color="secondary">
-        Estimado é o preço do órgão, com BDI. Contratado: só Pernambuco (TCE-PE). Datas-base
-        diferentes, sem correção monetária.
+        Estimado é o preço do órgão, com BDI: TCE-PE e planilhas de editais do PNCP. Contratado: só
+        Pernambuco (TCE-PE). Datas-base diferentes, sem correção monetária.
       </Text>
     </VStack>
   );

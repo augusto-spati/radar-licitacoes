@@ -45,6 +45,8 @@ from radar.editais.modelos import (
     ResultadoItem,
     Situacao,
 )
+from radar.editais.planilhas import UFS_FORA as UFS_FORA_PLANILHAS
+from radar.editais.planilhas import AlvoPlanilha, alvo_planilha, alvos_planilha
 from radar.editais.registro import (
     ResultadoRegistro,
     reconciliar_retrato,
@@ -78,6 +80,10 @@ __all__ = [
     "situacao_tcepe",
     "vencedor_gravado",
     "vencedor_tcepe",
+    "AlvoPlanilha",
+    "UFS_FORA_PLANILHAS",
+    "alvo_planilha",
+    "alvos_planilha",
     "ContratacaoPassada",
     "HistoricoOrgao",
     "Regua",

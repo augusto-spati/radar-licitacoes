@@ -852,6 +852,17 @@
             ],
             "title": "Mediana Estimado Contratados"
           },
+          "origens": {
+            "items": {
+              "enum": [
+                "tce_pe",
+                "pncp_planilha"
+              ],
+              "type": "string"
+            },
+            "title": "Origens",
+            "type": "array"
+          },
           "poucos_casos": {
             "title": "Poucos Casos",
             "type": "boolean"
@@ -895,6 +906,7 @@
           "unidade",
           "abrangencia",
           "ufs",
+          "origens",
           "processos_estimado",
           "itens_estimado",
           "mediana_estimado",

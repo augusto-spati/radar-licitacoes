@@ -23,7 +23,7 @@ from radar.editais import (
     Situacao,
     id_publico,
 )
-from radar.precos import Abrangencia, Referencia
+from radar.precos import Abrangencia, Origem, Referencia
 
 FUSO = ZoneInfo("America/Sao_Paulo")
 
@@ -310,6 +310,9 @@ class ReferenciaOut(BaseModel):
     # `uf`: todos os números da UF do edital; `outras_ufs`: não. Os de onde, em `ufs`.
     abrangencia: Abrangencia
     ufs: list[str]
+    # De onde vem o estimado: TCE-PE (`tce_pe`) e/ou planilhas dos editais do PNCP
+    # (`pncp_planilha`). O contratado é sempre do TCE-PE.
+    origens: list[Origem]
     # Casos contam processos (mediana das medianas por processo); itens, só informação.
     processos_estimado: int
     itens_estimado: int
@@ -345,6 +348,7 @@ def precos_out(uf: str | None, referencias: list[Referencia]) -> PrecosOut:
                 unidade=r.unidade,
                 abrangencia=r.abrangencia,
                 ufs=list(r.ufs),
+                origens=list(r.origens),
                 processos_estimado=r.processos_estimado,
                 itens_estimado=r.itens_estimado,
                 mediana_estimado=_decimal(r.mediana_estimado),

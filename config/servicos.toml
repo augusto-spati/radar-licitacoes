@@ -34,9 +34,11 @@ rotulo = "Ligação predial de água"
 linha = "redes"
 unidade = "un"
 termos_obrigatorios = ["agua"]
+# 7b.2: planilhas do PNCP dizem "Ligação de água" sem "predial" (o "completa" não exclui).
 termos_qualquer = [
     "ligacao predial", "ligacoes prediais", "ramal predial", "ramais prediais",
     "ligacao domiciliar", "ligacoes domiciliares", "ramal domiciliar", "ramais domiciliares",
+    "ligacao de agua", "ligacoes de agua",
 ]
 # Conserto e manutenção de ramal existente não são ligação nova (TCE-PE: "CONSERTO DE RAMAIS
 # PREDIAIS DE ÁGUA DANIFICADOS DURANTE EXECUÇÃO DAS OBRAS").
@@ -63,6 +65,7 @@ termos_obrigatorios = ["esgoto"]
 termos_qualquer = [
     "ligacao predial", "ligacoes prediais", "ramal predial", "ramais prediais",
     "ligacao domiciliar", "ligacoes domiciliares", "ramal domiciliar", "ramais domiciliares",
+    "ligacao de esgoto", "ligacoes de esgoto",
 ]
 termos_excluidos = [
     "supress", "corte", "remanej", "desativ", "retirada", "cadastr", "vistoria", "projeto",
@@ -166,6 +169,9 @@ termos_excluidos = [
     # Logística e remanejamento: o preço não é o do metro de rede nova.
     "transporte", "carga", "descarga", "manobra", "remanej", "deslocamento", "armazen",
     "estocagem",
+    # 7b.2: método não destrutivo tem outro preço por metro (spike: "PERFURAÇÃO HORIZONTAL
+    # DIRECIONAL E INSTALAÇÃO DE TUBULAÇÃO PEAD 500 MM" casava como assentamento).
+    "direcional", "nao destrutivo", "mnd", "pipe bursting",
 ]
 dn_min = 50
 dn_max = 600
@@ -203,6 +209,9 @@ termos_excluidos = [
     # Logística e remanejamento: o preço não é o do metro de rede nova.
     "transporte", "carga", "descarga", "manobra", "remanej", "deslocamento", "armazen",
     "estocagem",
+    # 7b.2: método não destrutivo tem outro preço por metro (spike: "PERFURAÇÃO HORIZONTAL
+    # DIRECIONAL E INSTALAÇÃO DE TUBULAÇÃO PEAD 500 MM" casava como assentamento).
+    "direcional", "nao destrutivo", "mnd", "pipe bursting",
 ]
 dn_min = 50
 dn_max = 600

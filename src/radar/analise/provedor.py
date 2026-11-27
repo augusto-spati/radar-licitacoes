@@ -24,6 +24,9 @@ class Pedido:
     texto: str
     esquema: dict[str, Any]
     max_tokens: int
+    # Saída cortada em `max_tokens` vira `ErroProvedor` (paga, nunca cache). A planilha (7b.2)
+    # pede: uma lista de linhas cortada no meio parece válida. Fora da chave do cache.
+    recusar_truncada: bool = False
 
 
 @dataclass(frozen=True)
@@ -181,6 +184,8 @@ class ProvedorBedrock:
             tokens_saida=int(bruto.get("usage", {}).get("outputTokens", 0)),
             latencia_ms=latencia_ms,
         )
+        if pedido.recusar_truncada and bruto.get("stopReason") == "max_tokens":
+            raise ErroProvedor("resposta cortada em max_tokens", resposta=usada)
         try:
             texto = _texto_da_resposta(bruto, modo)
         except ErroProvedor as erro:

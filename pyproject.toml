@@ -98,6 +98,7 @@ forbidden_modules = [
     "radar.editais.registro",
     "radar.editais.resultados",
     "radar.editais.modelos",
+    "radar.editais.planilhas",
     "radar.analise.exigencias",
     "radar.analise.modelos",
     "radar.analise.normalizacao",
@@ -113,10 +114,13 @@ forbidden_modules = [
     "radar.analise.extrator",
     "radar.analise.pipeline",
     "radar.analise.evals",
+    "radar.analise.planilhas",
     "radar.precos.modelos",
     "radar.precos.servicos",
     "radar.precos.consulta",
     "radar.precos.tcepe",
+    "radar.precos.planilha_leitura",
+    "radar.precos.planilhas",
 ]
 allow_indirect_imports = true
 
