@@ -357,6 +357,8 @@ export interface components {
             mediana_estimado: string | null;
             /** Mediana Estimado Contratados */
             mediana_estimado_contratados: string | null;
+            /** Origens */
+            origens: ("tce_pe" | "pncp_planilha")[];
             /** Poucos Casos */
             poucos_casos: boolean;
             /** Processos Contratado */

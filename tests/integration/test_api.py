@@ -553,6 +553,7 @@ def test_precos_do_edital(cliente: TestClient, sessao: Session) -> None:
                 "unidade": "un",
                 "abrangencia": "outras_ufs",
                 "ufs": ["PE"],
+                "origens": ["tce_pe"],
                 "processos_estimado": 3,
                 "itens_estimado": 4,
                 "mediana_estimado": "200.00",

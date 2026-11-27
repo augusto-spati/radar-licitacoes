@@ -17,12 +17,12 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Literal
+from typing import Literal, cast
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from radar.precos.modelos import PrecoItem
+from radar.precos.modelos import Origem, PrecoItem
 from radar.precos.servicos import Servico, servicos_padrao
 from radar.precos.tcepe import ORIGEM as ORIGEM_TCEPE
 from radar.precos.tcepe import processo_da_chave
@@ -59,7 +59,7 @@ class Referencia:
     # UFs de onde vieram os números, em ordem.
     ufs: tuple[str, ...]
     # Origens do estimado ("tce_pe", "pncp_planilha"), em ordem; o contratado é só do TCE-PE.
-    origens: tuple[str, ...]
+    origens: tuple[Origem, ...]
     processos_estimado: int
     itens_estimado: int
     # Mediana das medianas por processo.
@@ -145,7 +145,7 @@ def _referencia(
         unidade=servico.unidade,
         abrangencia=abrangencia,
         ufs=ufs,
-        origens=tuple(sorted({c.origem for c in estimados})),
+        origens=tuple(sorted({cast(Origem, c.origem) for c in estimados})),
         processos_estimado=processos_estimado,
         itens_estimado=len(estimados),
         mediana_estimado=_mediana_por_processo(

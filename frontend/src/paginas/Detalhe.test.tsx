@@ -535,6 +535,7 @@ const referencia = (parcial: Partial<ReferenciaPreco> = {}): ReferenciaPreco => 
   unidade: 'm',
   abrangencia: 'uf',
   ufs: ['PE'],
+  origens: ['tce_pe'],
   processos_estimado: 14,
   itens_estimado: 37,
   mediana_estimado: '182.40',
@@ -568,7 +569,7 @@ describe('Detalhe: preços de referência', () => {
     expect(pedir).toHaveBeenCalledWith(ID);
     expect(screen.getByRole('heading', {level: 2, name: 'Preços de referência'})).toBeTruthy();
     expect(
-      screen.getByText('Estimado pelo órgão: R$ 182,40/m · 14 processos (37 itens), PE'),
+      screen.getByText('Estimado pelo órgão: R$ 182,40/m · 14 processos (37 itens), PE (TCE-PE)'),
     ).toBeTruthy();
     expect(
       screen.getByText('Contratado: R$ 151,10/m · 9 processos, PE; estimado desses: R$ 190,00/m'),
@@ -576,8 +577,8 @@ describe('Detalhe: preços de referência', () => {
     expect(screen.getByText('preços de 05/2025 a 06/2025')).toBeTruthy();
     expect(
       screen.getByText(
-        'Estimado é o preço do órgão, com BDI. Contratado: só Pernambuco (TCE-PE). ' +
-          'Datas-base diferentes, sem correção monetária.',
+        'Estimado é o preço do órgão, com BDI: TCE-PE e planilhas de editais do PNCP. ' +
+          'Contratado: só Pernambuco (TCE-PE). Datas-base diferentes, sem correção monetária.',
       ),
     ).toBeTruthy();
     expect(screen.queryByText('poucos casos')).toBeNull();
@@ -598,7 +599,8 @@ describe('Detalhe: preços de referência', () => {
           faixa: '1_5_a_3m',
           unidade: 'm3',
           abrangencia: 'outras_ufs',
-          ufs: ['PE'],
+          ufs: ['MG', 'PE'],
+          origens: ['pncp_planilha', 'tce_pe'],
           processos_estimado: 1,
           itens_estimado: 1,
           mediana_estimado: '1234.5',
@@ -621,7 +623,8 @@ describe('Detalhe: preços de referência', () => {
     expect(await screen.findByText('Escavação mecânica de vala · 1,5 a 3 m (m³)')).toBeTruthy();
     expect(
       screen.getByText(
-        'Estimado pelo órgão: R$ 1.234,50/m³ · 1 processo, PE — sem dados na UF do edital',
+        'Estimado pelo órgão: R$ 1.234,50/m³ · 1 processo, MG, PE (planilhas de editais do ' +
+          'PNCP, TCE-PE) — sem dados na UF do edital',
       ),
     ).toBeTruthy();
     expect(screen.getAllByText('poucos casos')).toHaveLength(1);
