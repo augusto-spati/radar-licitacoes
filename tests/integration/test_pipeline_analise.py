@@ -285,10 +285,21 @@ def test_documento_em_zip_le_o_edital_de_dentro(sessao: Session, tmp_path: Path)
 
 def test_zip_sem_edital_fica_nao_pdf_com_motivo(sessao: Session, tmp_path: Path) -> None:
     rede = Rede({1: _zip({"ANEXO XVIII - BDI.pdf": PDF_TEXTO}), 2: PDF_TEXTO})
-    analisar_edital(sessao, ALVO, _dep(rede, tmp_path, ProvedorFalso()), AGORA)
+    analise = analisar_edital(sessao, ALVO, _dep(rede, tmp_path, ProvedorFalso()), AGORA)
+    # O ZIP só tinha anexo que a análise não lê: não falta nada, a análise não é incompleta.
+    assert not analise.incompleta
     status = {d.sequencial: (d.status, d.erro) for d in sessao.scalars(select(DocumentoEdital))}
     assert status[1] == (
         "nao_pdf",
         "ZIP sem edital, termo de referência ou habilitação em PDF ou Word",
     )
     assert status[2] == ("extraido", None)
+
+
+def test_so_zips_de_anexos_e_sem_documento(sessao: Session, tmp_path: Path) -> None:
+    from radar.analise import SemDocumentos
+
+    rede = Rede({1: _zip({"ANEXO XV - PLANILHA ORCAMENTARIA.pdf": PDF_TEXTO})})
+    with pytest.raises(SemDocumentos):
+        analisar_edital(sessao, ALVO, _dep(rede, tmp_path, ProvedorProibido()), AGORA)
+    assert _contar(sessao, AnaliseEdital) == 0
