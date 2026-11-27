@@ -34,6 +34,11 @@ from radar.coleta.janelas import (
 )
 from radar.coleta.modelos import HistoricoCarga
 from radar.coleta.pncp import ClientePNCP, ErroPNCP, criar_http
+from radar.coleta.resultados_pncp import (
+    ClienteResultadosPNCP,
+    ErroResultados,
+    criar_http_resultados,
+)
 from radar.coleta.retratos import (
     ClienteEducado,
     ErroFonte,
@@ -63,9 +68,11 @@ __all__ = [
     "Auditoria",
     "ClienteEducado",
     "ClientePNCP",
+    "ClienteResultadosPNCP",
     "DesfechoFatia",
     "ErroFonte",
     "ErroPNCP",
+    "ErroResultados",
     "EstadoRetrato",
     "FonteCompesa",
     "FonteRetrato",
@@ -85,6 +92,7 @@ __all__ = [
     "coletar_pendentes",
     "criar_http",
     "criar_http_educado",
+    "criar_http_resultados",
     "enfileirar_elegiveis",
     "estado_retrato",
     "frescor_por_fonte",

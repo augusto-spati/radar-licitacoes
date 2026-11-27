@@ -90,6 +90,7 @@ forbidden_modules = [
     "radar.coleta.compesa",
     "radar.coleta.modelos",
     "radar.coleta.historico",
+    "radar.coleta.resultados_pncp",
     "radar.editais.filtro",
     "radar.editais.registro",
     "radar.editais.modelos",
