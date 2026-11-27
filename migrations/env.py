@@ -1,6 +1,7 @@
 from alembic import context
 from sqlalchemy import create_engine
 
+from radar.analise import modelos as _analise_modelos  # noqa: F401  (registra as tabelas)
 from radar.coleta import modelos as _coleta_modelos  # noqa: F401  (registra as tabelas)
 from radar.comum import Base, obter_config
 from radar.editais import modelos as _editais_modelos  # noqa: F401  (registra as tabelas)

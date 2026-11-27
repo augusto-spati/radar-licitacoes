@@ -57,3 +57,21 @@ def test_engine_com_nullpool_para_serverless(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setenv("RADAR_DB_NULLPOOL", "true")
     engine = criar_engine(obter_config())
     assert isinstance(engine.pool, NullPool)
+
+
+def test_config_ia_padroes(monkeypatch: pytest.MonkeyPatch) -> None:
+    for nome in ("RADAR_IA_PROVEDOR", "RADAR_CONFIG_IA", "RADAR_CONFIG_PERFIL", "RADAR_DOCUMENTOS"):
+        monkeypatch.delenv(nome, raising=False)
+    config = obter_config()
+    assert config.ia_provedor == "desligado"
+    assert config.config_ia == RAIZ / "config" / "ia.toml"
+    assert config.config_perfil == RAIZ / "config" / "perfil.toml"
+    assert config.documentos == str(Path.home() / ".radar" / "documentos")
+
+
+def test_config_ia_provedor_le_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RADAR_IA_PROVEDOR", "bedrock")
+    monkeypatch.setenv("RADAR_DOCUMENTOS", "s3://bucket/")
+    config = obter_config()
+    assert config.ia_provedor == "bedrock"
+    assert config.documentos == "s3://bucket/"
