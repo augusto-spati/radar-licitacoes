@@ -1,0 +1,42 @@
+{
+  "output": {
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "toolUse": {
+            "toolUseId": "tooluse_sLxwvXTO5ePjB09ESEWi82",
+            "name": "registrar_achados",
+            "input": {
+              "achados": [
+                {
+                  "campo": "capital_social_minimo",
+                  "valor": "250.000,00",
+                  "numero": 250000,
+                  "unidade": "reais",
+                  "trecho": "comprovação de capital social mínimo de R$ 250.000,00 (duzentos e cinquenta mil reais)"
+                },
+                {
+                  "campo": "visita_tecnica",
+                  "valor": "facultativa",
+                  "numero": null,
+                  "unidade": "",
+                  "trecho": "A visita técnica é facultativa."
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "stopReason": "tool_use",
+  "usage": {
+    "inputTokens": 616,
+    "outputTokens": 144,
+    "totalTokens": 760
+  },
+  "metrics": {
+    "latencyMs": 1059
+  }
+}

@@ -1,0 +1,44 @@
+# Extração de exigências com LLM (etapa 6). Só modelos on-demand in-region de us-east-2:
+# ids de foundation model, nunca perfis de inferência (us., global., eu., apac.).
+#
+# Sonda de 2026-11-26 (uma chamada Converse por modelo e modo, ~US$ 0,001 no total):
+# - amazon.nova-lite-v1:0: recusa outputConfig ("This model doesn't support the outputConfig
+#   field"); com ferramenta única e toolChoice forçado devolve toolUse.input válido.
+# - openai.gpt-oss-120b-1:0: aceita outputConfig, mas o texto veio com lixo antes do JSON
+#   ("**Ach{..."); com ferramenta, toolUse.input válido, precedido de um bloco reasoningContent.
+# - qwen.qwen3-32b-v1:0: outputConfig funciona (JSON válido com "numero": null).
+# - mistral.ministral-3-14b-instruct: outputConfig funciona (JSON válido; o trecho veio com
+#   negrito em markdown, que a ancoragem descarta).
+# No modo ferramenta, gpt-oss, qwen e ministral omitiram "numero" quando nulo (o esquema da
+# ferramenta não é imposto); o Achado aceita a ausência como null.
+#
+# Preços on-demand (Standard) de us-east-2 conferidos na AWS Price List API (AmazonBedrock,
+# regionCode us-east-2) em 2026-11-26, em US$ por milhão de tokens.
+
+regiao = "us-east-2"
+modelo_padrao = "amazon.nova-lite-v1:0"
+teto_mensal_usd = 2.0
+max_editais_por_rodada = 10
+caracteres_por_trecho = 60000
+max_trechos = 15
+max_tokens = 4096
+
+[modelos."amazon.nova-lite-v1:0"]
+modo_saida = "ferramenta"
+entrada_usd_mtok = 0.06
+saida_usd_mtok = 0.24
+
+[modelos."openai.gpt-oss-120b-1:0"]
+modo_saida = "ferramenta"
+entrada_usd_mtok = 0.15
+saida_usd_mtok = 0.60
+
+[modelos."qwen.qwen3-32b-v1:0"]
+modo_saida = "json_schema"
+entrada_usd_mtok = 0.15
+saida_usd_mtok = 0.60
+
+[modelos."mistral.ministral-3-14b-instruct"]
+modo_saida = "json_schema"
+entrada_usd_mtok = 0.20
+saida_usd_mtok = 0.20
