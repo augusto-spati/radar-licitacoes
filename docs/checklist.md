@@ -55,7 +55,7 @@ Filas ficam como futuro, no tema 2: outbox + SQS (etapa 4a; o pgmq não existe n
 ## Histórico de resultados (etapa 7)
 
 - [x] Carga histórica de 12 meses do PNCP por UF, retomável por checkpoint, gravando só o que casa com o filtro (Neon de 0,5 GB). `src/radar/coleta/historico.py`, `radar historico carregar`. `docs/etapas/07-historico.md`. Vídeo: a gravar (`docs/videos/07-historico.md`).
-- [x] Resultados por item do PNCP (vencedor, valores homologados), desconto calculado e resposta instável que não apaga dado bom. `src/radar/coleta/resultados_pncp.py`, `src/radar/editais/resultados.py`, agenda às 07:30. Vídeo: a gravar.
+- [x] Resultados por item do PNCP (vencedor, valores homologados), desconto calculado e resposta instável que não apaga dado bom. `src/radar/coleta/resultados_pncp.py`, `src/radar/editais/resultados.py`, agenda às 05:00. Vídeo: a gravar.
 - [x] Histórico do órgão, vencedores e régua de desconto por linha, UF e faixa de valor na ficha do edital. `src/radar/editais/historico.py`, `GET /api/historicos/{id}`, `frontend/src/componentes/HistoricoOrgao.tsx`, `ReguaDesconto.tsx`. Vídeo: a gravar.
 - [ ] Carga histórica rodada em produção e números reais na doc da etapa.
 - [ ] Preço unitário (7b): planilha estimada do edital com IA e preço contratado do TCE-PE.

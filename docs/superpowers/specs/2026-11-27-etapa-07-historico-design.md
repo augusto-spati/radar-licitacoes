@@ -56,19 +56,19 @@ Para a carga do histórico:
 ### 7a.1 Carga histórica (`radar historico carregar`)
 
 - Percorre `contratacoes/publicacao` do PNCP mês a mês, nos últimos N meses (padrão 12), por **UF** (parâmetro `uf`, confirmado: PE tem 189 concorrências em jun/2026 contra 6.257 no país) e por modalidade do filtro.
-- Cada página é pré-filtrada em memória: modalidade e UF já vêm na consulta; o objeto precisa conter algum termo das linhas de `config/filtro.toml`, comparado sem acento e em minúsculas (superconjunto da regra SQL; o filtro de verdade continua no `filtrar`). Só o que passa vai para `registrar` (mesma tabela `edital`, mesma regra de versão mais nova).
+- Cada página é pré-filtrada em memória: modalidade e UF já vêm na consulta; o objeto precisa conter algum termo das linhas de `config/filtro.toml`, comparado com objeto e termo normalizados do mesmo jeito: sem acento, minúsculas, sem palavras vazias e cada palavra num singular grosseiro (`ligações` → `ligacao`, `redes` → `red`), para ser superconjunto da regra SQL, que reduz plurais (o filtro de verdade continua no `filtrar`). Só o que passa vai para `registrar` (mesma tabela `edital`, mesma regra de versão mais nova).
 - Checkpoint por (UF, modalidade, mês): tabela `historico_carga` com `proxima_pagina`, `total_paginas`, `status` (`pendente|em_andamento|concluida|falha`), `registros_gravados`, `erro`; commit por página. Rodar de novo retoma de onde parou; `--refazer-mes AAAA-MM` reabre.
 - Roda como task avulsa do Fargate (mesma família do coletor), disparada à mão uma vez (e de novo se cair). Sem agendamento.
 - Trava própria (`trava_fonte` com chave `historico`) para não rodar duas ao mesmo tempo.
 
 ### 7a.2 Coletor de resultados (`radar resultados atualizar`)
 
-- Alvos: editais do PNCP que casam com o filtro (todas as situações) com prazo de proposta já passado e (a) sem resultado buscado, ou (b) último resultado buscado há mais de 7 dias, enquanto o encerramento tiver menos de 180 dias e ainda houver item sem situação final.
+- Alvos: editais do PNCP que casam com o filtro (todas as situações) com prazo de proposta já passado e (a) sem resultado buscado, qualquer que seja a idade do encerramento, ou (b) último resultado buscado há mais de 7 dias, enquanto o encerramento tiver menos de 180 dias e ainda houver item sem situação final (ou a contratação estiver `homologada` sem vencedor).
 - Para cada alvo: `GET /pncp-api/v1/orgaos/{cnpj}/compras/{ano}/{seq}/itens` (paginado) e, para cada item com `temResultado`, `.../itens/{n}/resultados`. Rápido (0,1–0,35 s), ainda assim ≤1 req/s.
 - Grava em `resultado_item` (uma linha por item, upsert por (fonte, id_na_fonte, numero_item)): descrição, unidade, quantidade, valor unitário e total estimados, `orcamento_sigiloso`, situação do item (Homologado, Fracassado, Deserto, Anulado/Revogado/Cancelado, Em andamento), e do resultado: CNPJ/razão social/porte do vencedor, quantidade e valores homologados, data do resultado. Vencedor pessoa física (CPF): grava sem nome, só "pessoa física". **[decisão do Claude]**
 - `desconto` calculado (`1 − homologado ÷ estimado`, por item e no total da contratação); o `percentualDesconto` do PNCP é ignorado (vem 0 em 129 de 132 resultados).
 - `resultado_busca` por edital: quando foi buscado, quantos itens, situação agregada (`homologada|fracassada|deserta|parcial|em_andamento|sem_itens`).
-- Roda todo dia às 07:30 (agenda do Fargate, depois da coleta das 06:00). Carga histórica e resultados são comandos separados: a rodada diária de resultados pega também o que a carga histórica trouxe. Sem métrica nova: o resumo vai no log (`resultados: N editais, M itens, K com vencedor`), porque a 10ª métrica customizada do plano grátis fica para o alerta da auditoria (pendência 1). **[decisão do Claude]**
+- Roda todo dia às 05:00 (agenda do Fargate, antes da coleta das 06:00, para não rodar junto com ela contra o pncp.gov.br). Carga histórica e resultados são comandos separados: a rodada diária de resultados pega também o que a carga histórica trouxe. Sem métrica nova: o resumo vai no log (`resultados: N editais, M itens, K com vencedor`), porque a 10ª métrica customizada do plano grátis fica para o alerta da auditoria (pendência 1). **[decisão do Claude]**
 
 ### 7a.3 TCE-PE para a Compesa (condicional)
 
@@ -80,7 +80,7 @@ Para a carga do histórico:
 - `GET /api/historicos/{id}` (rota separada: o conversor `path` de `/api/editais/{id}` engoliria um sufixo `/historico`) → para o órgão do edital (CNPJ; Sanepar/Compesa pelo órgão fixo) e a linha de serviço do edital:
   - `orgao`: contratações passadas do órgão no recorte (até 24 meses): contagem por situação agregada; últimas 10 com objeto, data, valor estimado, valor homologado, desconto, vencedor (razão social, porte);
   - `vencedores`: top 5 vencedores no órgão com número de vitórias e desconto mediano;
-  - `reguas` (lista, uma por linha do edital): para a linha × UF do edital (e faixa de valor do edital, se houver: até 1 mi, 1–5 mi, acima de 5 mi): n, mediana, p25, p75 do desconto global; se n < 5, devolve também a régua só por linha (todas as UFs) e marca `poucos_casos`.
+  - `reguas` (lista, uma por linha do edital): para a linha × UF do edital (e faixa de valor do edital, se houver: até 1 mi, 1–5 mi, acima de 5 mi): n, mediana, p25, p75 do desconto global (contratações de todos os órgãos, não só do órgão do edital; valor do edital nulo ou ≤ 0 → sem faixa); se n < 5, devolve também a régua só por linha (todas as UFs) e marca `poucos_casos`.
   - `limite_inexequivel`: 0,75 (Lei 14.133) ou 0,70 (estatal 13.303: Sanepar, Compesa) do estimado, para a tela mostrar a linha de corte.
 - Mesmo autorizador JWT; `openapi.json` e `api.d.ts` regenerados.
 

@@ -297,11 +297,12 @@ resource "aws_scheduler_schedule" "atualizar_diario" {
   }
 }
 
-# Agenda dos resultados: 07:30, depois da coleta das 06:00. Busca vencedores e valores das
-# contratacoes ja encerradas, para o historico. Mesmo alvo e role do atualizar_diario.
+# Agenda dos resultados: 05:00, antes da coleta das 06:00, para nao rodar junto com ela
+# contra o pncp.gov.br. Busca vencedores e valores das contratacoes ja encerradas, para o
+# historico. Mesmo alvo e role do atualizar_diario.
 resource "aws_scheduler_schedule" "resultados_diario" {
   name                         = "radar-resultados-diario"
-  schedule_expression          = "cron(30 7 * * ? *)"
+  schedule_expression          = "cron(0 5 * * ? *)"
   schedule_expression_timezone = "America/Sao_Paulo"
 
   flexible_time_window {
