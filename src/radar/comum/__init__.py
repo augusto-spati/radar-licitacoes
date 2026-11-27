@@ -1,4 +1,4 @@
-from radar.comum.config import Config, obter_config
+from radar.comum.config import RAIZ_REPOSITORIO, Config, obter_config
 from radar.comum.db import Base, criar_engine, fabrica_sessao
 from radar.comum.fila import (
     Fila,
@@ -15,6 +15,7 @@ from radar.comum.relay import ResumoPublicacao, limpar_outbox, publicar_outbox
 from radar.comum.segredos import garantir_url_do_banco
 
 __all__ = [
+    "RAIZ_REPOSITORIO",
     "Base",
     "Config",
     "Fila",

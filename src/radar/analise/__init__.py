@@ -20,7 +20,18 @@ from radar.analise.cache import (
 )
 from radar.analise.comparacao import Comparacao, ItemComparacao
 from radar.analise.comparacao import Situacao as SituacaoItem
-from radar.analise.custos import TetoAtingido, gasto_do_mes, guarda_teto
+from radar.analise.custos import TetoAtingido, estimar, gasto_do_mes, guarda_teto
+from radar.analise.evals import (
+    INSTRUCAO_GRAVAR,
+    Gabarito,
+    Relatorio,
+    TextoEval,
+    avaliar,
+    ler_linha_de_base,
+    para_markdown,
+    slug,
+    validar_gabaritos,
+)
 from radar.analise.exigencias import (
     CAMPOS,
     DOCUMENTOS,
@@ -33,7 +44,7 @@ from radar.analise.exigencias import (
     ValorEvidencia,
     esquema_resposta,
 )
-from radar.analise.extracao import extrair_paginas
+from radar.analise.extracao import eh_pdf, extrair_paginas, status_do_texto
 from radar.analise.extrator import SISTEMA, Extracao, extrair_exigencias
 from radar.analise.modelos import (
     AnaliseEdital,
@@ -64,6 +75,7 @@ from radar.analise.provedor import (
 __all__ = [
     "CAMPOS",
     "DOCUMENTOS",
+    "INSTRUCAO_GRAVAR",
     "SISTEMA",
     "Achado",
     "AlvoAnalise",
@@ -86,6 +98,7 @@ __all__ = [
     "ErroArquivos",
     "Exigencias",
     "Extracao",
+    "Gabarito",
     "GrandeDemais",
     "ItemComparacao",
     "Pedido",
@@ -93,6 +106,7 @@ __all__ = [
     "Provedor",
     "ProvedorBedrock",
     "ProvedorComCache",
+    "Relatorio",
     "Resposta",
     "RespostaAusente",
     "RespostaExtracao",
@@ -100,23 +114,32 @@ __all__ = [
     "SituacaoItem",
     "StatusDocumento",
     "TetoAtingido",
+    "TextoEval",
     "ValorEvidencia",
     "Veredito",
     "analisar_edital",
+    "avaliar",
     "carregar_config_ia",
     "carregar_perfil",
     "chave_cache",
     "chave_pncp",
     "criar_armazem",
     "criar_http_arquivos",
+    "eh_pdf",
     "escolher_documentos",
     "esquema_resposta",
+    "estimar",
     "extrair_exigencias",
     "extrair_paginas",
     "gasto_do_mes",
     "guarda_teto",
     "ja_analisado",
+    "ler_linha_de_base",
     "obter_analise",
+    "para_markdown",
+    "slug",
+    "status_do_texto",
+    "validar_gabaritos",
     "versao_prompt",
     "versao_prompt_atual",
 ]

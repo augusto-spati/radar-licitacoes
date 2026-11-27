@@ -94,6 +94,13 @@ class ClienteArquivosPNCP:
     def fechar(self) -> None:
         self._http.close()
 
+    def compra(self, cnpj: str, ano: int, sequencial: int) -> dict[str, Any]:
+        """A contratação (para o `valorTotalEstimado` no preparo dos evals)."""
+        corpo = self._com_tentativas(self._obter_json, f"/orgaos/{cnpj}/compras/{ano}/{sequencial}")
+        if not isinstance(corpo, dict):
+            raise ErroArquivos(f"contratação com formato inesperado: {str(corpo)[:200]}")
+        return corpo
+
     def listar(self, cnpj: str, ano: int, sequencial: int) -> list[ArquivoPNCP]:
         caminho = f"/orgaos/{cnpj}/compras/{ano}/{sequencial}/arquivos"
         corpo = self._com_tentativas(self._listar, caminho)
@@ -141,6 +148,14 @@ class ClienteArquivosPNCP:
             raise ErroArquivos(f"HTTP {resposta.status_code}")
 
     def _listar(self, caminho: str) -> list[dict[str, Any]]:
+        corpo = self._obter_json(caminho)
+        if corpo is None:
+            return []
+        if not isinstance(corpo, list):
+            raise ErroArquivos(f"listagem com formato inesperado: {str(corpo)[:200]}")
+        return corpo
+
+    def _obter_json(self, caminho: str) -> Any:
         self._pausar()
         try:
             resposta = self._http.get(caminho)
@@ -148,14 +163,11 @@ class ClienteArquivosPNCP:
             raise _FalhaTransitoria(f"{type(erro).__name__}: {erro}") from erro
         self._verificar(resposta)
         if resposta.status_code == 204:
-            return []
+            return None
         try:
-            corpo = resposta.json()
+            return resposta.json()
         except ValueError as erro:
-            raise ErroArquivos(f"listagem não é JSON: {resposta.text[:200]!r}") from erro
-        if not isinstance(corpo, list):
-            raise ErroArquivos(f"listagem com formato inesperado: {str(corpo)[:200]}")
-        return corpo
+            raise ErroArquivos(f"resposta não é JSON: {resposta.text[:200]!r}") from erro
 
     def _baixar(self, url: str, limite_bytes: int) -> bytes:
         self._pausar()

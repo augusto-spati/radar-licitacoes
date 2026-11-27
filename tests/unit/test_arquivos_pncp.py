@@ -141,3 +141,9 @@ def test_escolher_documentos() -> None:
     ]
     escolhidos = escolher_documentos(arquivos)
     assert [a.sequencial for a in escolhidos] == [1, 2, 4]
+
+
+def test_compra_le_valor_estimado() -> None:
+    cliente, chamadas = _cliente([httpx.Response(200, json={"valorTotalEstimado": 1234.5})])
+    assert cliente.compra("78200482000110", 2026, 298)["valorTotalEstimado"] == 1234.5
+    assert chamadas[0].url.path == "/pncp-api/v1/orgaos/78200482000110/compras/2026/298"

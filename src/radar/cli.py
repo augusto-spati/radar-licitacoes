@@ -1,6 +1,8 @@
 """Porta de entrada de terminal."""
 
 import functools
+import hashlib
+import json
 import logging
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
@@ -15,22 +17,36 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from radar import __version__
 from radar.analise import (
+    INSTRUCAO_GRAVAR,
     AlvoAnalise,
+    CacheArquivos,
     CacheBanco,
     ClienteArquivosPNCP,
     ConfigIA,
     Dependencias,
+    Pedido,
     Provedor,
     ProvedorBedrock,
     ProvedorComCache,
     TetoAtingido,
+    TextoEval,
     analisar_edital,
+    avaliar,
     carregar_config_ia,
     carregar_perfil,
+    chave_pncp,
     criar_armazem,
     criar_http_arquivos,
+    eh_pdf,
+    escolher_documentos,
+    estimar,
+    extrair_paginas,
     guarda_teto,
     ja_analisado,
+    para_markdown,
+    slug,
+    status_do_texto,
+    validar_gabaritos,
     versao_prompt_atual,
 )
 from radar.api.app import criar_app
@@ -51,6 +67,7 @@ from radar.coleta import (
     auditar as auditar_cobertura,
 )
 from radar.comum import (
+    RAIZ_REPOSITORIO,
     Fila,
     FilaSQS,
     configurar_logs,
@@ -75,6 +92,10 @@ from radar.processador import FilaLocal, criar_fila, fontes_retrato
 logger = logging.getLogger(__name__)
 
 app = typer.Typer(help="Radar de licitações.", no_args_is_help=True)
+app_avaliar = typer.Typer(
+    help="Evals da extração com IA (gabarito em evals/).", no_args_is_help=True
+)
+app.add_typer(app_avaliar, name="avaliar")
 
 FUSO = ZoneInfo("America/Sao_Paulo")
 IDADE_MAXIMA_RETRATO = timedelta(hours=36)
@@ -561,6 +582,124 @@ def analisar(
         f"US$ {provedor.custo_usd:.4f}"
     )
     _encerrar(falhas + int(teto))
+
+
+OpcaoRaizEvals = Annotated[Path, typer.Option("--raiz", help="Pasta do corpus de evals.")]
+RAIZ_EVALS = RAIZ_REPOSITORIO / "evals"
+
+
+@app_avaliar.command("preparar")
+def avaliar_preparar(
+    id_publico: Annotated[str, typer.Argument(help="Ex.: pncp~78200482000110-1-000298/2026")],
+    raiz: OpcaoRaizEvals = RAIZ_EVALS,
+) -> None:
+    """Baixa os documentos do edital e grava as páginas em textos/<slug>.json (sem gabarito)."""
+    configurar_logs()
+    fonte, _, id_na_fonte = id_publico.partition("~")
+    chave = chave_pncp(id_na_fonte) if fonte == "pncp" else None
+    if chave is None:
+        typer.echo(f"só editais do PNCP: {id_publico}", err=True)
+        raise typer.Exit(code=2)
+    cliente = _criar_cliente_arquivos()
+    try:
+        valor = cliente.compra(*chave).get("valorTotalEstimado")
+        documentos: list[dict[str, object]] = []
+        paginas: list[str] = []
+        for arquivo in escolher_documentos(cliente.listar(*chave)):
+            dados = cliente.baixar(arquivo.url)
+            item: dict[str, object] = {
+                "sequencial": arquivo.sequencial,
+                "titulo": arquivo.titulo,
+                "url": arquivo.url,
+                "sha256": hashlib.sha256(dados).hexdigest(),
+            }
+            if not eh_pdf(dados):
+                item["status"] = "nao_pdf"
+            else:
+                texto = extrair_paginas(dados)
+                item.update(status=status_do_texto(texto), paginas=len(texto.paginas))
+                item["pagina_inicial"] = len(paginas) + 1
+                if item["status"] == "extraido":
+                    paginas.extend(texto.paginas)
+            documentos.append(item)
+    finally:
+        cliente.fechar()
+    corpo = TextoEval(
+        edital=id_publico,
+        valor_estimado=None if valor is None else Decimal(str(valor)),
+        documentos=documentos,
+        paginas=paginas,
+    )
+    destino = raiz / "textos" / f"{slug(id_publico)}.json"
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    texto_json = json.dumps(corpo.model_dump(mode="json"), ensure_ascii=False, indent=2)
+    destino.write_text(texto_json + "\n", encoding="utf-8", newline="\n")
+    typer.echo(f"{destino}: {len(documentos)} documentos, {len(paginas)} páginas")
+
+
+@app_avaliar.command("validar")
+def avaliar_validar(raiz: OpcaoRaizEvals = RAIZ_EVALS) -> None:
+    """Confere esquema dos gabaritos e que todo trecho existe na página indicada."""
+    erros = validar_gabaritos(raiz)
+    for erro in erros:
+        typer.echo(erro)
+    typer.echo(f"{len(erros)} erros")
+    _encerrar(len(erros))
+
+
+@app_avaliar.command("rodar")
+def avaliar_rodar(
+    modelo: Annotated[str | None, typer.Option(help="Padrão: modelo_padrao.")] = None,
+    modo: Annotated[str, typer.Option(help="replay (sem custo) ou gravar.")] = "replay",
+    conjunto: Annotated[str, typer.Option(help="ajuste, teste ou todos.")] = "todos",
+    teto_usd: Annotated[float, typer.Option("--teto-usd", help="Teto desta rodada.")] = 1.0,
+    raiz: OpcaoRaizEvals = RAIZ_EVALS,
+) -> None:
+    """Roda a extração sobre o corpus e imprime a tabela de precisão e recall por campo."""
+    if modo not in ("replay", "gravar") or conjunto not in ("ajuste", "teste", "todos"):
+        typer.echo("use --modo replay|gravar e --conjunto ajuste|teste|todos", err=True)
+        raise typer.Exit(code=2)
+    configurar_logs("WARNING")
+    ambiente = obter_config()
+    config_ia = carregar_config_ia(ambiente.config_ia)
+    modelo = modelo or config_ia.modelo_padrao
+    if modelo not in config_ia.modelos:
+        typer.echo(f"modelo fora de config/ia.toml: {modelo}", err=True)
+        raise typer.Exit(code=2)
+    cache = CacheArquivos(raiz / "respostas")
+    if modo == "replay":
+        provedor = ProvedorComCache(None, cache, "replay", config_ia)
+    else:
+        if ambiente.ia_provedor != "bedrock":
+            typer.echo("modo gravar chama o modelo: defina RADAR_IA_PROVEDOR=bedrock", err=True)
+            raise typer.Exit(code=2)
+        teto = Decimal(str(teto_usd))
+
+        def teto_da_rodada(pedido: Pedido) -> None:
+            previsto = provedor.custo_usd + estimar(pedido, config_ia.preco(pedido.modelo))
+            if previsto > teto:
+                raise TetoAtingido(f"teto da rodada: US$ {previsto:.4f} > US$ {teto}")
+
+        provedor = ProvedorComCache(
+            _criar_provedor_ia(config_ia), cache, "gravar", config_ia, teto_da_rodada
+        )
+    try:
+        relatorio = avaliar(
+            raiz,
+            provedor,
+            modelo,
+            config_ia,
+            conjunto,  # type: ignore[arg-type]  # validado acima
+            replay=modo == "replay",
+        )
+    except TetoAtingido as erro:
+        typer.echo(f"{erro}; as respostas já gravadas ficam em {raiz / 'respostas'}")
+        raise typer.Exit(code=1) from erro
+    typer.echo(para_markdown(relatorio))
+    if relatorio.ausentes:
+        faltam = len(relatorio.ausentes)
+        typer.echo(f"{faltam} respostas ausentes: {INSTRUCAO_GRAVAR} --modelo {modelo}")
+        raise typer.Exit(code=1)
 
 
 @app.command()
