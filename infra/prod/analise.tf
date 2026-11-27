@@ -160,8 +160,9 @@ resource "aws_scheduler_schedule" "analisar_diario" {
       Overrides = {
         TaskRoleArn = aws_iam_role.analisador_task.arn
         ContainerOverrides = [{
-          Name    = "coletor"
-          Command = ["analisar"]
+          Name = "coletor"
+          # As tres fontes; o padrao do comando (pncp,sanepar) e o de quem roda sem dizer.
+          Command = ["analisar", "--fontes", "pncp,sanepar,compesa"]
           Environment = [
             { Name = "RADAR_IA_PROVEDOR", Value = "bedrock" },
             { Name = "RADAR_DOCUMENTOS", Value = "s3://${aws_s3_bucket.documentos.bucket}/" },

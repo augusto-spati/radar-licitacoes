@@ -32,7 +32,7 @@ Roteiro em tópicos. Material de apoio: `docs/etapas/04a-filas.md`.
 
 1. Advisory lock morto pelo `idle_in_transaction_session_timeout` do Neon e não confiável pelo pooler. Solução: lease em tabela (PR #9).
 2. A linha `resultado:` que o alarme contava foi removida. Hotfix (PR #8) e teste estático.
-3. A Compesa não responde a partir da AWS. Saiu do agendamento (PR #10).
+3. A Compesa "não respondia" a partir da AWS e saiu do agendamento (PR #10). Depois achei o motivo: o nosso firewall só liberava as portas 443 e 5432, e o portal dela usa a 8743. Bom exemplo de timeout ambíguo.
 4. O perfil `radar` com login novo exige `botocore[crt]`; credenciais exportadas.
 
 ## Perguntas (1 min)

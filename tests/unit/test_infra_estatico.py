@@ -145,7 +145,7 @@ def test_bucket_documentos_privado_e_com_expiracao() -> None:
 
 def test_analisar_usa_familia_do_coletor() -> None:
     analise = re.sub(r"\s+", " ", _analise_tf())
-    assert 'Command = ["analisar"]' in analise
+    assert 'Command = ["analisar", "--fontes", "pncp,sanepar,compesa"]' in analise
     assert "TaskDefinition = local.familia_coletor" in analise
     assert "arn:aws:scheduler:::aws-sdk:ecs:runTask" in analise
     assert 'schedule_expression = "cron(0 9 * * ? *)"' in analise
@@ -216,12 +216,19 @@ def test_alarmes_cabem_no_gratis() -> None:
 
 def test_coletor_so_retratos() -> None:
     coletor = _tf("coletor.tf")
-    assert 'command     = ["atualizar", "--fontes", "sanepar"]' in coletor
-    # O agendamento sobrescreve o command: só retratos, sem o PNCP e sem a Compesa.
-    assert 'command = ["atualizar", "--fontes", "sanepar"]' in coletor
-    assert "compesa" not in "".join(re.findall(r"command\s*=\s*\[[^\]]*\]", coletor))
+    assert 'command     = ["atualizar", "--fontes", "sanepar,compesa"]' in coletor
+    # O agendamento sobrescreve o command: só retratos, sem o PNCP (que vai pelas janelas).
+    assert 'command = ["atualizar", "--fontes", "sanepar,compesa"]' in coletor
+    assert "pncp" not in "".join(re.findall(r"command\s*=\s*\[[^\]]*\]", coletor))
     assert '{ name = "RADAR_FILA_JANELAS_URL", value = aws_sqs_queue.janelas.url }' in coletor
     assert "aws_sqs_queue.janelas.arn" in _tf("fila.tf")  # o relay do coletor pode enviar
+
+
+def test_coletor_sai_pela_porta_do_portal_da_compesa() -> None:
+    # Sem esta regra o security group descarta a saída para portalscl.compesa.com.br:8743.
+    regra = re.sub(r"\s+", " ", _tf("coletor.tf"))
+    assert 'resource "aws_vpc_security_group_egress_rule" "coletor_compesa"' in regra
+    assert "from_port = 8743 to_port = 8743" in regra
 
 
 def test_deploy_atualiza_as_lambdas_novas() -> None:

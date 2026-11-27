@@ -724,8 +724,8 @@ def analisar(
     fontes: Annotated[
         str,
         typer.Option(
-            help="Fontes separadas por vírgula. A Compesa só responde fora da AWS: "
-            "rode `--fontes compesa` no notebook."
+            help="Fontes separadas por vírgula (pncp, sanepar, compesa). A agenda da AWS "
+            "pede as três."
         ),
     ] = "pncp,sanepar",
     config: OpcaoConfig = ARQUIVO_CONFIG,

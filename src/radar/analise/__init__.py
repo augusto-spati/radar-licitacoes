@@ -61,7 +61,7 @@ from radar.analise.modelos import (
 from radar.analise.perfil import Perfil, carregar_perfil
 from radar.analise.pipeline import (
     FONTES_ANALISADAS,
-    FONTES_NA_NUVEM,
+    FONTES_PADRAO,
     AlvoAnalise,
     AnaliseLida,
     Dependencias,
@@ -83,7 +83,7 @@ from radar.analise.provedor import (
 
 __all__ = [
     "FONTES_ANALISADAS",
-    "FONTES_NA_NUVEM",
+    "FONTES_PADRAO",
     "DocumentosCompesa",
     "SemDocumentos",
     "criar_documentos_compesa",

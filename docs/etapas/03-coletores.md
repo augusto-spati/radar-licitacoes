@@ -150,8 +150,10 @@ retrato concluído e registrado, `limpar_brutos` apaga as páginas dos retratos 
 mesma fonte: ficam as dos 3 concluídos mais novos e as dos 10 em falha mais novos (a falha é o que
 se quer diagnosticar). As linhas de `coleta_retrato` ficam todas. O log é `brutos_removidos`.
 
-## A Compesa não responde a partir da AWS (etapa 4a)
+## A Compesa "não respondia" da AWS: era o nosso firewall (etapas 4a e 6d)
 
-Na primeira rodada na nuvem, o portal da Compesa deu `ConnectTimeout` duas vezes seguidas, em horários diferentes, a partir de us-east-2. Da conexão do Augusto, no Brasil, o mesmo endereço respondeu em 0,6 s. O mais provável é um bloqueio por origem do endereço IP.
+Na primeira rodada na nuvem, o portal da Compesa deu `ConnectTimeout` duas vezes seguidas a partir de us-east-2, e da conexão do Augusto, no Brasil, respondeu em 0,6 s. A primeira leitura foi bloqueio por origem do IP, e a Compesa saiu do agendamento (PR #10).
 
-Por isso a execução agendada na nuvem coleta só `pncp,sanepar` (`infra/prod/coletor.tf`, campo `input` do agendamento). Com a etapa 4b o PNCP saiu do Fargate (vai pelo planejador e pelas Lambdas coletoras), e o agendamento ficou só com `sanepar`. A Compesa continua funcionando localmente com `uv run radar atualizar --fontes compesa`. Decisão pendente com o Augusto: rodar a Compesa por um agendamento local, aceitar sem ela na nuvem, ou perguntar à Compesa.
+Estava errado. Em 27/11/2026 o portal (`portalscl.compesa.com.br:8743`) e a nuvem dela responderam de 58 de 59 servidores do check-host.net, inclusive nos EUA. A causa era a regra de saída do security group do coletor, que só liberava 443 e 5432: a porta 8743 do portal era descartada na saída, e o `ConnectTimeout` é exatamente o sintoma de pacote descartado. A regra `coletor_compesa` libera a 8743, e a Compesa voltou aos agendamentos de coleta (`sanepar,compesa`) e de análise.
+
+Lição: um timeout de conexão é ambíguo (quem descartou, nós ou eles?). Antes de culpar o outro lado, confira a saída do próprio lado e teste de uma terceira origem.
