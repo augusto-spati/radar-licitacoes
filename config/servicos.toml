@@ -1,0 +1,188 @@
+# Serviços-padrão da etapa 7b (spec 2026-11-27-etapa-07b-precos-design.md, "Serviços-padrão").
+#
+# Regras de casamento, todas sobre a descrição sem acento e em minúsculas (U+FFFD vale por
+# qualquer letra; cada termo casa no começo de uma palavra, então "asfalt" casa "asfaltico"):
+#   termos_obrigatorios: todos precisam aparecer; um item que é lista vale se qualquer um aparecer.
+#   termos_qualquer:     pelo menos um precisa aparecer (lista vazia = sem exigência).
+#   termos_excluidos:    nenhum pode aparecer.
+#   unidades_aceitas:    unidade do item (sem acento, sem ponto nem espaço) -> fator.
+#                        quantidade canônica = quantidade x fator; preço canônico = preço / fator.
+# Serviço de rede (com `materiais`) exige material reconhecível e DN dentro de [dn_min, dn_max];
+# sem um dos dois o item fica sem serviço. Um item que casa com mais de um serviço também fica sem.
+
+[[servico]]
+nome = "ligacao_agua"
+rotulo = "Ligação predial de água"
+linha = "redes"
+unidade = "un"
+termos_obrigatorios = ["agua"]
+termos_qualquer = [
+    "ligacao predial", "ligacoes prediais", "ramal predial", "ramais prediais",
+    "ligacao domiciliar", "ligacoes domiciliares", "ramal domiciliar", "ramais domiciliares",
+]
+termos_excluidos = [
+    "esgoto", "supress", "corte", "religa", "remanej", "desativ", "retirada", "cadastr",
+    "vistoria", "projeto",
+]
+[servico.unidades_aceitas]
+un = "1"
+und = "1"
+unid = "1"
+unidade = "1"
+ud = "1"
+lig = "1"
+ligacao = "1"
+
+[[servico]]
+nome = "ligacao_esgoto"
+rotulo = "Ligação predial de esgoto"
+linha = "redes"
+unidade = "un"
+termos_obrigatorios = ["esgoto"]
+termos_qualquer = [
+    "ligacao predial", "ligacoes prediais", "ramal predial", "ramais prediais",
+    "ligacao domiciliar", "ligacoes domiciliares", "ramal domiciliar", "ramais domiciliares",
+]
+termos_excluidos = [
+    "supress", "corte", "remanej", "desativ", "retirada", "cadastr", "vistoria", "projeto",
+]
+[servico.unidades_aceitas]
+un = "1"
+und = "1"
+unid = "1"
+unidade = "1"
+ud = "1"
+lig = "1"
+ligacao = "1"
+
+[[servico]]
+nome = "hidrometro"
+rotulo = "Hidrômetro, fornecimento e instalação"
+linha = "perdas"
+unidade = "un"
+termos_obrigatorios = ["hidrometro"]
+termos_qualquer = ["fornecimento", "instalacao", "substituicao", "troca"]
+# Caixa, abrigo, lacre e cavalete são outros itens; leitura e aferição são outros serviços.
+termos_excluidos = [
+    "leitura", "caixa", "abrigo", "lacre", "cavalete", "aferi", "ligac", "ramal", "macromed",
+    "retirada",
+]
+[servico.unidades_aceitas]
+un = "1"
+und = "1"
+unid = "1"
+unidade = "1"
+ud = "1"
+pc = "1"
+peca = "1"
+
+[[servico]]
+nome = "pesquisa_vazamento"
+rotulo = "Pesquisa de vazamento não visível"
+linha = "perdas"
+unidade = "km"
+termos_obrigatorios = ["vazamento"]
+termos_qualquer = ["pesquisa", "deteccao", "geofonamento", "varredura"]
+termos_excluidos = ["reparo", "conserto"]
+[servico.unidades_aceitas]
+km = "1"
+m = "0.001"
+ml = "0.001"
+metro = "0.001"
+metros = "0.001"
+
+[[servico]]
+nome = "escavacao_vala"
+rotulo = "Escavação mecânica de vala"
+linha = "redes"
+unidade = "m3"
+termos_obrigatorios = ["escavacao", "vala"]
+termos_qualquer = []
+# Manual e em rocha custam várias vezes a mecânica em solo; carga e transporte são outro item.
+termos_excluidos = ["manual", "rocha", "transporte", "3a categoria", "terceira categoria"]
+[servico.unidades_aceitas]
+m3 = "1"
+metrocubico = "1"
+metroscubicos = "1"
+
+[[servico]]
+nome = "recomposicao_asfalto"
+rotulo = "Recomposição de pavimento asfáltico"
+linha = "redes"
+unidade = "m2"
+termos_obrigatorios = [["asfalt", "cbuq"]]
+termos_qualquer = ["recomposicao", "reposicao", "repavimentacao", "recompor"]
+termos_excluidos = ["transporte", "imprimacao", "pintura", "fresagem", "demolicao", "corte"]
+[servico.unidades_aceitas]
+m2 = "1"
+metroquadrado = "1"
+metrosquadrados = "1"
+
+[[servico]]
+nome = "rede_agua"
+rotulo = "Rede de água"
+linha = "redes"
+unidade = "m"
+termos_obrigatorios = ["agua"]
+termos_qualquer = ["rede", "redes", "tubo", "tubos", "tubula", "assentamento"]
+# Conexões, peças e serviços auxiliares citam "rede de água" mas não são o metro de rede.
+termos_excluidos = [
+    "esgoto", "pluvia", "drenag", "predia", "ligac", "ramal", "escavac", "reaterro", "aterro",
+    "pavimento", "escoramento", "berco", "lastro", "envelop", "sinaliz", "teste", "ensaio",
+    "cadastr", "limpeza", "desinfec", "lavagem", "demolic", "retirada", "remoc", "projeto",
+    "sondagem", "curva", "joelho", "luva", "registro", "valvula", "conexao", "conexoes",
+    "adaptador", "reducao", "juncao", "flange", "tampao", "colar", "hidrante", "ventosa",
+    "vazamento", "pesquisa", "reparo", "conserto", "manutenc",
+]
+dn_min = 50
+dn_max = 600
+[servico.unidades_aceitas]
+m = "1"
+ml = "1"
+mt = "1"
+metro = "1"
+metros = "1"
+km = "1000"
+[[servico.materiais]]
+nome = "pvc"
+termos = ["pvc", "defofo"]
+[[servico.materiais]]
+nome = "pead"
+termos = ["pead", "polietileno"]
+[[servico.materiais]]
+nome = "fofo"
+termos = ["fofo", "ferro fundido", "ferro ductil"]
+
+[[servico]]
+nome = "rede_esgoto"
+rotulo = "Rede de esgoto"
+linha = "redes"
+unidade = "m"
+termos_obrigatorios = ["esgoto"]
+termos_qualquer = ["rede", "redes", "coletor", "tubo", "tubos", "tubula", "manilha", "assentamento"]
+termos_excluidos = [
+    "pluvia", "drenag", "predia", "ligac", "ramal", "escavac", "reaterro", "aterro",
+    "pavimento", "escoramento", "berco", "lastro", "envelop", "sinaliz", "teste", "ensaio",
+    "cadastr", "limpeza", "desobstru", "inspec", "demolic", "retirada", "remoc", "projeto",
+    "sondagem", "curva", "joelho", "luva", "registro", "valvula", "conexao", "conexoes",
+    "adaptador", "reducao", "juncao", "flange", "tampao", "poco", "caixa", "reparo",
+    "conserto", "manutenc", "vazamento",
+]
+dn_min = 50
+dn_max = 600
+[servico.unidades_aceitas]
+m = "1"
+ml = "1"
+mt = "1"
+metro = "1"
+metros = "1"
+km = "1000"
+[[servico.materiais]]
+nome = "pvc"
+termos = ["pvc"]
+[[servico.materiais]]
+nome = "pead"
+termos = ["pead", "polietileno"]
+[[servico.materiais]]
+nome = "ceramico"
+termos = ["manilha", "ceramic"]

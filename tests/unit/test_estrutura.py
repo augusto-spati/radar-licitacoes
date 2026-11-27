@@ -6,6 +6,7 @@ MODULOS = [
     "radar.coleta",
     "radar.editais",
     "radar.analise",
+    "radar.precos",
     "radar.comum",
     "radar.cli",
     "radar.processador",

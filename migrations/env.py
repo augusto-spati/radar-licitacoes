@@ -5,6 +5,7 @@ from radar.analise import modelos as _analise_modelos  # noqa: F401  (registra a
 from radar.coleta import modelos as _coleta_modelos  # noqa: F401  (registra as tabelas)
 from radar.comum import Base, obter_config
 from radar.editais import modelos as _editais_modelos  # noqa: F401  (registra as tabelas)
+from radar.precos import modelos as _precos_modelos  # noqa: F401  (registra as tabelas)
 
 config = context.config
 target_metadata = Base.metadata
