@@ -1247,7 +1247,9 @@ def tcepe_atualizar(
                     continue
                 alvos = [p for p in brutos if _alvo_tcepe(p)]
                 removidos += _limpar_fora_do_alvo(
-                    sessao, brutos, {str(p.get("processoContratacaoId") or "").strip() for p in alvos} - {""}
+                    sessao,
+                    brutos,
+                    {str(p.get("processoContratacaoId") or "").strip() for p in alvos} - {""},
                 )
                 for processo in alvos:
                     try:
