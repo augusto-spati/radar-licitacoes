@@ -697,3 +697,15 @@ def test_secao_de_ramal_tira_so_a_rede() -> None:
 )
 def test_secao_de_ramal(secao: str | None, esperado: bool) -> None:
     assert secao_de_ramal(secao) is esperado
+
+
+@pytest.mark.parametrize(
+    "descricao",
+    [
+        # PNCP 25269069000146-1-000045/2026: ferro fundido "para rede de PVC PBA".
+        "TUBO EM FERRO FUNDIDO DÚCTIL DN 100 MM PARA ÁGUA, COMPATÍVEL COM TUBO PVC PBA",
+        "TUBO PEAD DN 110 MM PARA REDE DE ÁGUA, COMPATÍVEL COM PVC PBA",
+    ],
+)
+def test_rede_com_dois_materiais_fica_sem(descricao: str) -> None:
+    assert classificar(descricao, "M") is None

@@ -3,7 +3,7 @@
 As regras ficam em `config/servicos.toml`. O casamento é por termos sem acento, com U+FFFD
 (o acento perdido no `Remessa_*` do TCE-PE) valendo por qualquer letra. Na dúvida, o item fica
 sem serviço: casar com dois serviços, unidade fora da lista, rede sem material, sem DN ou
-sem escopo claro (só o tubo, só o assentamento ou os dois).
+sem escopo claro (só o tubo, só o assentamento ou os dois) e rede que cita dois materiais.
 """
 
 import re
@@ -348,10 +348,12 @@ def _classificar_em(servico: Servico, texto: str, unidade: str) -> Classificacao
         return Classificacao(servico.nome, None, None, None, servico.unidade, fator)
     if _cita_agua_e_esgoto(texto):
         return None
-    material = next((m.nome for m in servico.materiais if _algum(texto, m.termos)), None)
+    # Dois materiais na linha ("TUBO FERRO FUNDIDO ... COMPATÍVEL COM PVC PBA") é ambíguo: sem.
+    materiais = {m.nome for m in servico.materiais if _algum(texto, m.termos)}
     dn = extrair_dn(texto)
-    if material is None or dn is None:
+    if len(materiais) != 1 or dn is None:
         return None
+    (material,) = materiais
     if (servico.dn_min is not None and dn < servico.dn_min) or (
         servico.dn_max is not None and dn > servico.dn_max
     ):

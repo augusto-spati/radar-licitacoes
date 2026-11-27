@@ -7,8 +7,9 @@
 #   termos_excluidos:    nenhum pode aparecer.
 #   unidades_aceitas:    unidade do item (sem acento, sem ponto nem espaço) -> fator.
 #                        quantidade canônica = quantidade x fator; preço canônico = preço / fator.
-# Serviço de rede (com `materiais`) exige material reconhecível, DN dentro de [dn_min, dn_max]
-# e escopo claro (só o tubo, só o assentamento ou os dois); sem um deles o item fica sem serviço.
+# Serviço de rede (com `materiais`) exige um material só (dois na linha → sem serviço), DN
+# dentro de [dn_min, dn_max] e escopo claro (só o tubo, só o assentamento ou os dois); sem um
+# deles o item fica sem serviço.
 # Linha de rede que cita água e esgoto ("PARA REDE DE AGUA OU ESGOTO") também fica sem, assim
 # como um item que casa com mais de um serviço. Exceção (7b.2): na planilha do PNCP, "água ou
 # esgoto" (ou "água/esgoto") é a composição genérica do SINAPI e a linha da obra (seção ou
