@@ -16,7 +16,8 @@ Regras (decisões registradas em `docs/etapas/07-historico.md`, seção TCE-PE):
   vencedor (como o PNCP na 7a: entram nas contagens, ficam fora da régua e dos vencedores).
   Revogado, anulado e em andamento ficam de fora.
 - Desconto = `1 − valorHomologado ÷ valorGlobal` (o processo inteiro: o TCE-PE não dá o
-  homologado por item); orçamento sigiloso ou estimado ≤ 0 → sem desconto.
+  homologado por item); orçamento sigiloso, estimado ≤ 0 ou homologado ÷ estimado fora de
+  [0,3; 1,5] → sem desconto.
 - Vencedor: a contratada do contrato cujo valor bate com o homologado (±2%); com vários
   contratos (lotes), o de maior valor; sem contrato que bata, o participante do processo com o
   maior valor homologado; sem nenhum, o caso entra sem vencedor. Pessoa física vira "Pessoa
@@ -54,6 +55,8 @@ if set(ROTULOS_FONTE) != {Fonte.pncp.value, *FONTES_EXTERNAS} or set(ROTULOS_FON
 ORGAOS_TCEPE: dict[str, tuple[str, str]] = {"802": ("09769035000164", "COMPESA")}
 UF_TCEPE = "PE"
 TOLERANCIA_VALOR = Decimal("0.02")
+RAZAO_PLAUSIVEL_MIN = Decimal("0.3")  # homologado ÷ estimado aceito para calcular o desconto
+RAZAO_PLAUSIVEL_MAX = Decimal("1.5")
 _QUATRO_CASAS = Decimal("0.0001")
 _NUMERO_LICITACAO = re.compile(r"(\d+)\s*/\s*(\d{4})")
 
@@ -257,7 +260,11 @@ def caso_tcepe(
         estimado = None
     desconto = None
     if estimado is not None and homologado is not None:
-        desconto = (1 - homologado / estimado).quantize(_QUATRO_CASAS)
+        # Razão fora de [0,3; 1,5] é erro no dado aberto (a ata 93/2025 da Compesa veio com o
+        # estimado por unidade: -9.570%). O caso conta para o órgão, mas fica fora da régua. A
+        # mesma faixa marca `suspeito` no preço contratado da 7b.1.
+        if RAZAO_PLAUSIVEL_MIN <= homologado / estimado <= RAZAO_PLAUSIVEL_MAX:
+            desconto = (1 - homologado / estimado).quantize(_QUATRO_CASAS)
     resultado = _data(processo.get("dataResultado"))
     return CasoExterno(
         fonte=FONTE_TCEPE,

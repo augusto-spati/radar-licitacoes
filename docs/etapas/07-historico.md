@@ -55,3 +55,9 @@ Limites aceitos: num processo em lotes com algum lote fracassado, o `valorGlobal
 6. Como o pacote `editais` faz a consulta que junta edital e resultado sem violar a independência entre `coleta` e `editais`?
 7. Por que os casos do TCE-PE não entram na tabela `edital`, e por que as linhas de serviço deles são decididas na gravação e não pelo tsvector?
 8. Uma comparação com `numero` nulo dentro de `NOT (...)` tirava todos os casos da régua. Por quê?
+
+- **Desconto implausível no TCE-PE.** Homologado ÷ estimado fora de [0,3; 1,5] fica sem desconto
+  (conta para o órgão, fora da régua), a mesma faixa do `suspeito` da 7b.1. Na primeira carga
+  real, 1 de 27 casos da Compesa caiu nela: a ata 93/2025 (hidrômetros) veio com estimado de
+  R$ 27.313,40 e homologado de R$ 2.641.230,00, um desconto de -9.570% que puxava a média para
+  -342%. Os outros 26 ficaram entre 0% e 47%.
