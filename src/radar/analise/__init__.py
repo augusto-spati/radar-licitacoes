@@ -62,7 +62,7 @@ from radar.analise.modelos import (
     StatusDocumento,
     Veredito,
 )
-from radar.analise.perfil import Perfil, carregar_perfil
+from radar.analise.perfil import Perfil, carregar_perfil, carregar_perfil_de, ler_perfil
 from radar.analise.pipeline import (
     FONTES_ANALISADAS,
     FONTES_PADRAO,
@@ -74,6 +74,7 @@ from radar.analise.pipeline import (
     ja_analisado,
     obter_analise,
     pagina_no_documento,
+    recomparar,
     versao_prompt_atual,
 )
 from radar.analise.provedor import (
@@ -143,6 +144,9 @@ __all__ = [
     "avaliar",
     "carregar_config_ia",
     "carregar_perfil",
+    "carregar_perfil_de",
+    "ler_perfil",
+    "recomparar",
     "chave_cache",
     "chave_pncp",
     "criar_armazem",

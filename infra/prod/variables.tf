@@ -94,3 +94,9 @@ variable "analise_agendada" {
   type        = bool
   default     = true
 }
+
+variable "perfil_no_s3" {
+  description = "Le o perfil real da empresa de s3://<bucket de documentos>/perfil/perfil.toml (privado). false = o perfil de exemplo da imagem."
+  type        = bool
+  default     = false
+}

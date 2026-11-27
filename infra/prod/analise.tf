@@ -167,7 +167,14 @@ resource "aws_scheduler_schedule" "analisar_diario" {
             { Name = "RADAR_IA_PROVEDOR", Value = "bedrock" },
             { Name = "RADAR_DOCUMENTOS", Value = "s3://${aws_s3_bucket.documentos.bucket}/" },
             { Name = "RADAR_CONFIG_IA", Value = "/app/config/ia.toml" },
-            { Name = "RADAR_CONFIG_PERFIL", Value = "/app/config/perfil.toml" },
+            # O perfil real e dado privado da empresa: fica no bucket privado, nunca no
+            # repositorio nem na imagem. Ate ele subir, vale o de exemplo da imagem.
+            {
+              Name = "RADAR_CONFIG_PERFIL",
+              Value = (var.perfil_no_s3
+                ? "s3://${aws_s3_bucket.documentos.bucket}/perfil/perfil.toml"
+              : "/app/config/perfil.toml")
+            },
           ]
         }]
       }

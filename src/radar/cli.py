@@ -741,7 +741,7 @@ def analisar(
         TetoAtingido,
         analisar_edital,
         carregar_config_ia,
-        carregar_perfil,
+        carregar_perfil_de,
         criar_armazem,
         guarda_teto,
     )
@@ -761,7 +761,7 @@ def analisar(
     if modelo not in config_ia.modelos:
         typer.echo(f"modelo fora de config/ia.toml: {modelo}", err=True)
         raise typer.Exit(code=2)
-    perfil = carregar_perfil(ambiente.config_perfil)
+    perfil = carregar_perfil_de(ambiente.config_perfil)
     criterios = carregar_criterios(config)
     analisados = falhas = adiados = sem_documentos = 0
     teto = False
@@ -1061,6 +1061,22 @@ def avaliar_rodar(
         faltam = len(relatorio.ausentes)
         typer.echo(f"{faltam} respostas ausentes: {INSTRUCAO_GRAVAR} --modelo {modelo}")
         raise typer.Exit(code=1)
+
+
+@app.command()
+def recomparar() -> None:
+    """Refaz o veredito de todas as análises com o perfil atual (sem IA, sem custo)."""
+    from radar.analise import carregar_perfil_de
+    from radar.analise import recomparar as recomparar_analises
+
+    configurar_logs()
+    perfil = carregar_perfil_de(obter_config().config_perfil)
+    sessao = _criar_sessao()
+    try:
+        total, mudaram = recomparar_analises(sessao, perfil)
+    finally:
+        sessao.close()
+    typer.echo(f"recomparar: {total} análises, {mudaram} mudaram de veredito")
 
 
 @app.command()

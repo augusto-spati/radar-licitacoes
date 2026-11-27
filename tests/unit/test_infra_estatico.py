@@ -398,3 +398,11 @@ def test_xray_pode_escrever_os_spans_nos_logs() -> None:
         "values = [data.aws_caller_identity.atual.account_id]",
     ):
         assert trecho in bloco, trecho
+
+
+def test_perfil_real_so_do_bucket_privado_e_desligado_por_padrao() -> None:
+    analise = re.sub(r"\s+", " ", _analise_tf())
+    assert '"s3://${aws_s3_bucket.documentos.bucket}/perfil/perfil.toml"' in analise
+    assert ': "/app/config/perfil.toml"' in analise
+    variaveis = re.sub(r"\s+", " ", _tf("variables.tf"))
+    assert re.search(r'variable "perfil_no_s3" \{[^}]*default = false', variaveis)
