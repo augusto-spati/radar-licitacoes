@@ -15,8 +15,9 @@ from sqlalchemy import (
     Numeric,
     Text,
     UniqueConstraint,
+    func,
 )
-from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column
 
 from radar.comum import Base
@@ -154,3 +155,51 @@ class ResultadoBusca(Base):
     vencedor_ni: Mapped[str | None] = mapped_column(Text)
     vencedor_nome: Mapped[str | None] = mapped_column(Text)
     vencedor_porte: Mapped[str | None] = mapped_column(Text)
+
+
+FontesExternas = Literal["tce_pe"]
+FONTES_EXTERNAS = get_args(FontesExternas)
+
+
+class ResultadoExterno(Base):
+    """Contratação de fora do PNCP que entra no histórico do órgão (etapa 7a.3: TCE-PE).
+
+    Não é edital do radar (não tem prazo nem aparece na lista): é um caso já resolvido, com o
+    resumo no formato de `resultado_busca`. `linhas` vem do `config/filtro.toml` aplicado ao
+    objeto na gravação (o objeto do TCE-PE tem U+FFFD no lugar do acento, que o tsvector não
+    casaria). `numero` ("213/2026") liga o caso ao edital do portal do órgão, para a régua do
+    próprio edital não se medir.
+    """
+
+    __tablename__ = "resultado_externo"
+    __table_args__ = (
+        CheckConstraint(
+            f"fonte IN ({_lista_sql(FONTES_EXTERNAS)})", name="ck_resultado_externo_fonte"
+        ),
+        CheckConstraint(
+            f"situacao IN ({_lista_sql(SITUACOES_RESULTADO)})",
+            name="ck_resultado_externo_situacao",
+        ),
+        Index("ix_resultado_externo_orgao_cnpj", "orgao_cnpj"),
+    )
+
+    fonte: Mapped[str] = mapped_column(Text, primary_key=True)
+    id_na_fonte: Mapped[str] = mapped_column(Text, primary_key=True)
+    orgao_cnpj: Mapped[str] = mapped_column(Text)
+    orgao_nome: Mapped[str] = mapped_column(Text)
+    uf: Mapped[str] = mapped_column(CHAR(2))
+    objeto: Mapped[str] = mapped_column(Text)
+    modalidade_nome: Mapped[str | None] = mapped_column(Text)
+    numero: Mapped[str | None] = mapped_column(Text)
+    linhas: Mapped[list[str]] = mapped_column(ARRAY(Text))
+    # Sessão de abertura (hora de Brasília sem fuso, como `edital.data_encerramento_proposta`).
+    data: Mapped[datetime] = mapped_column(DateTime())
+    data_resultado: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    situacao: Mapped[str] = mapped_column(Text)
+    valor_estimado: Mapped[Decimal | None] = mapped_column(Numeric)
+    valor_homologado: Mapped[Decimal | None] = mapped_column(Numeric)
+    desconto: Mapped[Decimal | None] = mapped_column(Numeric)
+    vencedor_ni: Mapped[str | None] = mapped_column(Text)
+    vencedor_nome: Mapped[str | None] = mapped_column(Text)
+    vencedor_porte: Mapped[str | None] = mapped_column(Text)
+    gravado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

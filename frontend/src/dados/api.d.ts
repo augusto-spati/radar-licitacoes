@@ -156,6 +156,11 @@ export interface components {
             id_publico: string;
             /** Objeto */
             objeto: string;
+            /**
+             * Origem
+             * @enum {string}
+             */
+            origem: "PNCP" | "TCE-PE";
             /** Parcial */
             parcial: boolean;
             /** Situacao */

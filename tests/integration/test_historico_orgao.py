@@ -363,3 +363,198 @@ def test_valor_zero_nao_tem_faixa(sessao: Session) -> None:
 def test_agora_sem_fuso_e_erro(sessao: Session) -> None:
     with pytest.raises(ValueError, match="fuso"):
         historico_do_edital(sessao, CRITERIOS, "pncp", "x", AGORA.replace(tzinfo=None))
+
+
+COMPESA = "09769035000164"
+
+
+def _caso_tcepe(
+    sessao: Session,
+    id_na_fonte: str,
+    desconto: str | None = "0.10",
+    linhas: tuple[str, ...] = ("redes",),
+    dias: int = 60,
+    numero: str | None = None,
+    cnpj: str = COMPESA,
+    vencedor: tuple[str | None, str] | None = ("10514594000102", "EMCOSA LTDA"),
+    estimado: str = "2000000",
+) -> None:
+    from radar.editais import ResultadoExterno
+
+    sessao.add(
+        ResultadoExterno(
+            fonte="tce_pe",
+            id_na_fonte=id_na_fonte,
+            orgao_cnpj=cnpj,
+            orgao_nome="COMPESA",
+            uf="PE",
+            objeto="Adutora do Agreste",
+            modalidade_nome="Procedimento de Licitação Próprio - Eletrônico",
+            numero=numero,
+            linhas=list(linhas),
+            data=AGORA.replace(tzinfo=None) - timedelta(days=dias),
+            data_resultado=AGORA - timedelta(days=dias - 10),
+            situacao="homologada",
+            valor_estimado=Decimal(estimado),
+            valor_homologado=Decimal(estimado) * (1 - Decimal(desconto or 0)),
+            desconto=None if desconto is None else Decimal(desconto),
+            vencedor_ni=None if vencedor is None else vencedor[0],
+            vencedor_nome=None if vencedor is None else vencedor[1],
+        )
+    )
+
+
+CRITERIOS_PE = Criterios(
+    linhas={"perdas": ["hidrometro"], "redes": ["rede de agua", "adutora"]},
+    ufs=["PE"],
+    modalidades=[6],
+)
+
+
+def _edital_compesa(sessao: Session, numero: str = "LC 213/2026 CEL-1") -> None:
+    sessao.add(
+        Edital(
+            fonte="compesa",
+            id_na_fonte="2026LC213CEL-1",
+            objeto="Implantação de adutora",
+            orgao_cnpj=COMPESA,
+            orgao_nome="COMPESA",
+            uf="PE",
+            modalidade_nome="Licitação",
+            situacao_original="Em andamento",
+            situacao_normalizada="aberta",
+            valor_estimado=Decimal("3000000"),
+            data_encerramento_proposta=AGORA.replace(tzinfo=None) + timedelta(days=10),
+            data_atualizacao=AGORA.replace(tzinfo=None),
+            bruto={"numero": numero},
+        )
+    )
+
+
+def test_edital_da_compesa_ve_os_processos_do_tcepe(sessao: Session) -> None:
+    _edital_compesa(sessao)
+    _caso_tcepe(sessao, "1", desconto="0.10")
+    _caso_tcepe(sessao, "2", desconto="0.20", dias=90)
+    _caso_tcepe(sessao, "3", desconto="0.30", dias=120, vencedor=("99999999000199", "OUTRA LTDA"))
+    # Fora: mais de 24 meses, linha que não existe mais no filtro, outro órgão.
+    _caso_tcepe(sessao, "velho", dias=800)
+    _caso_tcepe(sessao, "semlinha", linhas=("comercial",))
+    _caso_tcepe(sessao, "outro", cnpj=OUTRO)
+    sessao.flush()
+
+    historico = historico_do_edital(sessao, CRITERIOS_PE, "compesa", "2026LC213CEL-1", AGORA)
+
+    assert historico is not None
+    assert historico.contagens == {"homologada": 3}
+    assert [u.id_publico for u in historico.ultimas] == ["tce_pe~1", "tce_pe~2", "tce_pe~3"]
+    assert {u.origem for u in historico.ultimas} == {"TCE-PE"}
+    primeira = historico.ultimas[0]
+    assert (primeira.valor_estimado, primeira.desconto) == (Decimal(2000000), Decimal("0.10"))
+    assert primeira.vencedor_nome == "EMCOSA LTDA"
+    assert [(v.nome, v.vitorias) for v in historico.vencedores] == [
+        ("EMCOSA LTDA", 2),
+        ("OUTRA LTDA", 1),
+    ]
+    assert historico.vencedores[0].desconto_mediano == Decimal("0.1500")
+    assert historico.limite_inexequivel == Decimal("0.70")
+    # Régua redes × PE × 1–5 mi: os 3 da Compesa e o do outro órgão (régua usa todos).
+    [regua, *_] = historico.reguas
+    assert (regua.linha, regua.uf, regua.faixa, regua.casos) == ("redes", "PE", "1m_a_5m", 4)
+    assert regua.poucos_casos
+
+
+def test_regua_junta_pncp_e_tcepe_sem_o_proprio_processo(sessao: Session) -> None:
+    _edital_compesa(sessao)
+    # O processo do TCE-PE com o número do edital (LC 213/2026) é o próprio edital.
+    _caso_tcepe(sessao, "proprio", desconto="0.50", numero="213/2026")
+    _caso_tcepe(sessao, "a", desconto="0.10", numero="68/2026")
+    _edital(
+        sessao, "pncp-pe", objeto="Implantação de adutora", cnpj=OUTRO, uf="PE", valor="2000000"
+    )
+    _resultado(sessao, "pncp-pe", desconto="0.30")
+    sessao.flush()
+
+    historico = historico_do_edital(sessao, CRITERIOS_PE, "compesa", "2026LC213CEL-1", AGORA)
+
+    assert historico is not None
+    assert historico.contagens == {"homologada": 2}  # o próprio entra nas contagens
+    regua = historico.reguas[0]
+    assert regua.casos == 2
+    assert regua.mediana == Decimal("0.2000")
+
+
+def test_edital_do_pncp_em_pe_tem_a_compesa_na_regua(sessao: Session) -> None:
+    _edital(sessao, "alvo", objeto="Rede de agua", cnpj=OUTRO, uf="PE", valor="2000000", dias=-5)
+    _caso_tcepe(sessao, "a", desconto="0.12")
+    sessao.flush()
+
+    historico = historico_do_edital(sessao, CRITERIOS_PE, "pncp", "alvo", AGORA)
+
+    assert historico is not None
+    assert historico.total == 0  # outro órgão
+    assert historico.reguas[0].casos == 1
+    assert historico.reguas[0].mediana == Decimal("0.1200")
+
+
+def test_fracassada_do_tcepe_conta_no_orgao_e_fica_fora_da_regua(sessao: Session) -> None:
+    from radar.editais import ResultadoExterno
+
+    _edital_compesa(sessao)
+    _caso_tcepe(sessao, "h", desconto="0.10")
+    _caso_tcepe(sessao, "f", desconto=None, vencedor=None, dias=30)
+    sessao.flush()
+    fracassada = sessao.get(ResultadoExterno, ("tce_pe", "f"))
+    assert fracassada is not None
+    fracassada.situacao = "fracassada"
+    fracassada.valor_homologado = None
+    sessao.flush()
+
+    historico = historico_do_edital(sessao, CRITERIOS_PE, "compesa", "2026LC213CEL-1", AGORA)
+
+    assert historico is not None
+    assert historico.contagens == {"fracassada": 1, "homologada": 1}
+    ultimas = {u.id_publico: u for u in historico.ultimas}
+    assert ultimas["tce_pe~f"].situacao == "fracassada"
+    assert ultimas["tce_pe~f"].valor_estimado == Decimal(2000000)  # o estimado, como no PNCP
+    assert (ultimas["tce_pe~f"].valor_homologado, ultimas["tce_pe~f"].desconto) == (None, None)
+    assert [(v.nome, v.vitorias) for v in historico.vencedores] == [("EMCOSA LTDA", 1)]
+    assert historico.reguas[0].casos == 1
+
+
+def _caso_gravado(sessao: Session) -> tuple[str | None, str | None, str | None]:
+    from radar.editais import ResultadoExterno
+
+    sessao.expire_all()
+    caso = sessao.get(ResultadoExterno, ("tce_pe", "60120073"))
+    assert caso is not None
+    return caso.vencedor_ni, caso.vencedor_nome, caso.vencedor_porte
+
+
+def test_vencedor_e_gravado_como_par(sessao: Session) -> None:
+    import json
+    from dataclasses import replace
+    from pathlib import Path
+
+    from radar.editais import VencedorExterno, caso_tcepe, gravar_casos_externos
+
+    dados = Path(__file__).resolve().parents[1] / "dados" / "tcepe"
+    processo = json.loads((dados / "processos_compesa_historico.json").read_text(encoding="utf-8"))[
+        0
+    ]
+    emcosa = VencedorExterno("10514594000102", "EMCOSA")
+    caso = caso_tcepe(processo, ["redes"], emcosa)
+    assert caso is not None
+    gravar_casos_externos(sessao, [replace(caso, vencedor_porte="Demais")])
+    assert _caso_gravado(sessao) == ("10514594000102", "EMCOSA", "Demais")
+
+    # Rodada sem vencedor (TCE-PE instável): os três antigos ficam juntos.
+    sem = caso_tcepe(processo, ["redes"], None)
+    assert sem is not None
+    gravar_casos_externos(sessao, [sem])
+    assert _caso_gravado(sessao) == ("10514594000102", "EMCOSA", "Demais")
+
+    # Vencedor novo sem CNPJ (pessoa física): os três novos, nunca CNPJ antigo com nome novo.
+    pf = caso_tcepe(processo, ["redes"], VencedorExterno(None, "Pessoa física"))
+    assert pf is not None
+    gravar_casos_externos(sessao, [pf])
+    assert _caso_gravado(sessao) == (None, "Pessoa física", None)

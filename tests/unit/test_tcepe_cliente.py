@@ -384,3 +384,37 @@ def test_amostras_reais_sem_cpf_e_coerentes():
     total = sum(float(c["ValorTotal"]) for c in contratado)
     pedra = next(p for p in _amostra("processos.json") if p["processoContratacaoId"] == "60116414")
     assert total == pytest.approx(float(pedra["valorHomologado"]), abs=0.05)
+
+
+def test_participantes_do_instrumento_filtra_por_id_id():
+    amostra = _amostra("participantes_instrumento_60332570.json")
+
+    def handler(req):
+        assert req.url.path.endswith("/Remessa_InstrumentoJuridicoParticipantes!json")
+        # O filtro tem o nome com "IdId"; "instrumentoJuridicoId" seria ignorado.
+        assert req.url.params["instrumentoJuridicoIdId"] == "60332570"
+        return _resposta("Remessa_InstrumentoJuridicoParticipantes", amostra)
+
+    participantes = _cliente(handler).participantes_instrumento("60332570")
+    assert participantes[0]["participanteDocumento"] == "10514594000102"
+
+
+def test_participantes_do_instrumento_de_outro_contrato_vira_erro():
+    def handler(req):
+        return _resposta(
+            "Remessa_InstrumentoJuridicoParticipantes", [{"instrumentoJuridicoIdId": "60013151"}]
+        )
+
+    with pytest.raises(ErroTcepe, match="ignorou o filtro instrumentoJuridicoIdId"):
+        _cliente(handler).participantes_instrumento(60332570)
+
+
+def test_participantes_do_processo():
+    amostra = _amostra("participantes_processo_60120073.json")
+
+    def handler(req):
+        assert req.url.path.endswith("/Remessa_ProcessoContratacaoParticipantes!json")
+        assert req.url.params["processoContratacaoId"] == "60120073"
+        return _resposta("Remessa_ProcessoContratacaoParticipantes", amostra)
+
+    assert len(_cliente(handler).participantes_processo(60120073)) == 2
