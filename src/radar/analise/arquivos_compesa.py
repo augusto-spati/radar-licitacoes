@@ -18,8 +18,8 @@ Caminho, todo em GET (o WAF do portal rejeita POST fora de contexto), visto em 2
 
 Escolha: o edital e os termos de referência, até 3, PDF ou .docx; o resto (planilhas,
 declarações, projetos, ZIP e RAR aninhados) fica de fora. Cada cliente só baixa do próprio host
-(portal ou nuvem), inclusive nos redirects. O portal não responde de dentro da AWS: a análise
-da Compesa roda onde a coleta dela roda (o notebook), com `radar analisar --fontes compesa`.
+(portal ou nuvem), inclusive nos redirects. O portal fica na porta 8743: o security group do
+coletor precisa liberá-la (regra `coletor_compesa` em infra/prod/coletor.tf).
 """
 
 import io

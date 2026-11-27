@@ -43,6 +43,19 @@ resource "aws_vpc_security_group_egress_rule" "coletor_https" {
   cidr_ipv4         = "0.0.0.0/0"
 }
 
+# O portal de licitacoes da Compesa fica na porta 8743 (portalscl.compesa.com.br:8743). Sem esta
+# regra a saida era descartada aqui e a coleta morria em ConnectTimeout, o que em 27/11/2026 foi
+# lido por engano como bloqueio da Compesa a AWS (o portal responde de 58 de 59 servidores do
+# check-host.net, inclusive nos EUA). So a porta, para qualquer destino: o IP do portal pode mudar.
+resource "aws_vpc_security_group_egress_rule" "coletor_compesa" {
+  security_group_id = aws_security_group.coletor.id
+  description       = "Portal da Compesa (HTTPS na porta 8743)"
+  ip_protocol       = "tcp"
+  from_port         = 8743
+  to_port           = 8743
+  cidr_ipv4         = "0.0.0.0/0"
+}
+
 resource "aws_vpc_security_group_egress_rule" "coletor_postgres" {
   security_group_id = aws_security_group.coletor.id
   description       = "Postgres sobre TLS (Neon)"
@@ -144,10 +157,9 @@ resource "aws_ecs_task_definition" "coletor" {
     image     = "${aws_ecr_repository.coletor.repository_url}:${var.tag_coletor}"
     essential = true
     # ENTRYPOINT ["radar"] vem da imagem; o deploy registra revisoes a partir da ultima,
-    # entao este command (so os retratos da nuvem) e preservado. O schedule repete o
-    # mesmo command no override; quem roda a task a mao sem override tambem nao pega a
-    # Compesa.
-    command     = ["atualizar", "--fontes", "sanepar"]
+    # entao este command (so os retratos) e preservado. O schedule repete o mesmo command
+    # no override.
+    command     = ["atualizar", "--fontes", "sanepar,compesa"]
     stopTimeout = 30
 
     environment = [
@@ -254,14 +266,12 @@ resource "aws_scheduler_schedule" "atualizar_diario" {
     arn      = aws_ecs_cluster.radar.arn
     role_arn = aws_iam_role.scheduler_coletor.arn
 
-    # So retratos: o PNCP vai pelo planejador e pelas Lambdas coletoras (janelas.tf).
-    # A Compesa fica fora da nuvem: o portal dela nao responde a partir da AWS
-    # (ConnectTimeout em duas rodadas em us-east-2; responde em 0,6 s de uma conexao no
-    # Brasil). Ela continua coletavel localmente com `radar atualizar --fontes compesa`.
+    # So retratos: o PNCP vai pelo planejador e pelas Lambdas coletoras (janelas.tf). A Compesa
+    # voltou com a regra de saida da porta 8743 (coletor_compesa).
     input = jsonencode({
       containerOverrides = [{
         name    = "coletor"
-        command = ["atualizar", "--fontes", "sanepar"]
+        command = ["atualizar", "--fontes", "sanepar,compesa"]
       }]
     })
 

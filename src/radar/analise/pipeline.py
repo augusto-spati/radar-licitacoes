@@ -75,13 +75,13 @@ class Dependencias:
     # Documentos da Sanepar: outro cliente, preso a www.sanepar.com.br. Sem ele, edital da
     # Sanepar falha com ValueError (a CLI sempre passa; testes do PNCP não precisam).
     cliente_sanepar: ClienteArquivosPNCP | None = None
-    # Compesa: portal SCL e nuvem; só responde fora da AWS (roda no notebook).
+    # Compesa: portal SCL (porta 8743) e nuvem.
     documentos_compesa: DocumentosCompesa | None = None
 
 
 FONTES_ANALISADAS = ("pncp", "sanepar", "compesa")
-# A rodada agendada na AWS: o portal da Compesa não responde de lá.
-FONTES_NA_NUVEM = ("pncp", "sanepar")
+# Padrão de `radar analisar` sem `--fontes`; a agenda da AWS pede as três explicitamente.
+FONTES_PADRAO = ("pncp", "sanepar")
 
 
 @dataclass(frozen=True)
