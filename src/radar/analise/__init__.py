@@ -1,6 +1,7 @@
 """Módulo analise: exigências dos editais extraídas com LLM e comparadas com o perfil."""
 
 from radar.analise.armazem import Armazem, ArmazemLocal, ArmazemS3, criar_armazem
+from radar.analise.arquivos_compesa import DocumentosCompesa, criar_documentos_compesa
 from radar.analise.arquivos_pncp import (
     ArquivoPNCP,
     ClienteArquivosPNCP,
@@ -60,9 +61,11 @@ from radar.analise.modelos import (
 from radar.analise.perfil import Perfil, carregar_perfil
 from radar.analise.pipeline import (
     FONTES_ANALISADAS,
+    FONTES_NA_NUVEM,
     AlvoAnalise,
     AnaliseLida,
     Dependencias,
+    SemDocumentos,
     analisar_edital,
     ja_analisado,
     obter_analise,
@@ -80,6 +83,10 @@ from radar.analise.provedor import (
 
 __all__ = [
     "FONTES_ANALISADAS",
+    "FONTES_NA_NUVEM",
+    "DocumentosCompesa",
+    "SemDocumentos",
+    "criar_documentos_compesa",
     "arquivos_sanepar",
     "criar_cliente_sanepar",
     "CAMPOS",
