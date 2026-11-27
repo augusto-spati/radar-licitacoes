@@ -74,6 +74,8 @@ def test_curinga_vale_por_uma_letra() -> None:
         ("TUBO PEAD DN=200 PN 10", 200),
         ("TUBO DE FERRO FUNDIDO Ø 300MM", 300),
         ("TUBO PVC DEFOFO 150 MM", 150),
+        # PEAD: o número é o diâmetro externo; fica em `dn` e só se compara entre PEAD.
+        ("TUBO PEAD PE 100 DE 110 MM", 110),
         ("TUBO PVC PBA JE 6,0 MPA DN 100 / 110 MM", 100),
         ("REDE DE AGUA DIAMETRO NOMINAL DE 250 MM", 250),
         ("TUBO PVC DN 100 A DN 150", None),
@@ -137,6 +139,11 @@ def _rede(servico: str, material: str, dn: int, escopo: Escopo, fator: str = "1"
             "EXECUCAO DE REDE DE AGUA EM TUBO PEAD PE 100 DN 110, INCLUSIVE FORNECIMENTO",
             "KM",
             _rede("rede_agua", "pead", 110, "completo", "1000"),
+        ),
+        (
+            "REDE DE AGUA PVC DN 150, MAO DE OBRA",
+            "M",
+            _rede("rede_agua", "pvc", 150, "assentamento"),
         ),
         (
             "TUBO PVC OCRE JEI P/ REDE COLETORA DE ESGOTO DN 150",
@@ -229,6 +236,19 @@ def test_classifica_descricoes_reais(descricao: str, unidade: str, esperado: Cla
         ("TESTE HIDROSTATICO DE REDE DE AGUA PVC DN 150", "M"),
         ("TUBO PVC SERIE NORMAL ESGOTO PREDIAL DN 100", "M"),
         ("LEITURA DE HIDROMETRO", "UN"),
+        # Rede sem escopo claro (nem tubo, nem verbo de serviço).
+        ("REDE COLETORA DE ESGOTO PVC DN 150", "M"),
+        # Logística e remanejamento não são o metro de rede nova nem a escavação.
+        ("TRANSPORTE DE TUBO PVC DN 150 PARA REDE DE AGUA", "M"),
+        ("REMANEJAMENTO DE REDE DE AGUA PVC DN 100", "M"),
+        ("CARGA, MANOBRA E DESCARGA DE TUBO PVC P/ REDE DE ESGOTO DN 150", "M"),
+        ("CARGA, MANOBRA E DESCARGA DE MATERIAL DE ESCAVACAO DE VALA", "M3"),
+        ("CARGA E TRANSPORTE DE MATERIAL DE ESCAVACAO DE VALA", "M3"),
+        # Com verbo de serviço o escopo seria claro: quem barra é a exclusão.
+        ("ASSENTAMENTO E TRANSPORTE DE TUBO PVC DN 150 P/ REDE DE AGUA", "M"),
+        ("REMANEJAMENTO DE REDE DE AGUA PVC DN 100, INCLUSIVE ASSENTAMENTO", "M"),
+        ("CARGA, MANOBRA E DESCARGA DE TUBO PVC P/ REDE DE ESGOTO DN 150, MAO DE OBRA", "M"),
+        ("ESCAVACAO MECANICA DE VALA, INCLUSIVE CARGA", "M3"),
         ("RELIGACAO DE AGUA", "UN"),
     ],
 )
@@ -248,7 +268,11 @@ def test_nao_casa(descricao: str, unidade: str) -> None:
         ("EXECUCAO DE REDE DE AGUA DN 100 INCLUSIVE FORNECIMENTO", "completo"),
         ("ASSENTAMENTO DE TUBO PVC DN 150 EXCLUSIVE FORNECIMENTO", "assentamento"),
         (f"FORNECIMENTO E INSTALA{FFFD}{FFFD}O DE TUBO PVC DN 150", "completo"),
+        ("REDE DE AGUA PVC DN 150, MAO DE OBRA", "assentamento"),
+        # Sem verbo nem "TUBO" no começo: não dá para saber se inclui o tubo.
+        ("REDE COLETORA DE ESGOTO PVC DN 150", None),
+        ("REDE DE AGUA EM TUBO PEAD DN 110", None),
     ],
 )
-def test_escopo_de_rede(descricao: str, escopo: str) -> None:
+def test_escopo_de_rede(descricao: str, escopo: str | None) -> None:
     assert escopo_de_rede(sem_acento(descricao)) == escopo

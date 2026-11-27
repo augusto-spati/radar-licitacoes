@@ -2,7 +2,8 @@
 
 As regras ficam em `config/servicos.toml`. O casamento é por termos sem acento, com U+FFFD
 (o acento perdido no `Remessa_*` do TCE-PE) valendo por qualquer letra. Na dúvida, o item fica
-sem serviço: casar com dois serviços, unidade fora da lista, rede sem material ou sem DN.
+sem serviço: casar com dois serviços, unidade fora da lista, rede sem material, sem DN ou
+sem escopo claro (só o tubo, só o assentamento ou os dois).
 """
 
 import re
@@ -55,6 +56,7 @@ class Servico:
 class Classificacao:
     servico: str
     material: str | None
+    # Em PEAD pode ser o diâmetro externo (DE), não o nominal; só se compara dentro do material.
     dn: int | None
     # Só em rede: "material" (só o tubo), "assentamento" (só o serviço) ou "completo" (os dois).
     escopo: Escopo | None
@@ -105,6 +107,8 @@ _DN_EXPLICITO = (
     re.compile(r"(?<![a-z])diametro(?:\s+nominal)?(?:\s+de)?\s*[=:]?\s*(\d{2,4})(?![\d,.]?\d)"),
 )
 # "150 MM" solto: só vale quando a descrição fala de tubo ou rede e nada explícito apareceu.
+# Em PEAD o número costuma ser o diâmetro externo ("DE 110 MM"), não o DN: fica em `dn` como
+# veio. Não se mistura com PVC/FoFo porque o material faz parte da chave de comparação.
 _DN_MM = re.compile(r"(?<![\d,.])(\d{2,4})\s*mm(?![a-z])")
 _TUBO_OU_REDE = ("tubo", "tubos", "tubula", "rede", "redes", "coletor", "manilha")
 
@@ -135,15 +139,26 @@ _SERVICO = (
     "execucao",
     "implantacao",
     "lancamento",
+    "mao de obra",
+)
+# Linha que é o próprio tubo: começa por "TUBO ..." ou "FORNECIMENTO/AQUISIÇÃO DE TUBO ...".
+_SO_MATERIAL = (
+    "tubo",
+    "fornecimento de tubo",
+    "fornecimento tubo",
+    "aquisicao de tubo",
+    "aquisicao tubo",
 )
 
 
-def escopo_de_rede(texto: str) -> Escopo:
-    """O que o item de rede cobre: só o tubo, só o assentamento ou os dois.
+def escopo_de_rede(texto: str) -> Escopo | None:
+    """O que o item de rede cobre: só o tubo, só o assentamento, os dois ou não dá para saber.
 
-    "TUBO PVC ... DN 150" e "FORNECIMENTO DE TUBO ..." → material; "ASSENTAMENTO DE TUBO ..."
-    (ou com "sem fornecimento") → assentamento; "FORNECIMENTO E ASSENTAMENTO ..." e
-    "EXECUCAO DE REDE ... INCLUSIVE FORNECIMENTO" → completo.
+    "ASSENTAMENTO DE TUBO ...", "... MAO DE OBRA" (ou com "sem fornecimento") → assentamento;
+    "FORNECIMENTO E ASSENTAMENTO ..." e "EXECUCAO DE REDE ... INCLUSIVE FORNECIMENTO" →
+    completo; "TUBO PVC ... DN 150" e "FORNECIMENTO DE TUBO ..." sem palavra de serviço →
+    material. Fora disso ("REDE COLETORA DE ESGOTO PVC DN 150", sem verbo) → None, e o item
+    fica sem serviço.
     """
     if _algum(texto, _SEM_FORNECIMENTO):
         return "assentamento"
@@ -151,7 +166,10 @@ def escopo_de_rede(texto: str) -> Escopo:
         return "completo"
     if _algum(texto, _SERVICO):
         return "completo" if _algum(texto, _FORNECIMENTO) else "assentamento"
-    return "material"
+    inicio = texto.lstrip(" -.,;:0123456789")
+    if any(_padrao_termo(t).match(inicio) for t in _SO_MATERIAL):
+        return "material"
+    return None
 
 
 def _casa_termos(servico: Servico, texto: str) -> bool:
@@ -176,7 +194,10 @@ def _classificar_em(servico: Servico, texto: str, unidade: str) -> Classificacao
         servico.dn_max is not None and dn > servico.dn_max
     ):
         return None
-    return Classificacao(servico.nome, material, dn, escopo_de_rede(texto), servico.unidade, fator)
+    escopo = escopo_de_rede(texto)
+    if escopo is None:
+        return None
+    return Classificacao(servico.nome, material, dn, escopo, servico.unidade, fator)
 
 
 def _termos(valor: object) -> tuple[str, ...]:

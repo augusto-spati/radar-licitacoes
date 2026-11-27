@@ -60,7 +60,12 @@ class PrecoItem(Base):
     unidade: Mapped[str] = mapped_column(Text)
     quantidade: Mapped[Decimal | None] = mapped_column(Numeric)
     preco_sem_bdi: Mapped[Decimal | None] = mapped_column(Numeric)
+    # BDI como fração (0.2467 = 24,67%). A fonte manda em escalas diferentes ("0.2467" na
+    # Compesa, "20.9700" em Pedra): valor < 1 já é fração, valor >= 1 é dividido por 100. A
+    # normalização é feita na gravação (Task 3), não aqui.
     bdi: Mapped[Decimal | None] = mapped_column(Numeric)
+    # No TCE-PE o `ValorUnitario` do orçamento já inclui o BDI (amostra de Pedra:
+    # Σ ValorTotal = valorGlobal do processo), então preco_com_bdi = ValorUnitario.
     preco_com_bdi: Mapped[Decimal | None] = mapped_column(Numeric)
     bdi_desconhecido: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     preco_contratado_com_bdi: Mapped[Decimal | None] = mapped_column(Numeric)
@@ -68,6 +73,7 @@ class PrecoItem(Base):
     codigo_referencia: Mapped[str | None] = mapped_column(Text)
     servico: Mapped[str] = mapped_column(Text)
     material: Mapped[str | None] = mapped_column(Text)
+    # Em PEAD pode ser o diâmetro externo (DE); só se compara dentro do mesmo material.
     dn: Mapped[int | None] = mapped_column(Integer)
     # Só em rede: material, assentamento ou completo (ver servicos.escopo_de_rede).
     escopo: Mapped[str | None] = mapped_column(Text)

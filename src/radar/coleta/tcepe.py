@@ -96,9 +96,15 @@ def _id(valor: int | str, nome: str) -> str:
     return texto
 
 
-def _mesmo_numero(a: Any, b: str) -> bool:
-    """Compara números guardados como texto, ignorando zeros à esquerda ("016" == "16")."""
-    return str(a).strip().lstrip("0") == b.strip().lstrip("0")
+def _mesmo_numero(registro: Any, campo: str, valor: str) -> bool:
+    """O registro tem `campo` com o mesmo número, ignorando zeros à esquerda ("016" == "16").
+
+    Campo ausente não confere: é sinal de que o filtro foi ignorado. `valor` já foi validado.
+    """
+    if not isinstance(registro, dict) or campo not in registro:
+        return False
+    texto = str(registro[campo]).strip()
+    return texto.isdigit() and int(texto) == int(valor)
 
 
 class ClienteTcepe:
@@ -129,8 +135,8 @@ class ClienteTcepe:
 
     def instrumentos(self, uj_id: int | str, numero: str, ano: int) -> list[dict[str, Any]]:
         numero = str(numero).strip()
-        if not numero:
-            raise ErroTcepe("número do processo vazio")
+        if not numero.isdigit():
+            raise ErroTcepe(f"número do processo precisa ser numérico: {numero!r}")
         return self._consultar(
             INSTRUMENTOS,
             {
@@ -160,9 +166,7 @@ class ClienteTcepe:
             raise ErroTcepe(f"{entidade} chegou ao limite de {limite} registros (truncado)")
         for registro in registros:
             for campo, valor in filtros.items():
-                if not isinstance(registro, dict) or not _mesmo_numero(
-                    registro.get(campo, ""), valor
-                ):
+                if not _mesmo_numero(registro, campo, valor):
                     raise ErroTcepe(
                         f"{entidade} ignorou o filtro {campo}={valor}: veio {str(registro)[:200]}"
                     )

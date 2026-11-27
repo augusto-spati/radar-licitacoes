@@ -7,8 +7,8 @@
 #   termos_excluidos:    nenhum pode aparecer.
 #   unidades_aceitas:    unidade do item (sem acento, sem ponto nem espaço) -> fator.
 #                        quantidade canônica = quantidade x fator; preço canônico = preço / fator.
-# Serviço de rede (com `materiais`) exige material reconhecível e DN dentro de [dn_min, dn_max];
-# sem um dos dois o item fica sem serviço. Um item que casa com mais de um serviço também fica sem.
+# Serviço de rede (com `materiais`) exige material reconhecível, DN dentro de [dn_min, dn_max]
+# e escopo claro (só o tubo, só o assentamento ou os dois); sem um deles o item fica sem serviço. Um item que casa com mais de um serviço também fica sem.
 
 [[servico]]
 nome = "ligacao_agua"
@@ -98,8 +98,12 @@ linha = "redes"
 unidade = "m3"
 termos_obrigatorios = ["escavacao", "vala"]
 termos_qualquer = []
-# Manual e em rocha custam várias vezes a mecânica em solo; carga e transporte são outro item.
-termos_excluidos = ["manual", "rocha", "transporte", "3a categoria", "terceira categoria"]
+# Manual e em rocha custam várias vezes a mecânica em solo; carga, manobra e transporte do
+# material escavado são outro item.
+termos_excluidos = [
+    "manual", "rocha", "3a categoria", "terceira categoria", "transporte", "carga", "descarga",
+    "manobra", "remanej", "bota-fora", "bota fora", "empolamento",
+]
 [servico.unidades_aceitas]
 m3 = "1"
 metrocubico = "1"
@@ -133,6 +137,9 @@ termos_excluidos = [
     "sondagem", "curva", "joelho", "luva", "registro", "valvula", "conexao", "conexoes",
     "adaptador", "reducao", "juncao", "flange", "tampao", "colar", "hidrante", "ventosa",
     "vazamento", "pesquisa", "reparo", "conserto", "manutenc",
+    # Logística e remanejamento: o preço não é o do metro de rede nova.
+    "transporte", "carga", "descarga", "manobra", "remanej", "deslocamento", "armazen",
+    "estocagem",
 ]
 dn_min = 50
 dn_max = 600
@@ -167,6 +174,9 @@ termos_excluidos = [
     "sondagem", "curva", "joelho", "luva", "registro", "valvula", "conexao", "conexoes",
     "adaptador", "reducao", "juncao", "flange", "tampao", "poco", "caixa", "reparo",
     "conserto", "manutenc", "vazamento",
+    # Logística e remanejamento: o preço não é o do metro de rede nova.
+    "transporte", "carga", "descarga", "manobra", "remanej", "deslocamento", "armazen",
+    "estocagem",
 ]
 dn_min = 50
 dn_max = 600

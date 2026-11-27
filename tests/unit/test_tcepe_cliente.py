@@ -265,8 +265,47 @@ def test_id_nao_numerico_nem_chama():
         cliente.orcamento("abc")
     with pytest.raises(ErroTcepe, match="numérico"):
         cliente.instrumentos("x", "016", 2026)
-    with pytest.raises(ErroTcepe, match="vazio"):
+    with pytest.raises(ErroTcepe, match="numérico"):
         cliente.instrumentos(462, " ", 2026)
+    with pytest.raises(ErroTcepe, match="numérico"):
+        cliente.instrumentos(462, "16/A", 2026)
+
+
+def test_registro_sem_o_campo_do_filtro_vira_erro():
+    # Sem o campo não dá para conferir: trata como filtro ignorado (mesmo com valor "0").
+    def handler(req):
+        return _resposta("Remessa_ProcessoContratacaoOrcamento", [{"itemId": "1"}])
+
+    with pytest.raises(ErroTcepe, match="ignorou o filtro"):
+        _cliente(handler).orcamento(0)
+
+
+def test_pausa_de_cortesia_entre_requisicoes(monkeypatch):
+    relogio = [100.0]
+    dormidas: list[float] = []
+
+    def dormir(segundos):
+        dormidas.append(segundos)
+        relogio[0] += segundos
+
+    monkeypatch.setattr("radar.coleta.tcepe.time.monotonic", lambda: relogio[0])
+    monkeypatch.setattr("radar.coleta.tcepe.time.sleep", dormir)
+
+    def handler(req):
+        relogio[0] += 0.25  # a requisição leva 0,25 s
+        return _resposta("Remessa_ProcessoContratacaoOrcamento", [])
+
+    http = httpx.Client(
+        base_url="https://sistemas.tcepe.tc.br/DadosAbertos",
+        transport=httpx.MockTransport(handler),
+    )
+    cliente = ClienteTcepe(http, pausa_s=1.0, tentativas=1, espera_base=0)
+    cliente.orcamento(1)
+    cliente.orcamento(2)
+    cliente.orcamento(3)
+
+    # A primeira sai na hora; as seguintes esperam o que falta de 1 s desde a anterior.
+    assert dormidas == [pytest.approx(0.75), pytest.approx(0.75)]
 
 
 def test_amostras_reais_sem_cpf_e_coerentes():
