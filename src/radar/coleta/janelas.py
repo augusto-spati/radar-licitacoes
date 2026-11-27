@@ -24,9 +24,9 @@ from radar.comum import Outbox, enfileirar
 logger = logging.getLogger(__name__)
 
 FUSO = "America/Sao_Paulo"  # as datas do PNCP são em horário de Brasília
-# Falha com tantas reivindicações não volta à fila pelo planejador: fica para o laço local
-# (`radar processar`) ou para uma decisão manual. Cada fatia conta uma reivindicação.
-MAXIMO_TENTATIVAS = 5
+# Janela com tantas fatias terminadas em falha (desde a última conclusão) não volta à fila
+# pelo planejador: fica para o laço local (`radar processar`) ou para uma decisão manual.
+MAXIMO_FALHAS = 5
 
 
 @dataclass
@@ -139,13 +139,13 @@ def enfileirar_elegiveis(sessao: Session, endpoint: str) -> int:
     """Reabre as concluídas cedo demais e enfileira `coletar_janela` das elegíveis; um commit.
 
     Elegível: pendente, falha ou em_andamento, com o lease livre; falha com
-    `MAXIMO_TENTATIVAS` ou mais fica de fora (log `janela_desistida`). A mensagem leva o
+    `MAXIMO_FALHAS` fatias falhas ou mais fica de fora (log `janela_desistida`). A mensagem leva o
     `lote` atual. Uma mensagem a mais para janela que já tem continuação na fila é
     inofensiva: uma das duas sai `ocupada` ou `obsoleta`. Devolve quantas mensagens.
     """
     _reabrir(sessao, ColetaJanela.endpoint == endpoint)
     candidatas = sessao.execute(
-        select(ColetaJanela.id, ColetaJanela.lote, ColetaJanela.status, ColetaJanela.tentativas)
+        select(ColetaJanela.id, ColetaJanela.lote, ColetaJanela.status, ColetaJanela.falhas)
         .where(
             ColetaJanela.endpoint == endpoint,
             ColetaJanela.status.in_(("pendente", "falha", "em_andamento")),
@@ -154,11 +154,9 @@ def enfileirar_elegiveis(sessao: Session, endpoint: str) -> int:
         .order_by(ColetaJanela.data_ini, ColetaJanela.modalidade, ColetaJanela.id)
     ).all()
     enfileiradas = 0
-    for janela_id, lote, status, tentativas in candidatas:
-        if status == "falha" and tentativas >= MAXIMO_TENTATIVAS:
-            logger.warning(
-                "janela_desistida", extra={"janela_id": janela_id, "tentativas": tentativas}
-            )
+    for janela_id, lote, status, falhas in candidatas:
+        if status == "falha" and falhas >= MAXIMO_FALHAS:
+            logger.warning("janela_desistida", extra={"janela_id": janela_id, "falhas": falhas})
             continue
         enfileirar(sessao, "coletar_janela", {"janela_id": janela_id, "lote": lote})
         enfileiradas += 1

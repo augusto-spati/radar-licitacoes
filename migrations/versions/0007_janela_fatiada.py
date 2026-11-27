@@ -6,7 +6,9 @@ Create Date: 2026-11-27 09:00:00.000000
 
 A coleta do PNCP passa a andar em fatias (uma por invocação da Lambda coletora). A janela
 guarda a próxima página, o total de páginas e de registros da página 1 (para a checagem de
-completude valer entre fatias), o número da fatia (`lote`) e o lease de quem coleta agora.
+completude valer entre fatias), o número da fatia (`lote`), o lease de quem coleta agora e
+quantas fatias terminaram em falha desde a última conclusão (`falhas`, para o planejador
+desistir; `tentativas` conta reivindicações e fica como diagnóstico).
 A outbox aceita `coletar_janela`. As janelas `em_andamento` existentes eram sobra de execução
 interrompida (havia um único coletor por vez): voltam a `pendente`.
 """
@@ -36,6 +38,9 @@ def upgrade() -> None:
     op.add_column(
         "coleta_janela", sa.Column("travada_ate", sa.DateTime(timezone=True), nullable=True)
     )
+    op.add_column(
+        "coleta_janela", sa.Column("falhas", sa.Integer(), server_default="0", nullable=False)
+    )
     op.execute("UPDATE coleta_janela SET status = 'pendente' WHERE status = 'em_andamento'")
     op.drop_constraint("ck_outbox_tipo", "outbox", type_="check")
     op.create_check_constraint(
@@ -52,6 +57,7 @@ def downgrade() -> None:
         "ck_outbox_tipo", "outbox", "tipo IN ('pagina_coletada', 'retrato_coletado')"
     )
     for coluna in (
+        "falhas",
         "travada_ate",
         "travada_por",
         "lote",

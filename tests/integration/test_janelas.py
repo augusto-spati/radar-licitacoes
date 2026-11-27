@@ -478,11 +478,11 @@ def test_auditar_mostra_onde_a_falha_parou(sessao: Session) -> None:
     assert aud.falhas == [(D1, 6, "HTTP 500", 3, 5)]
 
 
-def test_enfileirar_desiste_de_falha_com_tentativas_demais(
+def test_enfileirar_desiste_de_falha_com_falhas_demais(
     sessao: Session, caplog: pytest.LogCaptureFixture
 ) -> None:
     desistida = janela(
-        sessao, endpoint="atualizacao", data_ini=HOJE, data_fim=HOJE, status="falha", tentativas=5
+        sessao, endpoint="atualizacao", data_ini=HOJE, data_fim=HOJE, status="falha", falhas=5
     )
     tenta = janela(
         sessao,
@@ -490,7 +490,8 @@ def test_enfileirar_desiste_de_falha_com_tentativas_demais(
         data_ini=HOJE - timedelta(days=1),
         data_fim=HOJE - timedelta(days=1),
         status="falha",
-        tentativas=4,
+        tentativas=9,  # reivindicações não contam: só fatias que falharam
+        falhas=4,
     )
 
     with caplog.at_level(logging.INFO, logger="radar.coleta.janelas"):

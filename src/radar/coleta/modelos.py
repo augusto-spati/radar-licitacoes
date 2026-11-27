@@ -48,6 +48,9 @@ class ColetaJanela(Base):
     # Lease de quem coleta agora (o status em_andamento só diz "começada e não terminada").
     travada_por: Mapped[str | None] = mapped_column(Text)
     travada_ate: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Fatias que terminaram em falha desde a última conclusão (o planejador desiste em 5).
+    # `tentativas` conta reivindicações, inclusive continuações: fica como diagnóstico.
+    falhas: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
 
 class ColetaRetrato(Base):

@@ -1,5 +1,6 @@
 """Fatia de janela: lease, fencing, checkpoint, continuação e completude entre fatias."""
 
+import logging
 import threading
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
@@ -10,7 +11,13 @@ from fakes import VAZIA, Chave, ClienteFalso, como_cliente, pagina
 from sqlalchemy import Engine, delete, func, select, update
 from sqlalchemy.orm import Session
 
-from radar.coleta import ErroPNCP, ResultadoFatia, coletar_fatia, coletar_pendentes
+from radar.coleta import (
+    ErroPNCP,
+    ResultadoFatia,
+    coletar_fatia,
+    coletar_pendentes,
+    enfileirar_elegiveis,
+)
 from radar.coleta.modelos import ColetaJanela, PaginaBruta
 from radar.coleta.pncp import Pagina
 from radar.comum import Outbox
@@ -450,3 +457,52 @@ def test_dois_coletar_pendentes_nao_repetem_janela(banco_limpo: Engine) -> None:
     assert sorted(falso.chamadas) == sorted(roteiro)
     with Session(banco_limpo) as leitura:
         assert set(leitura.scalars(select(ColetaJanela.status))) == {"concluida"}
+
+
+def test_janela_longa_com_uma_falha_nao_e_abandonada(sessao: Session) -> None:
+    j = janela(sessao)
+    roteiro: dict[Chave, Pagina | BaseException] = {chave(n): pagina(n, 6) for n in range(1, 7)}
+    roteiro[chave(6)] = ErroPNCP("HTTP 500", 500)
+    falso, cronometro = cliente_com_relogio(roteiro)
+    lote = 0
+    for _ in range(5):  # uma página por fatia
+        r = fatia(sessao, falso, j.id, lote=lote, orcamento_s=100, cronometro=cronometro)
+        assert r.desfecho == "continua"
+        lote += 1
+
+    assert fatia(sessao, falso, j.id, lote=lote, orcamento_s=100).desfecho == "falha"
+
+    recarregar(sessao, j)
+    assert (j.status, j.tentativas, j.falhas) == ("falha", 6, 1)
+    assert enfileirar_elegiveis(sessao, "publicacao") == 1  # não desiste
+    falso.roteiro[chave(6)] = pagina(6, 6)
+    assert fatia(sessao, falso, j.id, lote=lote, orcamento_s=100).desfecho == "concluida"
+    recarregar(sessao, j)
+    assert (j.status, j.tentativas, j.falhas) == ("concluida", 7, 0)
+
+
+def test_cinco_falhas_seguidas_desiste(sessao: Session, caplog: pytest.LogCaptureFixture) -> None:
+    j = janela(sessao)
+    falso = ClienteFalso({chave(1): ErroPNCP("HTTP 500", 500)})
+    for n in range(1, 6):
+        assert fatia(sessao, falso, j.id, lote=0, orcamento_s=540).desfecho == "falha"
+        recarregar(sessao, j)
+        assert j.falhas == n
+
+    with caplog.at_level(logging.INFO, logger="radar.coleta.janelas"):
+        assert enfileirar_elegiveis(sessao, "publicacao") == 0
+
+    assert [r.getMessage() for r in caplog.records if r.name == "radar.coleta.janelas"] == [
+        "janela_desistida"
+    ]
+
+
+def test_excecao_inesperada_conta_falha(sessao: Session) -> None:
+    j = janela(sessao)
+    falso = ClienteFalso({chave(1): RuntimeError("boom")})
+
+    with pytest.raises(RuntimeError):
+        fatia(sessao, falso, j.id, lote=0, orcamento_s=540)
+
+    recarregar(sessao, j)
+    assert (j.status, j.falhas) == ("falha", 1)

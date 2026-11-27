@@ -141,7 +141,11 @@ def coletar_fatia(
             update(ColetaJanela)
             .where(*_fencing(janela, token))
             .values(
-                status="falha", erro=repr(erro)[:LIMITE_ERRO], travada_por=None, travada_ate=None
+                status="falha",
+                erro=repr(erro)[:LIMITE_ERRO],
+                travada_por=None,
+                travada_ate=None,
+                falhas=ColetaJanela.falhas + 1,
             )
         )
         sessao.commit()
@@ -374,6 +378,7 @@ def _concluir(
             erro=None,
             travada_por=None,
             travada_ate=None,
+            falhas=0,
         )
     )
     if not resultado.rowcount:  # type: ignore[attr-defined]
@@ -445,6 +450,7 @@ def _falhar(
         "erro": erro,
         "travada_por": None,
         "travada_ate": None,
+        "falhas": ColetaJanela.falhas + 1,
     }
     if recomecar:
         valores |= {"proxima_pagina": 1, "total_paginas": None, "esperados": None}
