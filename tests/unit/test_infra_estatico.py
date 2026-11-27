@@ -105,3 +105,58 @@ def test_fila_tem_dlq_e_alarmes() -> None:
     assert 'function_response_types = ["ReportBatchItemFailures"]' in fila
     assert "maximum_concurrency = 2" in fila
     assert len(re.findall(r'resource\s+"aws_cloudwatch_metric_alarm"', fila)) == 3
+
+
+def _analise_tf() -> str:
+    return (RAIZ / "infra" / "prod" / "analise.tf").read_text(encoding="utf-8")
+
+
+def test_bedrock_so_foundation_model_in_region() -> None:
+    analise = _analise_tf()
+    assert "bedrock:InvokeModel" in analise
+    assert "arn:aws:bedrock:${var.regiao}::foundation-model/" in analise
+    for proibido in ("inference-profile", "bedrock:*", '"us.', '"global.', '"eu.', '"apac.'):
+        assert proibido not in analise, f"analise.tf contém {proibido}"
+    for arquivo in (RAIZ / "infra").rglob("*.tf"):
+        if ".terraform" in arquivo.parts or arquivo.name == "analise.tf":
+            continue
+        assert "bedrock:" not in arquivo.read_text(encoding="utf-8"), f"bedrock em {arquivo}"
+
+
+def test_modelos_ia_recusa_perfil() -> None:
+    variaveis = re.sub(r"\s+", " ", (RAIZ / "infra" / "prod" / "variables.tf").read_text("utf-8"))
+    bloco = variaveis[variaveis.index('variable "modelos_ia"') :]
+    assert "validation" in bloco
+    assert r'regex("^(us|eu|apac|global)\\.", m)' in bloco
+    assert '"amazon.nova-lite-v1:0"' in bloco
+
+
+def test_bucket_documentos_privado_e_com_expiracao() -> None:
+    analise = re.sub(r"\s+", " ", _analise_tf())
+    assert 'bucket = "radar-documentos-${data.aws_caller_identity.atual.account_id}"' in analise
+    for chave in ("block_public_acls", "block_public_policy", "ignore_public_acls"):
+        assert f"{chave} = true" in analise
+    assert "restrict_public_buckets = true" in analise
+    assert 'sse_algorithm = "AES256"' in analise
+    assert "days = 180" in analise
+
+
+def test_analisar_usa_familia_do_coletor() -> None:
+    analise = re.sub(r"\s+", " ", _analise_tf())
+    assert 'Command = ["analisar"]' in analise
+    assert "TaskDefinition = local.familia_coletor" in analise
+    assert "arn:aws:scheduler:::aws-sdk:ecs:runTask" in analise
+    assert 'schedule_expression = "cron(0 9 * * ? *)"' in analise
+    assert 'schedule_expression_timezone = "America/Sao_Paulo"' in analise
+    assert "TaskRoleArn = aws_iam_role.analisador_task.arn" in analise
+    coletor = (RAIZ / "infra" / "prod" / "coletor.tf").read_text(encoding="utf-8")
+    assert "aws_iam_role.analisador_task.arn" in coletor, "Scheduler sem PassRole da role nova"
+
+
+def test_analise_sem_alarme_novo() -> None:
+    assert "aws_cloudwatch_metric_alarm" not in _analise_tf()
+
+
+def test_api_lambda_le_config_ia() -> None:
+    api = (RAIZ / "infra" / "prod" / "api.tf").read_text(encoding="utf-8")
+    assert 'RADAR_CONFIG_IA     = "/var/task/config/ia.toml"' in api

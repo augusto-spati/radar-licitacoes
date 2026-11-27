@@ -67,3 +67,13 @@ output "url_fila_falhas" {
   description = "URL da DLQ radar-editais-falhas."
   value       = aws_sqs_queue.editais_falhas.url
 }
+
+output "bucket_documentos" {
+  description = "Bucket S3 dos PDFs e textos extraidos (RADAR_DOCUMENTOS da analise)."
+  value       = aws_s3_bucket.documentos.bucket
+}
+
+output "agenda_analise" {
+  description = "Nome do schedule diario da analise com IA."
+  value       = aws_scheduler_schedule.analisar_diario.name
+}
