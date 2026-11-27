@@ -17,6 +17,25 @@ def test_prefiltrar_ignora_acento_e_caixa() -> None:
     assert prefiltrar(registros, ["rede de agua"]) == [registros[0]]
 
 
+def _casa(objeto: str, termo: str) -> bool:
+    return prefiltrar([{"objetoCompra": objeto}], [termo]) != []
+
+
+def test_prefiltrar_aceita_plurais() -> None:
+    assert _casa("Implantação de REDES DE ÁGUA", "rede de agua")
+    assert _casa("Ligações de esgoto", "ligacao de esgoto")
+    assert _casa("Serviços de religações", "religacao")
+    assert _casa("Execução de   ligação  de\nágua", "ligacao de agua")
+    assert _casa("Leitura de hidrômetros e medidores", "leitura de hidrometro")
+    assert _casa("Leitura de medidores", "leitura de medidores")
+    assert _casa("Aquisição de materiais hidráulicos", "material")
+
+
+def test_prefiltrar_continua_recusando_o_que_nao_casa() -> None:
+    assert not _casa("Instalação de rede lógica", "rede de agua")
+    assert not _casa("Compra de papel", "religacao")
+
+
 def test_meses_ate_exclui_o_mes_corrente() -> None:
     assert meses_ate(date(2026, 11, 27), 2) == [date(2026, 10, 1), date(2026, 9, 1)]
 

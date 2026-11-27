@@ -7,6 +7,7 @@ recomeça na página seguinte, sem regravar as concluídas. Nada de página brut
 
 import calendar
 import logging
+import re
 import time
 import unicodedata
 import uuid
@@ -39,20 +40,53 @@ class ResumoHistorico:
     gravados: int = 0
 
 
-def _normalizar(texto: str) -> str:
+# Palavras vazias que o `phraseto_tsquery('portuguese', ...)` também ignora; somem dos dois
+# lados, então "rede para agua" passa por "rede de agua" (o filtro de verdade decide depois).
+_VAZIAS = frozenset(
+    "a o as os e de da do das dos em na no nas nos para por com ao aos um uma".split()
+)
+# Plural → singular grosseiro; a ordem importa (a primeira terminação que casa vence).
+_PLURAIS = (("oes", "ao"), ("aes", "ao"), ("ais", "al"), ("eis", "el"), ("ois", "ol"), ("ns", "m"))
+
+
+def _sem_acento(texto: str) -> str:
     decomposto = unicodedata.normalize("NFKD", texto)
     return "".join(c for c in decomposto if not unicodedata.combining(c)).lower()
 
 
+def _singular(palavra: str) -> str:
+    if len(palavra) <= 3:
+        return palavra
+    for plural, singular in _PLURAIS:
+        if palavra.endswith(plural):
+            return palavra[: -len(plural)] + singular
+    if palavra.endswith("s"):
+        palavra = palavra[:-1]
+    # "redes" → "rede" e "torres" → "torre"; tirar o "e" final iguala também "medidores".
+    return palavra[:-1] if len(palavra) > 3 and palavra.endswith("e") else palavra
+
+
+def _normalizar(texto: str) -> str:
+    """Sem acento, minúsculo, só letras e números, sem palavras vazias, cada palavra no singular."""
+    palavras = re.findall(r"[a-z0-9]+", _sem_acento(texto))
+    return " ".join(_singular(p) for p in palavras if p not in _VAZIAS)
+
+
 def prefiltrar(registros: list[dict[str, Any]], termos: list[str]) -> list[dict[str, Any]]:
-    """Mantém o registro cujo `objetoCompra` (sem acento, minúsculo) contém algum termo."""
+    """Mantém o registro cujo `objetoCompra` contém algum termo, os dois normalizados.
+
+    É um pré-filtro: precisa ser um superconjunto do filtro do banco (busca de frase do
+    Postgres em português, que reduz plurais e ignora palavras vazias). Por isso objeto e termo
+    passam pela mesma normalização (`_normalizar`) e o teste é de substring.
+    """
+    normalizados = [t for t in (_normalizar(termo) for termo in termos) if t]
     mantidos = []
     for registro in registros:
         objeto = registro.get("objetoCompra")
         if not isinstance(objeto, str):
             continue
         texto = _normalizar(objeto)
-        if any(termo in texto for termo in termos):
+        if any(termo in texto for termo in normalizados):
             mantidos.append(registro)
     return mantidos
 
