@@ -214,6 +214,9 @@ def carregar_historico(
                 resumo.concluidas += 1
             else:
                 resumo.falhas += 1
+    except Exception:
+        sessao.rollback()  # a página em curso não avança o checkpoint
+        raise
     finally:
         liberar_trava(sessao, FONTE_TRAVA, dono)
     return resumo

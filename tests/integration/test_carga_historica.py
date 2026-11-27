@@ -95,3 +95,59 @@ def test_refazer_reabre_o_mes(sessao: Session) -> None:
     cliente = ClienteFalso()
     carregar(sessao, cliente, gravador, refazer={MES})
     assert len(cliente.chamadas) == 4
+
+
+def test_erro_do_gravar_desfaz_a_pagina_e_libera_a_trava(sessao: Session) -> None:
+    import uuid
+    from datetime import timedelta
+
+    import pytest
+
+    from radar.coleta import obter_trava
+
+    def gravar_quebrado(sessao: Session, registros: list[dict[str, Any]]) -> int:
+        raise ValueError("gravar quebrou")
+
+    with pytest.raises(ValueError, match="gravar quebrou"):
+        carregar_historico(
+            sessao,
+            ClienteFalso(),
+            ["PR"],
+            [6],
+            [MES],
+            TERMOS,
+            gravar_quebrado,
+            pausa_s=0,  # type: ignore[arg-type]
+        )
+    carga = sessao.scalars(select(HistoricoCarga)).one()
+    assert carga.proxima_pagina == 1
+    assert carga.registros_lidos == 0
+    assert obter_trava(sessao, "historico", uuid.uuid4(), timedelta(minutes=1))
+
+
+def test_retoma_combinacao_em_andamento(sessao: Session) -> None:
+    gravador = Gravador()
+    cliente = ClienteFalso(falhar_em=("PR", 2))
+    carregar(sessao, cliente, gravador)
+    pr = sessao.scalars(select(HistoricoCarga).where(HistoricoCarga.uf == "PR")).one()
+    pr.status = "em_andamento"  # queda simulada: o processo morreu sem marcar falha
+    sessao.commit()
+    cliente2 = ClienteFalso()
+    resumo = carregar(sessao, cliente2, gravador)
+    assert [c[4] for c in cliente2.chamadas] == [2]
+    assert (resumo.concluidas, resumo.falhas) == (2, 0)
+
+
+def test_trava_de_outro_dono_impede_a_carga(sessao: Session) -> None:
+    import uuid
+    from datetime import timedelta
+
+    import pytest
+
+    from radar.coleta import obter_trava
+
+    assert obter_trava(sessao, "historico", uuid.uuid4(), timedelta(minutes=5))
+    cliente = ClienteFalso()
+    with pytest.raises(RuntimeError):
+        carregar(sessao, cliente, Gravador())
+    assert cliente.chamadas == []
