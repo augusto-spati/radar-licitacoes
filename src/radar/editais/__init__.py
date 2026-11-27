@@ -12,6 +12,15 @@ from radar.editais.filtro import (
     obter_edital,
     separar_id_publico,
 )
+from radar.editais.historico import (
+    ContratacaoPassada,
+    HistoricoOrgao,
+    Regua,
+    Vencedor,
+    faixa_de_valor,
+    historico_do_edital,
+    limite_inexequivel,
+)
 from radar.editais.modelos import Fonte, ResultadoBusca, ResultadoItem, Situacao
 from radar.editais.registro import (
     ResultadoRegistro,
@@ -30,6 +39,13 @@ from radar.editais.resultados import (
 )
 
 __all__ = [
+    "ContratacaoPassada",
+    "HistoricoOrgao",
+    "Regua",
+    "Vencedor",
+    "faixa_de_valor",
+    "historico_do_edital",
+    "limite_inexequivel",
     "AlvoResultado",
     "ItemResultado",
     "ResumoContratacao",
