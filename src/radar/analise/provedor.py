@@ -3,7 +3,7 @@
 import json
 import time
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal, Protocol
@@ -63,7 +63,11 @@ class ConfigIA:
 
 
 class ErroProvedor(Exception):
-    pass
+    """Resposta inutilizável. `resposta` traz os tokens quando a chamada já foi cobrada."""
+
+    def __init__(self, mensagem: str, resposta: "Resposta | None" = None) -> None:
+        super().__init__(mensagem)
+        self.resposta = resposta
 
 
 def validar_modelo(modelo: str, regiao: str) -> None:
@@ -171,12 +175,17 @@ class ProvedorBedrock:
         inicio = time.monotonic()
         bruto = self._cliente.converse(**argumentos)
         latencia_ms = int((time.monotonic() - inicio) * 1000)
-        return Resposta(
-            texto=_texto_da_resposta(bruto, modo),
+        usada = Resposta(
+            texto="",
             tokens_entrada=int(bruto.get("usage", {}).get("inputTokens", 0)),
             tokens_saida=int(bruto.get("usage", {}).get("outputTokens", 0)),
             latencia_ms=latencia_ms,
         )
+        try:
+            texto = _texto_da_resposta(bruto, modo)
+        except ErroProvedor as erro:
+            raise ErroProvedor(str(erro), resposta=usada) from erro
+        return replace(usada, texto=texto)
 
 
 def _texto_da_resposta(bruto: dict[str, Any], modo: ModoSaida) -> str:

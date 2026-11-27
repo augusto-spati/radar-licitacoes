@@ -1,6 +1,7 @@
 """Aplicação FastAPI: rotas de leitura sob /api."""
 
 import logging
+import tomllib
 from collections.abc import Callable, Iterator
 from dataclasses import replace
 from datetime import datetime
@@ -53,6 +54,12 @@ def criar_app(
         modelo_padrao: str | None = carregar_config_ia(config.config_ia).modelo_padrao
     except FileNotFoundError:
         logger.warning("config_ia_ausente", extra={"caminho": str(config.config_ia)})
+        modelo_padrao = None
+    except (tomllib.TOMLDecodeError, KeyError, TypeError, ValueError) as erro:
+        # ia.toml quebrado não derruba a API inteira: só a rota da análise fica fora.
+        logger.error(
+            "config_ia_invalida", extra={"caminho": str(config.config_ia), "erro": repr(erro)}
+        )
         modelo_padrao = None
     # `linha` e `uf` são enums dos critérios carregados: o OpenAPI (e o api.d.ts do
     # front) carrega as uniões `Linha` e `UF`, e valor fora delas é 422 da validação.

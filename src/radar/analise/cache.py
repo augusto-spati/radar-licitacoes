@@ -7,11 +7,20 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
+from sqlalchemy import Engine, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from radar.analise.custos import custo
+from radar.analise.custos import custo, engine_da_sessao
 from radar.analise.modelos import RespostaLLM
-from radar.analise.provedor import ConfigIA, Pedido, Provedor, Resposta
+from radar.analise.provedor import (
+    ConfigIA,
+    ErroProvedor,
+    Pedido,
+    PrecoModelo,
+    Provedor,
+    Resposta,
+)
 
 
 def _sha256(texto: str) -> str:
@@ -94,13 +103,27 @@ class CacheArquivos:
 
 
 class CacheBanco:
-    """Tabela `resposta_llm`. Não faz commit: quem chama decide."""
+    """Tabela `resposta_llm`, em conexão própria do engine (padrão de `coleta.trava`).
 
-    def __init__(self, sessao: Session) -> None:
-        self._sessao = sessao
+    Cada leitura e cada gravação é uma transação curta, fora da sessão de quem chama: a
+    resposta paga fica commitada logo após a chamada, e o rollback de um edital que falhou
+    não apaga o gasto (que o teto do mês soma) nem o cache. Nenhuma conexão fica presa entre
+    uma chamada e outra (o Neon derruba transação ociosa).
+    """
+
+    def __init__(self, origem: Session | Engine) -> None:
+        self._engine = origem if isinstance(origem, Engine) else engine_da_sessao(origem)
 
     def ler(self, chave: str) -> Resposta | None:
-        linha = self._sessao.get(RespostaLLM, chave)
+        with self._engine.connect() as conexao:
+            linha = conexao.execute(
+                select(
+                    RespostaLLM.resposta,
+                    RespostaLLM.tokens_entrada,
+                    RespostaLLM.tokens_saida,
+                    RespostaLLM.latencia_ms,
+                ).where(RespostaLLM.chave == chave)
+            ).first()
         if linha is None:
             return None
         return Resposta(
@@ -111,8 +134,9 @@ class CacheBanco:
         )
 
     def gravar(self, chave: str, modelo: str, resposta: Resposta, custo_usd: Decimal) -> None:
-        self._sessao.merge(
-            RespostaLLM(
+        comando = (
+            insert(RespostaLLM)
+            .values(
                 chave=chave,
                 modelo=modelo,
                 resposta=resposta.texto,
@@ -121,8 +145,10 @@ class CacheBanco:
                 custo_usd=custo_usd,
                 latencia_ms=resposta.latencia_ms,
             )
+            .on_conflict_do_nothing(index_elements=[RespostaLLM.chave])
         )
-        self._sessao.flush()
+        with self._engine.begin() as conexao:
+            conexao.execute(comando)
 
 
 class RespostaAusente(Exception):
@@ -162,9 +188,17 @@ class ProvedorComCache:
             raise RespostaAusente(chave)
         if self._antes_de_chamar is not None:
             self._antes_de_chamar(pedido)
-        resposta = self._interno.gerar(pedido)
+        try:
+            resposta = self._interno.gerar(pedido)
+        except ErroProvedor as erro:
+            if erro.resposta is not None:  # já cobrada: o gasto conta e a resposta vazia fica
+                self._registrar(chave, pedido.modelo, erro.resposta, preco)
+            raise
+        self._registrar(chave, pedido.modelo, resposta, preco)
+        return resposta
+
+    def _registrar(self, chave: str, modelo: str, resposta: Resposta, preco: PrecoModelo) -> None:
         custo_usd = custo(resposta, preco)
-        self._cache.gravar(chave, pedido.modelo, resposta, custo_usd)
+        self._cache.gravar(chave, modelo, resposta, custo_usd)
         self.custo_usd += custo_usd
         self.chamadas_reais += 1
-        return resposta

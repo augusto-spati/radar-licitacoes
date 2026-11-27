@@ -1,6 +1,8 @@
 from decimal import Decimal
 
-from radar.analise.evals import Contagem, comparar_com_gabarito, slug
+import pytest
+
+from radar.analise.evals import Contagem, comparar_com_gabarito, mascarar_dados_pessoais, slug
 from radar.analise.exigencias import Atestado, CategoriaEvidencia, Exigencias, ValorEvidencia
 
 
@@ -119,3 +121,34 @@ def test_somar() -> None:
     total.somar(Contagem(vp=1, fp=2, fn=3, ausentes=4, alucinacoes=5))
     total.somar(Contagem(vp=1))
     assert (total.vp, total.fp, total.fn, total.ausentes, total.alucinacoes) == (2, 2, 3, 4, 5)
+
+
+@pytest.mark.parametrize(
+    ("texto", "esperado"),
+    [
+        ("inscrito no CPF sob o nº 255.499.628-88, residente", "inscrito no CPF sob o nº ***.***.***-**, residente"),  # noqa: E501
+        ("CPF Nº 311148448/37\nAssinatura", "CPF Nº ***.***.***-**\nAssinatura"),
+        ("CPF: 25549962888 e", "CPF: ***.***.***-** e"),
+        ("CPF 255.499.628-88. Fim e RG 27.645.812-6.", "CPF ***.***.***-**. Fim e RG **.***.***-*."),  # noqa: E501
+        ("digital por ANA \nREZENDE:05715322685 \nDados:", "digital por ANA \nREZENDE:*********** \nDados:"),  # noqa: E501
+        ("Identidade RG nº 27.645.812-6 SSP/SP", "Identidade RG nº **.***.***-* SSP/SP"),
+        ("RG nº 336637892 SSP", "RG nº **.***.***-* SSP"),
+        ("RG: 4.123.456 SSP/PR", "RG: **.***.***-* SSP/PR"),
+    ],
+)  # fmt: skip
+def test_mascara_cpf_e_rg(texto: str, esperado: str) -> None:
+    assert mascarar_dados_pessoais(texto) == esperado
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "CNPJ 45.359.973/0001-50 e CEP 13.140-000",
+        "R$ 1.250.000,00 e 2.000.000 de metros",
+        "https://pncp.gov.br/app/editais/45359973000150/2026/249",
+        "CREA nº 5061119656 e processo 0007337.989-24",
+        "CPF, RG e e-mail pessoal",
+    ],
+)
+def test_mascara_preserva_o_que_nao_e_cpf_nem_rg(texto: str) -> None:
+    assert mascarar_dados_pessoais(texto) == texto

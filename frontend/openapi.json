@@ -419,6 +419,17 @@
             "title": "Campo",
             "type": "string"
           },
+          "documento": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Documento"
+          },
           "exigido": {
             "title": "Exigido",
             "type": "string"
@@ -471,6 +482,7 @@
           "perfil",
           "motivo",
           "trecho",
+          "documento",
           "pagina"
         ],
         "title": "ItemAnaliseOut",

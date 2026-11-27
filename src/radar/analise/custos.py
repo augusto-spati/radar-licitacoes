@@ -5,7 +5,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import Connection, Engine, func, select
 from sqlalchemy.orm import Session
 
 from radar.analise.modelos import RespostaLLM
@@ -39,7 +39,13 @@ def _inicio_do_mes(momento: datetime) -> datetime:
     return utc.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
 
-def gasto_do_mes(sessao: Session, agora: datetime) -> Decimal:
+def engine_da_sessao(sessao: Session) -> Engine:
+    """O engine por trás da sessão, para transações curtas em conexão própria."""
+    bind = sessao.get_bind()
+    return bind if isinstance(bind, Engine) else bind.engine
+
+
+def gasto_do_mes(sessao: Session | Connection, agora: datetime) -> Decimal:
     """Soma de `resposta_llm.custo_usd` no mês UTC de `agora`."""
     inicio = _inicio_do_mes(agora)
     fim = (inicio.replace(year=inicio.year + 1, month=1) if inicio.month == 12
@@ -60,12 +66,15 @@ def guarda_teto(
 ) -> Callable[[Pedido], None]:
     """Gancho `antes_de_chamar`: mês + rodada + estimativa acima do teto → `TetoAtingido`.
 
-    `gasto_rodada` é o que a rodada gastou e ainda não está somado no banco (com `CacheBanco` na
-    mesma sessão, as respostas já entram em `gasto_do_mes` e a rodada passa zero).
+    `gasto_rodada` é o que a rodada gastou e ainda não está somado no banco (com `CacheBanco`,
+    cada resposta é commitada na hora e já entra em `gasto_do_mes`: a rodada passa zero).
+    O gasto do mês é lido numa conexão própria e curta, fora da transação da sessão.
     """
+    engine = engine_da_sessao(sessao)
 
     def verificar(pedido: Pedido) -> None:
-        mes = gasto_do_mes(sessao, agora())
+        with engine.connect() as conexao:
+            mes = gasto_do_mes(conexao, agora())
         rodada = gasto_rodada()
         estimativa = estimar(pedido, config.preco(pedido.modelo))
         if mes + rodada + estimativa > config.teto_mensal_usd:

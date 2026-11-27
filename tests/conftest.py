@@ -33,16 +33,17 @@ def engine() -> Iterator[Engine]:
 
 @pytest.fixture(autouse=True)
 def _sem_leases(request: pytest.FixtureRequest) -> Iterator[None]:
-    """Apaga os leases de trava_fonte ao fim de todo teste que usa o banco.
+    """Apaga os leases de trava_fonte e o cache resposta_llm ao fim de todo teste com banco.
 
-    A trava commita na própria conexão: o rollback da sessão de teste não a desfaz. Testes
-    sem `engine`/`sessao` (os unitários) não sobem o container por causa disso.
+    A trava e o cache da IA commitam na própria conexão: o rollback da sessão de teste não os
+    desfaz. Testes sem `engine`/`sessao` (os unitários) não sobem o container por causa disso.
     """
     yield
     if {"engine", "sessao"} & set(request.fixturenames):
         engine: Engine = request.getfixturevalue("engine")
         with engine.begin() as conexao:
             conexao.execute(text("DELETE FROM trava_fonte"))
+            conexao.execute(text("DELETE FROM resposta_llm"))
 
 
 @pytest.fixture

@@ -53,6 +53,9 @@ class DocumentoEdital(Base):
     tamanho: Mapped[int | None] = mapped_column(BigInteger)
     paginas: Mapped[int | None] = mapped_column(Integer)
     paginas_sem_texto: Mapped[int | None] = mapped_column(Integer)
+    # Onde o documento começa no texto juntado dos documentos do edital (as páginas das
+    # análises são desse texto); nulo se o documento não entrou no texto (sem texto, zip...).
+    pagina_inicial: Mapped[int | None] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(Text)
     erro: Mapped[str | None] = mapped_column(Text)
     baixado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True))

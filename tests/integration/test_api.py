@@ -208,7 +208,9 @@ def test_valor_sai_como_string_decimal(cliente: TestClient, sessao: Session) -> 
     assert editais["pncp~sem-valor/2026"]["valor_estimado"] is None
 
 
-def _gravar_analise(sessao: Session, id_na_fonte: str) -> None:
+def _gravar_analise(
+    sessao: Session, id_na_fonte: str, pagina: int = 4, segundo_documento: bool = False
+) -> None:
     from radar.analise import AnaliseEdital, DocumentoEdital, carregar_config_ia
 
     modelo = carregar_config_ia(RAIZ / "config" / "ia.toml").modelo_padrao
@@ -219,7 +221,7 @@ def _gravar_analise(sessao: Session, id_na_fonte: str) -> None:
         "perfil": "R$ 1.000.000,00",
         "motivo": "perfil ≥ exigido",
         "trecho": "capital social mínimo de R$ 250.000,00",
-        "pagina": 4,
+        "pagina": pagina,
     }
     sessao.add_all(
         [
@@ -251,11 +253,28 @@ def _gravar_analise(sessao: Session, id_na_fonte: str) -> None:
                 url="https://pncp.gov.br/pncp-api/v1/orgaos/1/compras/2026/298/arquivos/1",
                 sha256="s",
                 paginas=12,
+                pagina_inicial=1,
                 status="extraido",
                 baixado_em=datetime(2026, 11, 27, 12, tzinfo=UTC),
             ),
         ]
     )
+    if segundo_documento:
+        sessao.add(
+            DocumentoEdital(
+                fonte="pncp",
+                id_na_fonte=id_na_fonte,
+                sequencial=2,
+                titulo="termo de referencia.pdf",
+                tipo_nome="Termo de Referência",
+                url="https://pncp.gov.br/pncp-api/v1/orgaos/1/compras/2026/298/arquivos/2",
+                sha256="t",
+                paginas=5,
+                pagina_inicial=13,
+                status="extraido",
+                baixado_em=datetime(2026, 11, 27, 12, tzinfo=UTC),
+            )
+        )
     sessao.flush()
 
 
@@ -276,6 +295,7 @@ def test_analise_com_barra_no_id(cliente: TestClient, sessao: Session) -> None:
     assert corpo["criada_em"] == "2026-11-27T09:00:00-03:00"
     assert "segundo o que foi extraído" in corpo["aviso"].lower()
     assert corpo["itens"][0]["pagina"] == 4
+    assert corpo["itens"][0]["documento"] == "edital.pdf"
     assert corpo["documentos"] == [
         {
             "titulo": "edital.pdf",
@@ -292,6 +312,43 @@ def test_analise_sem_config_ia_da_503_e_o_resto_funciona(
     sessao: Session, config_filtro: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setenv("RADAR_CONFIG_IA", str(tmp_path / "nao-existe.toml"))
+    fabrica = cast(Callable[[], Session], lambda: _SessaoEmprestada(sessao))
+    cliente = TestClient(criar_app(fabrica, config_filtro, relogio=lambda: AGORA))
+
+    assert cliente.get("/api/analises/pncp~1-1-1/2026").status_code == 503
+    assert cliente.get("/api/status").status_code == 200
+
+
+def test_analise_devolve_documento_e_pagina_dentro_do_pdf(
+    cliente: TestClient, sessao: Session
+) -> None:
+    # Página 15 do texto juntado = página 3 do 2º documento (que começa na 13).
+    _gravar_analise(sessao, "78200482000110-1-000298/2026", pagina=15, segundo_documento=True)
+
+    [item] = cliente.get("/api/analises/pncp~78200482000110-1-000298/2026").json()["itens"]
+
+    assert item["documento"] == "termo de referencia.pdf"
+    assert item["pagina"] == 3
+
+
+@pytest.mark.parametrize(
+    "conteudo",
+    [
+        "isto nao e toml = = =",
+        'regiao = "us-east-2"\n',
+        'regiao = "sa-east-1"\nmodelo_padrao = "x"',
+    ],
+)
+def test_analise_com_config_ia_invalida_da_503_e_o_resto_funciona(
+    sessao: Session,
+    config_filtro: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    conteudo: str,
+) -> None:
+    arquivo = tmp_path / "ia.toml"
+    arquivo.write_text(conteudo, encoding="utf-8")
+    monkeypatch.setenv("RADAR_CONFIG_IA", str(arquivo))
     fabrica = cast(Callable[[], Session], lambda: _SessaoEmprestada(sessao))
     cliente = TestClient(criar_app(fabrica, config_filtro, relogio=lambda: AGORA))
 

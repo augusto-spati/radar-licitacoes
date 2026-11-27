@@ -1,19 +1,24 @@
 import copy
 import json
+import uuid
 from collections.abc import Iterator
-from datetime import datetime
+from datetime import datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
-from sqlalchemy import Engine, func, select, text
+from sqlalchemy import Engine, create_engine, func, select, text
 from sqlalchemy.orm import Session, sessionmaker
 from typer.testing import CliRunner
 
 from radar import cli
 from radar.analise import AnaliseEdital, ClienteArquivosPNCP, ConfigIA, Pedido, Resposta
+from radar.analise.custos import gasto_do_mes
+from radar.analise.modelos import RespostaLLM
+from radar.coleta.trava import obter_trava
 from radar.comum import Base, fabrica_sessao
 from radar.editais import registrar, registrar_normalizados
 
@@ -271,3 +276,119 @@ def test_falha_de_um_edital_nao_para_os_outros(
     assert resultado.exit_code == 1
     assert "analise: 1 analisados, 0 pulados, 1 falhas" in resultado.output
     assert _analisados(fabrica) == {OUTRO_ABERTO}
+
+
+def _ia_com(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, **trocas: str) -> None:
+    ia = (RAIZ / "config" / "ia.toml").read_text(encoding="utf-8")
+    for velho, novo in trocas.items():
+        assert velho in ia
+        ia = ia.replace(velho, novo)
+    arquivo = tmp_path / "ia-teste.toml"
+    arquivo.write_text(ia, encoding="utf-8")
+    monkeypatch.setenv("RADAR_CONFIG_IA", str(arquivo))
+
+
+def test_sem_transacao_aberta_durante_a_chamada_ao_provedor(
+    rede: tuple[sessionmaker[Session], Rede],
+    config_filtro: Path,
+    engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fabrica, _ = rede
+    _popular(fabrica)
+    espiao = create_engine(engine.url)
+    vistas: list[tuple[int, int]] = []
+
+    class ProvedorEspiao(ProvedorFalso):
+        def gerar(self, pedido: Pedido) -> Resposta:
+            with espiao.connect() as conexao:
+                presas = conexao.scalar(
+                    text(
+                        "SELECT count(*) FROM pg_stat_activity WHERE pid <> pg_backend_pid()"
+                        " AND state LIKE 'idle in transaction%'"
+                    )
+                )
+            vistas.append((engine.pool.checkedout(), int(presas or 0)))  # type: ignore[attr-defined]
+            return super().gerar(pedido)
+
+    monkeypatch.setattr(cli, "_criar_provedor_ia", lambda config: ProvedorEspiao())
+    resultado = _analisar(config_filtro)
+    assert resultado.exit_code == 0, resultado.output
+    assert vistas
+    assert set(vistas) == {(0, 0)}
+    espiao.dispose()
+
+
+def test_falha_no_meio_mantem_as_respostas_pagas_e_o_gasto(
+    rede: tuple[sessionmaker[Session], Rede],
+    config_filtro: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fabrica, _ = rede
+    _popular(fabrica)
+    _ia_com(
+        tmp_path, monkeypatch, **{"caracteres_por_trecho = 60000": "caracteres_por_trecho = 300"}
+    )
+    pagas: list[int] = []
+
+    class ProvedorQueCai(ProvedorFalso):
+        def gerar(self, pedido: Pedido) -> Resposta:
+            if ProvedorFalso.chamadas == 1:  # a 2ª chamada da rodada cai
+                ProvedorFalso.chamadas += 1
+                raise RuntimeError("Bedrock caiu")
+            pagas.append(1)
+            return super().gerar(pedido)
+
+    monkeypatch.setattr(cli, "_criar_provedor_ia", lambda config: ProvedorQueCai())
+    resultado = _analisar(config_filtro, "--limite", "1")
+    assert resultado.exit_code == 1
+    assert "1 falhas" in resultado.output
+    with fabrica() as sessao:
+        assert sessao.scalar(select(func.count()).select_from(RespostaLLM)) == len(pagas) == 1
+        assert gasto_do_mes(sessao, AGORA) == Decimal("0.000084")
+        assert sessao.scalar(select(func.count()).select_from(AnaliseEdital)) == 0
+
+
+def test_orcamento_de_tempo_nao_comeca_edital_novo(
+    rede: tuple[sessionmaker[Session], Rede],
+    config_filtro: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fabrica, _ = rede
+    _popular(fabrica)
+    instantes = [0.0, 0.0]  # início da rodada e 1º edital; depois, 31 min passados
+    monkeypatch.setattr(cli, "_relogio_rodada", lambda: instantes.pop(0) if instantes else 1860.0)
+
+    resultado = _analisar(config_filtro)
+    assert resultado.exit_code == 0, resultado.output
+    assert len(_analisados(fabrica)) == 1
+    assert "orçamento de tempo" in resultado.output
+    assert "analise: 1 analisados, 0 pulados, 0 falhas" in resultado.output
+
+
+def test_rodada_concorrente_nao_analisa(
+    rede: tuple[sessionmaker[Session], Rede], config_filtro: Path
+) -> None:
+    fabrica, _ = rede
+    _popular(fabrica)
+    outro = uuid.uuid4()
+    with fabrica() as sessao:
+        assert obter_trava(sessao, "analise", outro, timedelta(minutes=30))
+
+    resultado = _analisar(config_filtro)
+    assert resultado.exit_code == 0, resultado.output
+    assert "outra rodada de análise em andamento" in resultado.output
+    assert "resultado:" not in resultado.output
+    assert _analisados(fabrica) == set()
+    assert ProvedorFalso.chamadas == 0
+
+
+def test_rodada_solta_a_trava_no_fim(
+    rede: tuple[sessionmaker[Session], Rede], config_filtro: Path, engine: Engine
+) -> None:
+    fabrica, _ = rede
+    _popular(fabrica)
+    assert _analisar(config_filtro).exit_code == 0
+    with engine.connect() as conexao:
+        assert conexao.scalar(text("SELECT count(*) FROM trava_fonte")) == 0

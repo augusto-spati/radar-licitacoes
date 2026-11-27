@@ -137,8 +137,11 @@ def test_resposta_sem_texto_nem_ferramenta() -> None:
     falso = BedrockFalso(
         {"output": {"message": {"content": []}}, "usage": {"inputTokens": 1, "outputTokens": 0}}
     )
-    with pytest.raises(ErroProvedor):
+    with pytest.raises(ErroProvedor) as erro:
         ProvedorBedrock(_config("json_schema"), cliente=falso).gerar(_pedido())
+    # a chamada foi paga: os tokens vão junto para o gasto ser contado
+    assert erro.value.resposta is not None
+    assert erro.value.resposta.tokens_entrada == 1
 
 
 def test_pedido_usa_temperatura_zero_e_max_tokens() -> None:

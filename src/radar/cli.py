@@ -4,11 +4,13 @@ import functools
 import hashlib
 import json
 import logging
+import time
+import uuid
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
 from zoneinfo import ZoneInfo
 
 import typer
@@ -16,40 +18,6 @@ import uvicorn
 from sqlalchemy.orm import Session, sessionmaker
 
 from radar import __version__
-from radar.analise import (
-    INSTRUCAO_GRAVAR,
-    AlvoAnalise,
-    CacheArquivos,
-    CacheBanco,
-    ClienteArquivosPNCP,
-    ConfigIA,
-    Dependencias,
-    Pedido,
-    Provedor,
-    ProvedorBedrock,
-    ProvedorComCache,
-    TetoAtingido,
-    TextoEval,
-    analisar_edital,
-    avaliar,
-    carregar_config_ia,
-    carregar_perfil,
-    chave_pncp,
-    criar_armazem,
-    criar_http_arquivos,
-    eh_pdf,
-    escolher_documentos,
-    estimar,
-    extrair_paginas,
-    guarda_teto,
-    ja_analisado,
-    para_markdown,
-    slug,
-    status_do_texto,
-    validar_gabaritos,
-    versao_prompt_atual,
-)
-from radar.api.app import criar_app
 from radar.coleta import (
     ClienteEducado,
     ClientePNCP,
@@ -58,6 +26,8 @@ from radar.coleta import (
     criar_http,
     criar_http_educado,
     executar_retrato,
+    liberar_trava,
+    obter_trava,
     paginas_publicadas_sem_processar,
     planejar_janelas,
     retratos_sem_processar,
@@ -88,6 +58,11 @@ from radar.editais import (
 )
 from radar.editais import filtrar as filtrar_editais
 from radar.processador import FilaLocal, criar_fila, fontes_retrato
+
+# A análise (e a API, que a importa) só carrega nos comandos que a usam: o coletor e o relay
+# não pagam o import nem quebram se algo da análise (prompt, config) estiver ruim.
+if TYPE_CHECKING:
+    from radar.analise import AlvoAnalise, ClienteArquivosPNCP, ConfigIA, Provedor
 
 logger = logging.getLogger(__name__)
 
@@ -470,16 +445,28 @@ def filtrar(
     typer.echo(f"{len(editais)} editais")
 
 
-def _criar_provedor_ia(config: ConfigIA) -> Provedor:
+def _criar_provedor_ia(config: "ConfigIA") -> "Provedor":
+    from radar.analise import ProvedorBedrock
+
     return ProvedorBedrock(config)
 
 
-def _criar_cliente_arquivos() -> ClienteArquivosPNCP:
+def _criar_cliente_arquivos() -> "ClienteArquivosPNCP":
+    from radar.analise import ClienteArquivosPNCP, criar_http_arquivos
+
     return ClienteArquivosPNCP(criar_http_arquivos())
 
 
 # Quantos editais abertos o `analisar` considera antes de cortar no limite da rodada.
 CANDIDATOS_ANALISE = 1000
+# Não começa edital novo depois disto (a agenda é diária; o resto fica para amanhã).
+ORCAMENTO_RODADA_S = 30 * 60
+# Lease em trava_fonte: uma rodada de análise por vez (agendada e manual não se sobrepõem).
+# Renovado a cada edital; precisa cobrir um edital inteiro (até 3 downloads de 180 s, a
+# extração e os pedidos ao Bedrock).
+TRAVA_ANALISE = "analise"
+DURACAO_TRAVA_ANALISE = timedelta(minutes=60)
+_relogio_rodada = time.monotonic
 
 
 def _alvos_analise(
@@ -489,8 +476,10 @@ def _alvos_analise(
     modelo: str,
     refazer: bool,
     limite: int,
-) -> tuple[list[AlvoAnalise], int]:
+) -> tuple[list["AlvoAnalise"], int]:
     """Os editais a analisar e quantos foram pulados por já terem análise."""
+    from radar.analise import AlvoAnalise, ja_analisado, versao_prompt_atual
+
     versao = versao_prompt_atual()
     if edital is not None:
         chave = separar_id_publico(edital)
@@ -532,6 +521,18 @@ def analisar(
     config: OpcaoConfig = ARQUIVO_CONFIG,
 ) -> None:
     """Extrai as exigências dos editais abertos do PNCP com IA e compara com o perfil."""
+    from radar.analise import (
+        CacheBanco,
+        Dependencias,
+        ProvedorComCache,
+        TetoAtingido,
+        analisar_edital,
+        carregar_config_ia,
+        carregar_perfil,
+        criar_armazem,
+        guarda_teto,
+    )
+
     configurar_logs()
     ambiente = obter_config()
     if ambiente.ia_provedor == "desligado":
@@ -544,48 +545,75 @@ def analisar(
         raise typer.Exit(code=2)
     perfil = carregar_perfil(ambiente.config_perfil)
     criterios = carregar_criterios(config)
-    analisados = falhas = 0
+    analisados = falhas = adiados = 0
     teto = False
+    dono = uuid.uuid4()
     with _criar_sessao() as sessao:
-        alvos, pulados = _alvos_analise(
-            sessao, criterios, edital, modelo, refazer, limite or config_ia.max_editais_por_rodada
-        )
-        # O cache no banco grava na mesma sessão: o gasto da rodada já entra no do mês.
-        provedor = ProvedorComCache(
-            _criar_provedor_ia(config_ia),
-            CacheBanco(sessao),
-            "gravar",
-            config_ia,
-            guarda_teto(sessao, config_ia, _agora, lambda: Decimal(0)),
-        )
-        cliente = _criar_cliente_arquivos()
-        dep = Dependencias(
-            cliente_arquivos=cliente,
-            armazem=criar_armazem(ambiente.documentos),
-            provedor=provedor,
-            config=config_ia,
-            perfil=perfil,
-            modelo=modelo,
-        )
+        if not obter_trava(sessao, TRAVA_ANALISE, dono, DURACAO_TRAVA_ANALISE):
+            # Não é falha: a outra rodada está fazendo o trabalho. Sem "resultado:".
+            typer.echo("analise: outra rodada de análise em andamento; nada feito")
+            return
         try:
-            for alvo in alvos:
-                try:
-                    analisar_edital(sessao, alvo, dep, _agora())
-                except TetoAtingido:
-                    teto = True
-                    typer.echo("teto mensal da IA atingido: rodada interrompida")
-                    break
-                except Exception:  # um edital ruim não para a rodada
-                    sessao.rollback()
-                    logger.exception(
-                        "analise_falhou",
-                        extra={"fonte": alvo.fonte, "id_na_fonte": alvo.id_na_fonte},
-                    )
-                    falhas += 1
-                    continue
-                analisados += 1
+            alvos, pulados = _alvos_analise(
+                sessao,
+                criterios,
+                edital,
+                modelo,
+                refazer,
+                limite or config_ia.max_editais_por_rodada,
+            )
+            sessao.rollback()  # só leitura: nenhuma transação aberta durante rede e Bedrock
+            # O cache no banco commita cada resposta paga na hora, em conexão própria: o gasto
+            # da rodada já entra no do mês, e um edital que falha não o apaga.
+            provedor = ProvedorComCache(
+                _criar_provedor_ia(config_ia),
+                CacheBanco(sessao),
+                "gravar",
+                config_ia,
+                guarda_teto(sessao, config_ia, _agora, lambda: Decimal(0)),
+            )
+            cliente = _criar_cliente_arquivos()
+            dep = Dependencias(
+                cliente_arquivos=cliente,
+                armazem=criar_armazem(ambiente.documentos),
+                provedor=provedor,
+                config=config_ia,
+                perfil=perfil,
+                modelo=modelo,
+            )
+            inicio = _relogio_rodada()
+            try:
+                for indice, alvo in enumerate(alvos):
+                    if _relogio_rodada() - inicio > ORCAMENTO_RODADA_S:
+                        adiados = len(alvos) - indice
+                        typer.echo(
+                            f"orçamento de tempo da rodada esgotado: {adiados} editais ficam "
+                            "para a próxima"
+                        )
+                        break
+                    if not obter_trava(sessao, TRAVA_ANALISE, dono, DURACAO_TRAVA_ANALISE):
+                        typer.echo("trava da análise perdida: rodada interrompida", err=True)
+                        falhas += 1
+                        break
+                    try:
+                        analisar_edital(sessao, alvo, dep, _agora())
+                    except TetoAtingido:
+                        teto = True
+                        typer.echo("teto mensal da IA atingido: rodada interrompida")
+                        break
+                    except Exception:  # um edital ruim não para a rodada
+                        sessao.rollback()
+                        logger.exception(
+                            "analise_falhou",
+                            extra={"fonte": alvo.fonte, "id_na_fonte": alvo.id_na_fonte},
+                        )
+                        falhas += 1
+                        continue
+                    analisados += 1
+            finally:
+                cliente.fechar()
         finally:
-            cliente.fechar()
+            liberar_trava(sessao, TRAVA_ANALISE, dono)
     # Nunca "resultado:": o log group é o do coletor e essa linha cala o alarme "não rodou".
     typer.echo(
         f"analise: {analisados} analisados, {pulados} pulados, {falhas} falhas, "
@@ -603,7 +631,21 @@ def avaliar_preparar(
     id_publico: Annotated[str, typer.Argument(help="Ex.: pncp~78200482000110-1-000298/2026")],
     raiz: OpcaoRaizEvals = RAIZ_EVALS,
 ) -> None:
-    """Baixa os documentos do edital e grava as páginas em textos/<slug>.json (sem gabarito)."""
+    """Baixa os documentos do edital e grava as páginas em textos/<slug>.json (sem gabarito).
+
+    CPF e RG de pessoas citadas no edital são mascarados: o texto vai para o repositório.
+    """
+    from radar.analise import (
+        TextoEval,
+        chave_pncp,
+        eh_pdf,
+        escolher_documentos,
+        extrair_paginas,
+        mascarar_dados_pessoais,
+        slug,
+        status_do_texto,
+    )
+
     configurar_logs()
     fonte, _, id_na_fonte = id_publico.partition("~")
     chave = chave_pncp(id_na_fonte) if fonte == "pncp" else None
@@ -630,7 +672,7 @@ def avaliar_preparar(
                 item.update(status=status_do_texto(texto), paginas=len(texto.paginas))
                 item["pagina_inicial"] = len(paginas) + 1
                 if item["status"] == "extraido":
-                    paginas.extend(texto.paginas)
+                    paginas.extend(mascarar_dados_pessoais(p) for p in texto.paginas)
             documentos.append(item)
     finally:
         cliente.fechar()
@@ -650,6 +692,8 @@ def avaliar_preparar(
 @app_avaliar.command("validar")
 def avaliar_validar(raiz: OpcaoRaizEvals = RAIZ_EVALS) -> None:
     """Confere esquema dos gabaritos e que todo trecho existe na página indicada."""
+    from radar.analise import validar_gabaritos
+
     erros = validar_gabaritos(raiz)
     for erro in erros:
         typer.echo(erro)
@@ -666,6 +710,18 @@ def avaliar_rodar(
     raiz: OpcaoRaizEvals = RAIZ_EVALS,
 ) -> None:
     """Roda a extração sobre o corpus e imprime a tabela de precisão e recall por campo."""
+    from radar.analise import (
+        INSTRUCAO_GRAVAR,
+        CacheArquivos,
+        Pedido,
+        ProvedorComCache,
+        TetoAtingido,
+        avaliar,
+        carregar_config_ia,
+        estimar,
+        para_markdown,
+    )
+
     if modo not in ("replay", "gravar") or conjunto not in ("ajuste", "teste", "todos"):
         typer.echo("use --modo replay|gravar e --conjunto ajuste|teste|todos", err=True)
         raise typer.Exit(code=2)
@@ -718,5 +774,7 @@ def api(
     config: OpcaoConfig = ARQUIVO_CONFIG,
 ) -> None:
     """Sobe a API JSON local (só leitura) em 127.0.0.1."""
+    from radar.api.app import criar_app
+
     configurar_logs()
     uvicorn.run(criar_app(config_filtro=config), host="127.0.0.1", port=porta)

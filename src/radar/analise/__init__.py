@@ -24,11 +24,14 @@ from radar.analise.custos import TetoAtingido, estimar, gasto_do_mes, guarda_tet
 from radar.analise.evals import (
     INSTRUCAO_GRAVAR,
     Gabarito,
+    LinhaDeBase,
     Relatorio,
     TextoEval,
     avaliar,
     ler_linha_de_base,
+    mascarar_dados_pessoais,
     para_markdown,
+    regressoes,
     slug,
     validar_gabaritos,
 )
@@ -61,6 +64,7 @@ from radar.analise.pipeline import (
     analisar_edital,
     ja_analisado,
     obter_analise,
+    pagina_no_documento,
     versao_prompt_atual,
 )
 from radar.analise.provedor import (
@@ -99,6 +103,7 @@ __all__ = [
     "Exigencias",
     "Extracao",
     "Gabarito",
+    "LinhaDeBase",
     "GrandeDemais",
     "ItemComparacao",
     "Pedido",
@@ -135,8 +140,11 @@ __all__ = [
     "guarda_teto",
     "ja_analisado",
     "ler_linha_de_base",
+    "mascarar_dados_pessoais",
     "obter_analise",
+    "pagina_no_documento",
     "para_markdown",
+    "regressoes",
     "slug",
     "status_do_texto",
     "validar_gabaritos",

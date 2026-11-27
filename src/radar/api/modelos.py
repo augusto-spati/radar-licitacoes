@@ -6,7 +6,13 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
 
-from radar.analise import AnaliseLida, SituacaoItem, StatusDocumento, Veredito
+from radar.analise import (
+    AnaliseLida,
+    SituacaoItem,
+    StatusDocumento,
+    Veredito,
+    pagina_no_documento,
+)
 from radar.editais import EditalDetalhe, EditalResumo, Fonte, Situacao, id_publico
 
 FUSO = ZoneInfo("America/Sao_Paulo")
@@ -125,6 +131,8 @@ class ItemAnaliseOut(BaseModel):
     perfil: str
     motivo: str
     trecho: str | None
+    # Título do documento (PDF) onde está o trecho e a página dentro dele.
+    documento: str | None
     pagina: int | None
 
 
@@ -147,6 +155,14 @@ class AnaliseOut(BaseModel):
     documentos: list[DocumentoAnaliseOut]
 
 
+def _item_out(item: dict[str, object], lida: AnaliseLida) -> ItemAnaliseOut:
+    """A página gravada é a do texto juntado dos documentos; a API devolve a do PDF."""
+    pagina = item.get("pagina")
+    local = pagina_no_documento(lida.documentos, pagina if isinstance(pagina, int) else None)
+    documento, no_pdf = (None, pagina) if local is None else (local[0].titulo, local[1])
+    return ItemAnaliseOut.model_validate({**item, "documento": documento, "pagina": no_pdf})
+
+
 def analise_out(lida: AnaliseLida) -> AnaliseOut:
     analise = lida.analise
     return AnaliseOut(
@@ -157,7 +173,7 @@ def analise_out(lida: AnaliseLida) -> AnaliseOut:
         veredito=analise.veredito,  # type: ignore[arg-type]
         incompleta=analise.incompleta,
         aviso=AVISO_ANALISE,
-        itens=[ItemAnaliseOut.model_validate(i) for i in analise.comparacao.get("itens", [])],
+        itens=[_item_out(i, lida) for i in analise.comparacao.get("itens", [])],
         documentos=[
             DocumentoAnaliseOut(
                 titulo=d.titulo,

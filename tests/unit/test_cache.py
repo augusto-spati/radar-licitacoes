@@ -11,7 +11,7 @@ from radar.analise.cache import (
     chave_cache,
     versao_prompt,
 )
-from radar.analise.provedor import ConfigIA, Pedido, PrecoModelo, Resposta
+from radar.analise.provedor import ConfigIA, ErroProvedor, Pedido, PrecoModelo, Resposta
 
 MODELO = "amazon.nova-lite-v1:0"
 CONFIG = ConfigIA(
@@ -110,3 +110,21 @@ def test_cache_arquivos_ida_e_volta(tmp_path: Path) -> None:
     assert cache.ler("abc") == resposta
     assert (tmp_path / "amazon_nova-lite-v1_0" / "abc.json").is_file()
     assert cache.ler("nada") is None
+
+
+def test_erro_do_provedor_depois_de_pago_conta_o_gasto(tmp_path: Path) -> None:
+    class ProvedorSemTexto:
+        def gerar(self, pedido: Pedido) -> Resposta:
+            usada = Resposta(texto="", tokens_entrada=1_000_000, tokens_saida=0, latencia_ms=5)
+            raise ErroProvedor("resposta sem texto nem ferramenta", resposta=usada)
+
+    cache = CacheArquivos(tmp_path)
+    provedor = ProvedorComCache(ProvedorSemTexto(), cache, "gravar", CONFIG)
+    with pytest.raises(ErroProvedor):
+        provedor.gerar(PEDIDO)
+    assert provedor.custo_usd == Decimal("0.06")
+    assert provedor.chamadas_reais == 1
+    # gravada: a próxima rodada lê a resposta vazia (trecho inválido) em vez de pagar de novo
+    guardada = cache.ler(chave_cache(PEDIDO, "ferramenta"))
+    assert guardada is not None
+    assert guardada.texto == ""

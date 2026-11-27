@@ -8,7 +8,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -23,7 +23,7 @@ from radar.analise.arquivos_pncp import (
 )
 from radar.analise.cache import versao_prompt
 from radar.analise.comparacao import comparar
-from radar.analise.custos import TetoAtingido, custo
+from radar.analise.custos import custo
 from radar.analise.exigencias import Exigencias, esquema_resposta
 from radar.analise.extracao import ErroExtracao, eh_pdf, extrair_paginas, status_do_texto
 from radar.analise.extrator import SISTEMA, extrair_exigencias
@@ -57,9 +57,18 @@ class AnaliseLida:
     documentos: list[DocumentoEdital]
 
 
+@dataclass(frozen=True)
+class _Documento:
+    """O que o pipeline precisa de um documento, sem objeto ORM (que recarregaria do banco)."""
+
+    sequencial: int
+    sha256: str | None
+    status: str
+
+
 @dataclass
 class _Documentos:
-    linhas: list[DocumentoEdital] = field(default_factory=list)
+    linhas: list[_Documento] = field(default_factory=list)
     paginas: list[str] = field(default_factory=list)
 
 
@@ -89,31 +98,31 @@ def _chave_texto(sha: str) -> str:
     return f"textos/{sha}.json"
 
 
-def _upsert_documento(sessao: Session, valores: dict[str, Any]) -> DocumentoEdital:
+def _upsert_documento(sessao: Session, valores: dict[str, Any]) -> None:
+    """Transação curta própria: grava e commita antes de qualquer rede ou chamada paga."""
     atualizar = {k: v for k, v in valores.items() if k not in ("fonte", "id_na_fonte")}
-    comando = (
+    sessao.execute(
         insert(DocumentoEdital)
         .values(**valores)
         .on_conflict_do_update(constraint="uq_documento_edital", set_=atualizar)
-        .returning(DocumentoEdital)
     )
-    linha: DocumentoEdital = sessao.scalars(
-        comando, execution_options={"populate_existing": True}
-    ).one()
-    return linha
+    sessao.commit()
 
 
 def _texto_guardado(
-    sessao: Session, alvo: AlvoAnalise, arquivo: ArquivoPNCP, armazem: Armazem
-) -> tuple[DocumentoEdital, list[str]] | None:
+    sessao: Session, alvo: AlvoAnalise, arquivo: ArquivoPNCP, armazem: Armazem, pagina: int
+) -> tuple[_Documento, list[str]] | None:
     """Documento já extraído antes e com o texto no armazém: não baixa de novo."""
-    anterior = sessao.scalar(
-        select(DocumentoEdital).where(
+    anterior = sessao.execute(
+        select(DocumentoEdital.id, DocumentoEdital.status, DocumentoEdital.sha256,
+               DocumentoEdital.url, DocumentoEdital.pagina_inicial)
+        .where(
             DocumentoEdital.fonte == alvo.fonte,
             DocumentoEdital.id_na_fonte == alvo.id_na_fonte,
             DocumentoEdital.sequencial == arquivo.sequencial,
         )
-    )
+    ).first()  # fmt: skip
+    sessao.commit()  # fecha a leitura antes de ir ao armazém (S3)
     if anterior is None or anterior.status != "extraido" or not anterior.sha256:
         return None
     if anterior.url != arquivo.url:
@@ -122,13 +131,26 @@ def _texto_guardado(
     if bruto is None:
         return None
     paginas: list[str] = json.loads(bruto)
-    return anterior, paginas
+    if anterior.pagina_inicial != pagina:
+        sessao.execute(
+            update(DocumentoEdital)
+            .where(DocumentoEdital.id == anterior.id)
+            .values(pagina_inicial=pagina)
+        )
+        sessao.commit()
+    return _Documento(arquivo.sequencial, anterior.sha256, "extraido"), paginas
 
 
 def _processar_documento(
-    sessao: Session, alvo: AlvoAnalise, arquivo: ArquivoPNCP, dep: Dependencias, agora: datetime
-) -> tuple[DocumentoEdital, list[str]]:
-    guardado = _texto_guardado(sessao, alvo, arquivo, dep.armazem)
+    sessao: Session,
+    alvo: AlvoAnalise,
+    arquivo: ArquivoPNCP,
+    dep: Dependencias,
+    agora: datetime,
+    pagina: int,
+) -> tuple[_Documento, list[str]]:
+    """Baixa, extrai e grava um documento. `pagina` = onde ele começaria no texto juntado."""
+    guardado = _texto_guardado(sessao, alvo, arquivo, dep.armazem, pagina)
     if guardado is not None:
         return guardado
     valores: dict[str, Any] = {
@@ -142,6 +164,7 @@ def _processar_documento(
         "tamanho": None,
         "paginas": None,
         "paginas_sem_texto": None,
+        "pagina_inicial": None,
         "erro": None,
         "baixado_em": agora,
     }
@@ -173,6 +196,7 @@ def _processar_documento(
                 dep.armazem.guardar(_chave_texto(sha), corpo)
                 if status == "extraido":
                     paginas = texto.paginas
+                    valores["pagina_inicial"] = pagina
     valores["status"] = status
     if status == "falha":
         logger.warning(
@@ -184,7 +208,8 @@ def _processar_documento(
                 "erro": valores["erro"],
             },
         )
-    return _upsert_documento(sessao, valores), paginas
+    _upsert_documento(sessao, valores)
+    return _Documento(arquivo.sequencial, valores["sha256"], status), paginas
 
 
 def _documentos(
@@ -196,8 +221,9 @@ def _documentos(
     escolhidos = escolher_documentos(dep.cliente_arquivos.listar(*chave))
     resultado = _Documentos()
     for arquivo in escolhidos:
-        linha, paginas = _processar_documento(sessao, alvo, arquivo, dep, agora)
-        resultado.linhas.append(linha)
+        inicio = len(resultado.paginas) + 1
+        documento, paginas = _processar_documento(sessao, alvo, arquivo, dep, agora, inicio)
+        resultado.linhas.append(documento)
         resultado.paginas.extend(paginas)
     return resultado
 
@@ -210,7 +236,16 @@ def _custo_da_rodada(provedor: Provedor) -> Decimal | None:
 def analisar_edital(
     sessao: Session, alvo: AlvoAnalise, dep: Dependencias, agora: datetime
 ) -> AnaliseEdital:
-    """Analisa e grava (upsert + commit). `TetoAtingido` desfaz tudo deste edital e propaga."""
+    """Analisa e grava. Nenhuma transação da sessão fica aberta durante rede ou Bedrock.
+
+    Cada passo que toca o banco é uma transação curta commitada na hora (o Neon derruba
+    transação ociosa por `idle_in_transaction_session_timeout`): leitura do documento
+    anterior, gravação de cada documento, gravação da análise. As respostas pagas vão para
+    `resposta_llm` pelo `CacheBanco`, em conexão própria, logo após cada chamada: uma falha
+    no meio do edital (inclusive `TetoAtingido`, que propaga) não apaga gasto nem cache.
+    Quem chama não deve ter mudanças pendentes na sessão (elas seriam commitadas). O objeto
+    devolvido já foi commitado (com `expire_on_commit`, ler um atributo abre transação nova).
+    """
     versao = versao_prompt_atual()
     custo_antes = _custo_da_rodada(dep.provedor)
     try:
@@ -279,7 +314,7 @@ def analisar_edital(
             execution_options={"populate_existing": True},
         ).one()
         sessao.commit()
-    except TetoAtingido:
+    except Exception:
         sessao.rollback()
         raise
     logger.info(
@@ -288,13 +323,26 @@ def analisar_edital(
             "fonte": alvo.fonte,
             "id_na_fonte": alvo.id_na_fonte,
             "modelo": dep.modelo,
-            "veredito": analise.veredito,
+            "veredito": comparacao.veredito,
             "incompleta": incompleta,
             "trechos": trechos,
             "custo_usd": str(custo_usd),
         },
     )
     return analise
+
+
+def pagina_no_documento(
+    documentos: list[DocumentoEdital], pagina: int | None
+) -> tuple[DocumentoEdital, int] | None:
+    """A página do texto juntado → (documento, página dentro do PDF dele)."""
+    if pagina is None:
+        return None
+    for documento in documentos:
+        inicio, total = documento.pagina_inicial, documento.paginas
+        if inicio is not None and total and inicio <= pagina < inicio + total:
+            return documento, pagina - inicio + 1
+    return None
 
 
 def obter_analise(sessao: Session, fonte: str, id_na_fonte: str, modelo: str) -> AnaliseLida | None:

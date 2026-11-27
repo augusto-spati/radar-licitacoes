@@ -200,6 +200,8 @@ export interface components {
         ItemAnaliseOut: {
             /** Campo */
             campo: string;
+            /** Documento */
+            documento: string | null;
             /** Exigido */
             exigido: string;
             /** Motivo */

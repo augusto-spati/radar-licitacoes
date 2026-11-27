@@ -167,7 +167,9 @@ def test_documento_que_falha_marca_incompleta(sessao: Session, tmp_path: Path) -
     assert status == {1: "extraido", 2: "falha"}
 
 
-def test_teto_no_meio_nao_grava(sessao: Session, tmp_path: Path) -> None:
+def test_teto_no_meio_nao_grava_analise_mas_guarda_documentos(
+    sessao: Session, tmp_path: Path
+) -> None:
     class ProvedorComTeto:
         def __init__(self) -> None:
             self.chamadas = 0
@@ -188,7 +190,8 @@ def test_teto_no_meio_nao_grava(sessao: Session, tmp_path: Path) -> None:
         analisar_edital(sessao, ALVO, dep, AGORA)
     assert provedor.chamadas == 2
     assert _contar(sessao, AnaliseEdital) == 0
-    assert _contar(sessao, DocumentoEdital) == 0
+    # O documento foi gravado na sua própria transação curta, antes de chamar o modelo.
+    assert _contar(sessao, DocumentoEdital) == 1
 
 
 def test_pdf_ja_no_armazem_nao_baixa_de_novo(sessao: Session, tmp_path: Path) -> None:
@@ -219,3 +222,24 @@ def test_fonte_que_nao_e_pncp(sessao: Session, tmp_path: Path) -> None:
     alvo = AlvoAnalise(fonte="sanepar", id_na_fonte="OE-1/26", valor_estimado=None)
     with pytest.raises(ValueError):
         analisar_edital(sessao, alvo, _dep(Rede({}), tmp_path, ProvedorProibido()), AGORA)
+
+
+def test_pagina_inicial_de_cada_documento(sessao: Session, tmp_path: Path) -> None:
+    # Dois PDFs de 2 páginas: o texto juntado tem 4 páginas; o 2º começa na 3.
+    rede = Rede({1: PDF_TEXTO, 2: PDF_TEXTO})
+    analisar_edital(sessao, ALVO, _dep(rede, tmp_path, ProvedorFalso()), AGORA)
+    inicio = {d.sequencial: d.pagina_inicial for d in sessao.scalars(select(DocumentoEdital))}
+    assert inicio == {1: 1, 2: 3}
+
+    # Na releitura (texto já no armazém) a página inicial continua certa.
+    analisar_edital(sessao, ALVO, _dep(rede, tmp_path, ProvedorFalso()), AGORA)
+    sessao.expire_all()
+    inicio = {d.sequencial: d.pagina_inicial for d in sessao.scalars(select(DocumentoEdital))}
+    assert inicio == {1: 1, 2: 3}
+
+
+def test_documento_sem_texto_nao_tem_pagina_inicial(sessao: Session, tmp_path: Path) -> None:
+    rede = Rede({1: PDF_ESCANEADO, 2: PDF_TEXTO})
+    analisar_edital(sessao, ALVO, _dep(rede, tmp_path, ProvedorFalso()), AGORA)
+    inicio = {d.sequencial: d.pagina_inicial for d in sessao.scalars(select(DocumentoEdital))}
+    assert inicio == {1: None, 2: 1}

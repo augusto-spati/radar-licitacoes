@@ -33,6 +33,7 @@ def upgrade() -> None:
         sa.Column("tamanho", sa.BigInteger(), nullable=True),
         sa.Column("paginas", sa.Integer(), nullable=True),
         sa.Column("paginas_sem_texto", sa.Integer(), nullable=True),
+        sa.Column("pagina_inicial", sa.Integer(), nullable=True),
         sa.Column("status", sa.Text(), nullable=False),
         sa.Column("erro", sa.Text(), nullable=True),
         sa.Column("baixado_em", sa.DateTime(timezone=True), nullable=False),

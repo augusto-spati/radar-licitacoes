@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
 from radar.analise.cache import CacheBanco
@@ -59,9 +60,11 @@ def test_gasto_do_mes_soma_so_o_mes(sessao: Session) -> None:
     assert gasto_do_mes(sessao, AGORA) == Decimal("0.375")
 
 
-def test_guarda_teto_levanta_antes(sessao: Session) -> None:
-    sessao.add(_linha("a", "1.99", datetime(2026, 11, 2, tzinfo=UTC)))
-    sessao.flush()
+def test_guarda_teto_levanta_antes(engine: Engine, sessao: Session) -> None:
+    # A guarda lê o gasto numa conexão própria: só vê o que já foi commitado.
+    with Session(engine) as outra:
+        outra.add(_linha("a", "1.99", datetime(2026, 11, 2, tzinfo=UTC)))
+        outra.commit()
     pedido = Pedido(modelo=MODELO, sistema="", texto="x" * 3, esquema={}, max_tokens=100_000)
     guarda = guarda_teto(sessao, CONFIG, lambda: AGORA, lambda: Decimal(0))
     with pytest.raises(TetoAtingido):
@@ -85,3 +88,18 @@ def test_cache_banco_ida_e_volta(sessao: Session) -> None:
     cache.gravar("k1", MODELO, resposta, Decimal("0.001"))
     assert cache.ler("k1") == resposta
     assert cache.ler("k2") is None
+
+
+def test_cache_banco_grava_commitado_e_fora_da_transacao_do_chamador(
+    engine: Engine, sessao: Session
+) -> None:
+    cache = CacheBanco(sessao)
+    resposta = Resposta(texto="{}", tokens_entrada=3, tokens_saida=4, latencia_ms=50)
+    cache.gravar("k-commit", MODELO, resposta, Decimal("0.5"))
+    sessao.rollback()  # o rollback do chamador não apaga o que foi pago
+
+    with Session(engine) as outra:
+        assert outra.scalar(select(func.count()).select_from(RespostaLLM)) == 1
+        assert gasto_do_mes(outra, datetime.now(UTC)) == Decimal("0.5")
+    cache.gravar("k-commit", MODELO, resposta, Decimal("0.5"))  # regravar não duplica
+    assert not sessao.in_transaction()

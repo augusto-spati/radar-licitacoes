@@ -34,6 +34,28 @@ CAMPOS_EVAL = (*ESCALARES, *CATEGORICOS, "atestados", "documentos")
 INSTRUCAO_GRAVAR = "rode `radar avaliar rodar --modo gravar`"
 
 
+CPF_MASCARADO = "***.***.***-**"
+RG_MASCARADO = "**.***.***-*"
+# CPF formatado (000.000.000-00) ou com barra (000000000/00), fora de números maiores.
+_CPF_FORMATADO = re.compile(r"(?<![\d./])(?:\d{3}\.\d{3}\.\d{3}|\d{9})[-/]\d{2}(?![\d/-]|\.\d)")
+# "CPF ... 00000000000": 11 dígitos colados logo depois da palavra CPF.
+_CPF_ROTULADO = re.compile(r"(\bCPF\b[^\d\n]{0,25})\d{11}(?!\d)", re.IGNORECASE)
+# Assinatura digital ICP-Brasil: "NOME DO SIGNATARIO:00000000000".
+_CPF_ASSINATURA = re.compile(r"(?<=[A-Za-zÀ-ÿ]):\d{11}(?!\d)")
+# RG formatado (00.000.000-0) ou rotulado ("RG nº 000000000", "RG: 4.123.456").
+_RG_FORMATADO = re.compile(r"(?<![\d./])\d{1,2}\.\d{3}\.\d{3}-[\dXx](?![\d/-]|\.\d)")
+_RG_ROTULADO = re.compile(r"(\b(?:RG|R\.G\.)[^\d\n]{0,15})\d[\d.]{4,}(?:-[\dXx])?(?![\d])")
+
+
+def mascarar_dados_pessoais(texto: str) -> str:
+    """Troca CPF e RG de pessoas por máscara: os textos dos evals ficam no repositório."""
+    texto = _CPF_FORMATADO.sub(CPF_MASCARADO, texto)
+    texto = _CPF_ROTULADO.sub(lambda m: m.group(1) + CPF_MASCARADO, texto)
+    texto = _CPF_ASSINATURA.sub(":" + "*" * 11, texto)
+    texto = _RG_FORMATADO.sub(RG_MASCARADO, texto)
+    return _RG_ROTULADO.sub(lambda m: m.group(1) + RG_MASCARADO, texto)
+
+
 class DocumentoGabarito(BaseModel):
     sequencial: int
     url: str
@@ -387,9 +409,49 @@ def validar_gabaritos(raiz: Path) -> list[str]:
     return erros
 
 
-def ler_linha_de_base(caminho: Path) -> dict[str, float]:
-    """`{"modelo": ..., "conjunto": "ajuste", "f1": {campo: valor}}` ou `{}`."""
+QUEDA_MAXIMA_F1 = 0.05
+
+
+@dataclass(frozen=True)
+class LinhaDeBase:
+    """`evals/linha_de_base.json`: F1 por campo de um modelo num conjunto."""
+
+    modelo: str
+    conjunto: str
+    f1: dict[str, float]
+
+
+def ler_linha_de_base(caminho: Path) -> LinhaDeBase | None:
+    """`{"modelo": ..., "conjunto": "ajuste", "f1": {campo: valor}}`; ausente ou `{}` → None."""
     if not caminho.is_file():
-        return {}
+        return None
     dados = json.loads(caminho.read_text(encoding="utf-8"))
-    return {str(k): float(v) for k, v in dados.get("f1", {}).items()}
+    if not dados:
+        return None
+    return LinhaDeBase(
+        modelo=str(dados["modelo"]),
+        conjunto=str(dados.get("conjunto", "ajuste")),
+        f1={str(k): float(v) for k, v in dados.get("f1", {}).items()},
+    )
+
+
+def regressoes(base: LinhaDeBase, relatorio: Relatorio) -> list[str]:
+    """O que piorou em relação à linha de base; vazio = sem regressão.
+
+    Falha também quando não dá para comparar: outro modelo, o conjunto da base sumiu do
+    relatório (gabaritos desmarcados ou mudados de conjunto) ou um campo da base sem F1.
+    """
+    if relatorio.modelo != base.modelo:
+        return [f"linha de base é do modelo {base.modelo}, o relatório é de {relatorio.modelo}"]
+    atual = relatorio.por_campo.get(base.conjunto)
+    if atual is None:
+        return [f"conjunto {base.conjunto} ausente do relatório (nenhum gabarito conferido nele)"]
+    erros: list[str] = []
+    for campo, f1_base in sorted(base.f1.items()):
+        contagem = atual.get(campo)
+        f1 = None if contagem is None else contagem.f1
+        if f1 is None:
+            erros.append(f"{campo}: sem F1 no conjunto {base.conjunto} (base {f1_base:.2f})")
+        elif f1 < f1_base - QUEDA_MAXIMA_F1:
+            erros.append(f"{campo}: F1 caiu de {f1_base:.2f} para {f1:.2f}")
+    return erros
