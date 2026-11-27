@@ -60,9 +60,15 @@ function QuemVence({vencedor}: {vencedor: Vencedor}) {
 
 function Contratacao({contratacao: c}: {contratacao: ContratacaoPassada}) {
   const marca = marcaDa(c.situacao);
-  const valores =
-    `${formatarData(c.data)} · estimado ${formatarValor(c.valor_estimado)} · ` +
-    `homologado ${formatarValor(c.valor_homologado)} · desconto ${formatarPercentual(c.desconto)}`;
+  // Só o que veio: fracassada não tem homologado nem desconto.
+  const valores = [
+    c.data === null ? null : formatarData(c.data),
+    c.valor_estimado === null ? null : `estimado ${formatarValor(c.valor_estimado)}`,
+    c.valor_homologado === null ? null : `homologado ${formatarValor(c.valor_homologado)}`,
+    c.desconto === null ? null : `desconto ${formatarPercentual(c.desconto)}`,
+  ]
+    .filter(v => v !== null)
+    .join(' · ');
   return (
     <ListItem
       align="start"
@@ -72,7 +78,7 @@ function Contratacao({contratacao: c}: {contratacao: ContratacaoPassada}) {
       }
       description={
         <VStack gap={1}>
-          <Text type="supporting">{valores}</Text>
+          {valores !== '' && <Text type="supporting">{valores}</Text>}
           {c.vencedor_nome !== null && (
             <Text type="supporting">
               Vencedor: {c.vencedor_nome}

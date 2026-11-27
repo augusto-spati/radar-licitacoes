@@ -339,11 +339,18 @@ describe('Detalhe: histórico do órgão', () => {
       screen.getByText('10/05/2026 · estimado R$ 2,00 mi · homologado R$ 1,52 mi · desconto 24%'),
     ).toBeTruthy();
     expect(screen.getByText('Vencedor: Construtora X (ME)')).toBeTruthy();
-    expect(screen.getByText('— · estimado R$ 500 mil · homologado — · desconto —')).toBeTruthy();
+    // Sem data, homologado nem desconto: só o que veio, sem pares de travessão.
+    expect(screen.getByText('estimado R$ 500 mil')).toBeTruthy();
     expect(screen.getByText('parcial')).toBeTruthy();
     expect(
       screen.getByText(
-        'Faixa de desconto dos vencedores (Redes, SP, R$ 1–5 mi): 18% a 31% (mediana 24%), 14 casos',
+        'Faixa de referência do desconto dos vencedores (Redes, SP, R$ 1–5 mi): ' +
+          '18% a 31% (mediana 24%), 14 casos',
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        'É o que os vencedores deram em licitações parecidas, não o preço que ganha.',
       ),
     ).toBeTruthy();
     expect(screen.queryByText('poucos casos')).toBeNull();
@@ -364,19 +371,62 @@ describe('Detalhe: histórico do órgão', () => {
     );
     expect(
       await screen.findByText(
-        'Faixa de desconto dos vencedores (Perdas, PR, acima de R$ 5 mi): ' +
+        'Faixa de referência do desconto dos vencedores (Perdas, PR, acima de R$ 5 mi): ' +
           '10% a 20% (mediana 12%), 3 casos',
       ),
     ).toBeTruthy();
     expect(screen.getAllByText('poucos casos')).toHaveLength(1);
     expect(
       screen.getByText(
-        'Faixa de desconto dos vencedores (Perdas, todas as UFs, qualquer valor): nenhum caso',
+        'Faixa de referência do desconto dos vencedores ' +
+          '(Perdas, todas as UFs, qualquer valor): nenhum caso',
       ),
     ).toBeTruthy();
     expect(
       screen.getByText('Abaixo de 70% do estimado a proposta é presumida inexequível.'),
     ).toBeTruthy();
+  });
+
+  it('fracassada mostra só data e estimado; régua sem quartis não mostra "— a —"', async () => {
+    const [primeira] = historico().ultimas;
+    abrirCom(async () =>
+      historico({
+        ultimas: [
+          {
+            ...primeira,
+            situacao: 'fracassada',
+            data: '2026-05-20T08:00:00',
+            valor_estimado: '450000',
+            valor_homologado: null,
+            desconto: null,
+            vencedor_nome: null,
+            vencedor_porte: null,
+          },
+        ],
+        reguas: [regua({casos: 6, poucos_casos: false})],
+      }),
+    );
+    expect(await screen.findByText('20/05/2026 · estimado R$ 450 mil')).toBeTruthy();
+    expect(screen.getByText('fracassada')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Faixa de referência do desconto dos vencedores ' +
+          '(Perdas, todas as UFs, qualquer valor): 6 casos, sem desconto calculável',
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/— a —/)).toBeNull();
+  });
+
+  it('com contagens mas sem últimas nem vencedores, mostra as contagens sem listas vazias', async () => {
+    abrirCom(async () => historico({ultimas: [], vencedores: []}));
+    expect(
+      await screen.findByText(
+        '12 licitações · 7 homologadas · 3 fracassadas ou desertas · 2 em andamento',
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByRole('heading', {name: 'Quem vence'})).toBeNull();
+    expect(screen.queryByRole('heading', {name: 'Últimas contratações'})).toBeNull();
+    expect(screen.getByText(/Abaixo de 75% do estimado/)).toBeTruthy();
   });
 
   it('órgão sem contratações mostra a frase de vazio', async () => {

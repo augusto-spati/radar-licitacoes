@@ -25,6 +25,9 @@ function recorte(regua: Regua): string {
 function faixaDeDesconto(regua: Regua): string {
   if (regua.casos === 0) return 'nenhum caso';
   const {p25, mediana, p75} = regua;
+  if (p25 === null || mediana === null || p75 === null) {
+    return `${casos(regua.casos)}, sem desconto calculável`;
+  }
   return (
     `${formatarPercentual(p25)} a ${formatarPercentual(p75)} ` +
     `(mediana ${formatarPercentual(mediana)}), ${casos(regua.casos)}`
@@ -45,7 +48,13 @@ export function ReguaDesconto({reguas, limite}: Props) {
               align="start"
               label={
                 <Text type="body">
-                  Faixa de desconto dos vencedores ({recorte(regua)}): {faixaDeDesconto(regua)}
+                  Faixa de referência do desconto dos vencedores ({recorte(regua)}):{' '}
+                  {faixaDeDesconto(regua)}
+                </Text>
+              }
+              description={
+                <Text type="supporting" color="secondary">
+                  É o que os vencedores deram em licitações parecidas, não o preço que ganha.
                 </Text>
               }
               endContent={
