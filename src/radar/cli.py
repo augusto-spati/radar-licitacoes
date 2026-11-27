@@ -272,21 +272,27 @@ def _coletar(sessao: Session, cliente: ClientePNCP) -> int:
     return resumo.falhas
 
 
-def _medir_frescor(sessao: Session, fontes: list[str]) -> None:
+def _medir_frescor(sessao: Session, fontes: list[str]) -> dict[str, float]:
     """`FrescorHoras` de cada fonte (a fonte é propriedade, não dimensão) e o log por fonte.
 
-    Medir nunca derruba a execução: erro vira log e a sessão volta limpa.
+    Medir nunca derruba a execução: erro vira log, a sessão volta limpa e nada é medido.
     """
+    horas = _frescor(sessao, fontes)
+    for fonte, valor in horas.items():
+        logger.info("frescor_medido", extra={"fonte": fonte, "horas": valor})
+        metricas.registrar("FrescorHoras", valor, propriedades={"fonte": fonte})
+    return horas
+
+
+def _frescor(sessao: Session, fontes: list[str]) -> dict[str, float]:
     try:
         horas = frescor_por_fonte(sessao, _agora(), fontes)
         sessao.rollback()  # só leitura: não deixa transação aberta durante a coleta
     except Exception:
         sessao.rollback()
         logger.exception("frescor_erro")
-        return
-    for fonte, valor in horas.items():
-        logger.info("frescor_medido", extra={"fonte": fonte, "horas": valor})
-        metricas.registrar("FrescorHoras", valor, propriedades={"fonte": fonte})
+        return {}
+    return dict(horas)
 
 
 def _encerrar(coleta: int = 0, relay: int = 0, fila: int = 0) -> None:
@@ -513,13 +519,17 @@ def auditar(
     inicio = hoje - timedelta(days=dias)
     agora = _agora()
     with telemetria_do_processo("radar-coletor"), _criar_sessao() as sessao:
-        _medir_frescor(sessao, ["pncp", *fontes_retrato()])
+        # Manual: só imprime. A métrica (e o alarme) é do `atualizar` agendado; um auditar
+        # avulso não deve disparar nem calar o alarme de frescor.
+        frescor = _frescor(sessao, ["pncp", *fontes_retrato()])
         auditoria = auditar_cobertura(sessao, endpoint, inicio, fim, criterios.modalidades)
         retratos = [(f.nome, ultimo_retrato(sessao, f.nome)) for f in fontes_retrato().values()]
         pendentes, mais_velha = pendencias_outbox(sessao)
         paradas = paginas_publicadas_sem_processar(sessao, agora - ATRASO_MAXIMO_FILA)
         sem_processar = retratos_sem_processar(sessao)
         paradas_janela = janelas_paradas(sessao, agora - IDADE_MAXIMA_JANELA)
+    for fonte, valor in frescor.items():
+        typer.echo(f"frescor {fonte}: {valor:.1f} h")
     typer.echo(f"esperadas: {auditoria.esperadas}")
     typer.echo(f"concluidas: {auditoria.concluidas}")
     typer.echo(f"faltando: {len(auditoria.faltando)}")

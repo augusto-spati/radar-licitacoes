@@ -90,9 +90,9 @@ def processar_com_span(
             span.set_attribute("radar.desfecho", "adiada")
             raise
         except Exception as erro:
+            # Só o tipo: a mensagem (ou o repr) pode trazer texto do edital.
             span.set_attribute("radar.desfecho", "erro")
-            span.record_exception(erro)
-            span.set_status(StatusCode.ERROR, repr(erro)[:200])
+            span.set_status(StatusCode.ERROR, type(erro).__name__)
             raise
         span.set_attribute("radar.desfecho", desfecho)
         if desfecho == "falha_definitiva":
@@ -126,9 +126,9 @@ def _processar_pagina(sessao: Session, pagina_id: int) -> Desfecho:
         resultado = registrar(sessao, pagina.registros)
         span.set_attributes(
             {
-                "inseridos": resultado.inseridos,
-                "atualizados": resultado.atualizados,
-                "invalidos": resultado.invalidos,
+                "radar.inseridos": resultado.inseridos,
+                "radar.atualizados": resultado.atualizados,
+                "radar.invalidos": resultado.invalidos,
             }
         )
     marcar_processada(sessao, pagina_id)  # commita o registro junto da marca
@@ -205,9 +205,9 @@ def _sob_trava(
         resultado = registrar_normalizados(sessao, normalizados)
         span.set_attributes(
             {
-                "inseridos": resultado.inseridos,
-                "atualizados": resultado.atualizados,
-                "invalidos": resultado.invalidos,
+                "radar.inseridos": resultado.inseridos,
+                "radar.atualizados": resultado.atualizados,
+                "radar.invalidos": resultado.invalidos,
             }
         )
     if resultado.invalidos > FRACAO_INVALIDOS * len(normalizados):
@@ -219,7 +219,7 @@ def _sob_trava(
             encerrados = reconciliar_retrato(
                 sessao, fonte.nome, vistos, agora, rotulo=fonte.rotulo_saida
             )
-            span.set_attribute("encerrados", encerrados)
+            span.set_attribute("radar.encerrados", encerrados)
     else:
         # Defesa extra: com `vistos` vazio a reconciliação encerraria a fonte inteira.
         logger.warning("reconciliacao_ignorada", extra=dados)

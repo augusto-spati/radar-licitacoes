@@ -212,6 +212,7 @@ class ResumoRetrato:
     status: StatusRetrato
     registros: int = 0
     erro: str | None = None
+    tipo_erro: str | None = None  # só o tipo da exceção: é o que vai para o span
 
 
 @dataclass(frozen=True)
@@ -302,7 +303,8 @@ def _executar(
             span.set_attribute("radar.desfecho", resumo.status)
             span.set_attribute("radar.retrato.registros", resumo.registros)
             if resumo.status != "concluido":
-                span.set_status(StatusCode.ERROR, (resumo.erro or "")[:200])
+                # Nunca a mensagem: ela pode trazer texto da página da fonte.
+                span.set_status(StatusCode.ERROR, resumo.tipo_erro or resumo.status)
             return resumo
     finally:
         metricas.descarregar()
@@ -350,13 +352,11 @@ def _executar_retrato(
             paginas.append(pagina)
         normalizados = fonte.extrair(paginas)
     except ErroFonte as erro:
-        span.record_exception(erro)
-        return _falhar(sessao, retrato, str(erro), inicio)
+        return _falhar(sessao, retrato, str(erro), inicio, type(erro).__name__)
     except Exception as erro:  # parser quebrado etc.; Ctrl+C continua parando o processo
-        span.record_exception(erro)
         sessao.rollback()
         logger.exception("retrato_erro_inesperado", extra=dados)
-        return _falhar(sessao, retrato, repr(erro), inicio)
+        return _falhar(sessao, retrato, repr(erro), inicio, type(erro).__name__)
 
     registros = len(normalizados)
     ids_listados = {
@@ -566,7 +566,13 @@ def _gravar_pagina(
     sessao.commit()  # checkpoint: a página sobrevive a uma falha posterior
 
 
-def _falhar(sessao: Session, retrato: ColetaRetrato, erro: str, inicio: float) -> ResumoRetrato:
+def _falhar(
+    sessao: Session,
+    retrato: ColetaRetrato,
+    erro: str,
+    inicio: float,
+    tipo_erro: str | None = None,
+) -> ResumoRetrato:
     erro = erro[:LIMITE_ERRO]
     sessao.execute(
         update(ColetaRetrato)
@@ -583,4 +589,4 @@ def _falhar(sessao: Session, retrato: ColetaRetrato, erro: str, inicio: float) -
             "duracao_s": round(time.monotonic() - inicio, 3),
         },
     )
-    return ResumoRetrato(retrato_id=retrato.id, status="falha", erro=erro)
+    return ResumoRetrato(retrato_id=retrato.id, status="falha", erro=erro, tipo_erro=tipo_erro)

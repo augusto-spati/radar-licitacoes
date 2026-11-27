@@ -506,7 +506,9 @@ def test_erro_inesperado_marca_o_span(sessao: Session, spans: InMemorySpanExport
         processar_com_span(sessao, _msg_retrato(retrato_id), {}, AGORA)
     span = _span(spans, "processar mensagem")
     assert span.status.status_code == StatusCode.ERROR
-    assert span.events and span.events[0].name == "exception"
+    # Só o tipo: a mensagem (ou o repr) pode trazer texto do edital.
+    assert span.status.description == "KeyError"
+    assert span.events == ()
 
 
 def test_registrar_e_reconciliar_viram_spans_filhos(
@@ -521,5 +523,8 @@ def test_registrar_e_reconciliar_viram_spans_filhos(
         if s.parent is not None and s.parent.span_id == raiz.context.span_id
     }
     assert set(filhos) == {"editais.registrar", "editais.reconciliar"}
-    assert filhos["editais.registrar"].attributes["inseridos"] == 20  # type: ignore[index]
-    assert filhos["editais.reconciliar"].attributes["encerrados"] == 0  # type: ignore[index]
+    registrar = filhos["editais.registrar"].attributes or {}
+    assert registrar["radar.inseridos"] == 20
+    assert {"radar.atualizados", "radar.invalidos"} <= set(registrar)
+    assert not {"inseridos", "atualizados", "invalidos"} & set(registrar)
+    assert (filhos["editais.reconciliar"].attributes or {})["radar.encerrados"] == 0

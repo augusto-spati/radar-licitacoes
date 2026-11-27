@@ -10,6 +10,8 @@ from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import StatusCode
 from sqlalchemy import Engine, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
@@ -283,6 +285,22 @@ def test_retrato_em_falha_nao_enfileira(sessao: Session) -> None:
 
     assert (resumo.status, abaixo.status) == ("falha", "falha")
     assert _mensagens(sessao) == []
+
+
+def test_retrato_com_erro_marca_o_span_so_com_o_tipo(
+    sessao: Session, spans: InMemorySpanExporter
+) -> None:
+    def quebra(paginas: list[PaginaColetada]) -> list[dict[str, Any]]:
+        raise ValueError("SEGREDO do html da fonte")
+
+    fonte = FonteAmostra("sanepar", [PaginaColetada("https://x.test/1", "html", "<p>")], quebra)
+    resumo = executar_retrato(sessao, fonte, _cliente({}), AGORA)
+    assert resumo.status == "falha"
+    (span,) = [s for s in spans.get_finished_spans() if s.name == "coleta.retrato"]
+    assert span.status.status_code == StatusCode.ERROR
+    assert span.status.description == "ValueError"
+    assert span.events == ()
+    assert "SEGREDO" not in repr(dict(span.attributes or {}))
 
 
 class FonteAmostra:

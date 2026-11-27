@@ -1012,17 +1012,18 @@ def test_atualizar_registra_execucao_ok(
     assert metricas.valores("ExecucaoOk") == [1.0, 0.0]
 
 
-def test_auditar_mede_frescor(
+def test_auditar_imprime_frescor_sem_emitir_metrica(
     fabrica: sessionmaker[Session],
     config_filtro: Path,
     monkeypatch: pytest.MonkeyPatch,
     metricas: EmissorEmMemoria,
 ) -> None:
+    """O auditar é manual: a métrica (e o alarme de frescor) é só do `atualizar` agendado."""
     monkeypatch.setattr(cli, "fontes_retrato", lambda: {})
     _cobrir_pncp(fabrica)
-    _auditar(config_filtro)
-    frescor = [r for r in metricas.registros if r.nome == "FrescorHoras"]
-    assert [r.propriedades["fonte"] for r in frescor] == ["pncp"]
+    resultado = _auditar(config_filtro)
+    assert [r for r in metricas.registros if r.nome == "FrescorHoras"] == []
+    assert "frescor pncp: " in resultado.output
 
 
 class _ExportadorQuebrado:

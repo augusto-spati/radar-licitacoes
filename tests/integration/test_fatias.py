@@ -605,3 +605,14 @@ def test_metricas_descarregadas_por_janela(sessao: Session, metricas: EmissorEmM
     resumo = coletar_pendentes(sessao, como_cliente(ClienteFalso(roteiro)), AGORA)
     assert resumo.concluidas == 2
     assert metricas.descarregamentos == 2
+
+
+def test_janela_sem_lote_nao_seta_atributo_nulo(
+    sessao: Session, spans: InMemorySpanExporter, caplog: pytest.LogCaptureFixture
+) -> None:
+    j = janela(sessao)
+    with caplog.at_level(logging.WARNING, logger="opentelemetry"):
+        fatia(sessao, ClienteFalso({chave(1): ErroPNCP("HTTP 503", 503)}), j.id, lote=None)
+    span = _span(spans, "coleta.janela")
+    assert span.attributes is not None and "radar.janela.lote" not in span.attributes
+    assert not [r for r in caplog.records if r.name.startswith("opentelemetry")]

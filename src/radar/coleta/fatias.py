@@ -267,7 +267,8 @@ def _atributos_da_janela(janela: _Janela) -> None:
             "radar.janela.modalidade": janela.modalidade,
             "radar.janela.data_ini": janela.data_ini.isoformat(),
             "radar.janela.data_fim": janela.data_fim.isoformat(),
-            "radar.janela.lote": janela.lote,
+            # Sem radar.janela.lote: ele vem da mensagem (coletar_fatia) e só existe com ela;
+            # no laço local não há lote, e o da linha (0) só confundiria.
             # Continuação de uma fatia anterior começa depois da página 1.
             "radar.janela.pagina_inicial": janela.proxima_pagina if janela.total_paginas else 1,
         }
