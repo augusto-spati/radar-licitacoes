@@ -512,3 +512,30 @@ def test_o_vigia_pega_leitura_esquecida_aberta(
     monkeypatch.setattr(cli, "gasto_planilhas_do_mes", esquece_aberta)
     abertas = _transacoes_abertas_na_rede(rede, config_filtro, monkeypatch)
     assert abertas and abertas[0].startswith("rede ")
+
+
+def test_so_obra_entra_compra_e_projeto_ficam_fora(
+    rede: tuple[sessionmaker[Session], Rede], config_filtro: Path
+) -> None:
+    """1ª rodada real: 10 alvos, a maioria compra (hidrômetros), calibração e projeto, que não
+    têm planilha de serviço; só gastavam download e IA. Entra obra/serviço de engenharia."""
+    fabrica, rede_ = rede
+    _popular(fabrica)
+    fora = {
+        "44444444000144-1-000004/2026": "Aquisição de tubos de PVC para rede de água",
+        "55555555000155-1-000005/2026": "Registro de preço para aquisição de hidrômetros da rede de água",
+        "66666666000166-1-000006/2026": "Elaboração de projeto executivo de rede de água",
+        "77777777000177-1-000007/2026": "Calibração de macromedidores da rede de água",
+    }
+    dentro = {"88888888000188-1-000008/2026": "Manutenção e reforma das redes de água"}
+    with fabrica() as sessao:
+        registrar(
+            sessao,
+            [_registro(n, o, "2026-11-05T09:00:00") for n, o in {**fora, **dentro}.items()],
+        )
+        sessao.commit()
+    resultado = _atualizar(config_filtro)
+    estados = _estados(fabrica)
+    assert not set(fora) & set(estados), resultado.output
+    assert set(dentro) <= set(estados), resultado.output
+    assert not any(c.startswith(n[:14]) for c in rede_.caminhos for n in fora)

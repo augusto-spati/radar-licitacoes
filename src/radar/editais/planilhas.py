@@ -19,6 +19,31 @@ LINHAS_PLANILHA = ("redes", "perdas")
 # PE fica fora: o TCE-PE (7b.1) já traz o estimado de lá item a item; contar os dois seria o
 # mesmo processo duas vezes na mediana.
 UFS_FORA = ("PE",)
+# Só obra ou serviço de engenharia tem planilha de serviços. Na 1ª rodada real, 9 de 10 alvos
+# eram compra (hidrômetros, tubos), calibração ou projeto: sem planilha, só download e IA.
+TERMOS_OBRA = [
+    "obra",
+    "execução",
+    "implantação",
+    "ampliação",
+    "substituição",
+    "construção",
+    "reforma",
+    "manutenção",
+    "assentamento",
+    "remanejamento",
+    "prolongamento",
+    "recuperação",
+]
+TERMOS_FORA = [
+    "aquisição",
+    "compra",
+    "elaboração de projeto",
+    "projeto executivo",
+    "projeto básico",
+    "calibração",
+    "locação",
+]
 
 
 @dataclass(frozen=True)
@@ -73,7 +98,8 @@ def alvos_planilha(
     ignorar: Collection[str] = (),
     linhas: Sequence[str] = LINHAS_PLANILHA,
 ) -> list[AlvoPlanilha]:
-    """Editais do PNCP das `linhas` (redes e perdas), UFs e modalidades do filtro, publicados
+    """Editais de obra (`TERMOS_OBRA`, sem `TERMOS_FORA`) do PNCP das `linhas` (redes e perdas),
+    UFs e modalidades do filtro, publicados
     nos últimos `janela_dias`, do mais antigo ao mais novo, fora os de `ignorar` e os de PE
     (`UFS_FORA`).
 
@@ -85,6 +111,8 @@ def alvos_planilha(
         select(*_COLUNAS)
         .where(Edital.fonte == Fonte.pncp.value)
         .where(or_(*casamentos) if casamentos else false())
+        .where(_casa_termos(TERMOS_OBRA))
+        .where(~_casa_termos(TERMOS_FORA))
         .where(Edital.uf.in_(criterios.ufs))
         .where(Edital.uf.not_in(UFS_FORA))
         .where(Edital.modalidade_id.in_(criterios.modalidades))
