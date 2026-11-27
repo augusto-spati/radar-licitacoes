@@ -458,9 +458,10 @@ def test_publicar_processa_e_apaga_publicadas_antigas(
 class SQSFalso:
     """Cliente boto3 de mentira: recusa todo envio e registra o pedido de redrive."""
 
-    def __init__(self) -> None:
+    def __init__(self, na_dlq: int = 3) -> None:
+        self.na_dlq = na_dlq
         self.movimentos: list[dict[str, str]] = []
-        self.atributos: list[list[str]] = []
+        self.atributos: list[tuple[str, list[str]]] = []
 
     def send_message_batch(self, QueueUrl: str, Entries: list[dict[str, str]]) -> dict[str, Any]:  # noqa: N803
         falhas = [
@@ -470,9 +471,12 @@ class SQSFalso:
         return {"Successful": [], "Failed": falhas}
 
     def get_queue_attributes(self, QueueUrl: str, AttributeNames: list[str]) -> dict[str, Any]:  # noqa: N803
-        self.atributos.append(AttributeNames)
         nome = QueueUrl.rsplit("/", 1)[-1]
-        return {"Attributes": {"QueueArn": f"arn:aws:sqs:us-east-2:123456789012:{nome}"}}
+        self.atributos.append((nome, AttributeNames))
+        atributos = {"QueueArn": f"arn:aws:sqs:us-east-2:123456789012:{nome}"}
+        if "ApproximateNumberOfMessages" in AttributeNames:
+            atributos["ApproximateNumberOfMessages"] = str(self.na_dlq)
+        return {"Attributes": atributos}
 
     def start_message_move_task(self, SourceArn: str, DestinationArn: str) -> dict[str, str]:  # noqa: N803
         self.movimentos.append({"SourceArn": SourceArn, "DestinationArn": DestinationArn})
@@ -508,8 +512,29 @@ def test_reprocessar_falhas_move_da_dlq_para_a_principal(
             "DestinationArn": "arn:aws:sqs:us-east-2:123456789012:radar-editais",
         }
     ]
-    assert sqs.atributos == [["QueueArn"], ["QueueArn"]]
-    assert "handle-123" in resultado.output
+    assert sqs.atributos == [
+        ("radar-editais-falhas", ["QueueArn", "ApproximateNumberOfMessages"]),
+        ("radar-editais", ["QueueArn"]),
+    ]
+    assert "3 mensagens sendo movidas para a fila principal (tarefa handle-123)" in (
+        resultado.output
+    )
+
+
+def test_reprocessar_falhas_com_dlq_vazia_nao_move(
+    fabrica: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RADAR_FILA", "sqs")
+    monkeypatch.setenv("RADAR_FILA_URL", _URL_FILA)
+    monkeypatch.setenv("RADAR_FILA_FALHAS_URL", _URL_FALHAS)
+    sqs = SQSFalso(na_dlq=0)
+    monkeypatch.setattr(cli, "_criar_cliente_sqs", lambda: sqs)
+
+    resultado = runner.invoke(cli.app, ["reprocessar-falhas"])
+
+    assert resultado.exit_code == 0, resultado.output
+    assert sqs.movimentos == []
+    assert "nenhuma mensagem na fila de falhas" in resultado.output
 
 
 def test_reprocessar_falhas_sem_url_da_dlq_sai_com_2(

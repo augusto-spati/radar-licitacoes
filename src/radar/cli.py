@@ -287,9 +287,9 @@ def publicar() -> None:
     _encerrar(falhas + _falhas_da_fila(fila))
 
 
-def _arn_da_fila(cliente: Any, url: str) -> str:
-    resposta = cliente.get_queue_attributes(QueueUrl=url, AttributeNames=["QueueArn"])
-    return str(resposta["Attributes"]["QueueArn"])
+def _atributos_da_fila(cliente: Any, url: str, *nomes: str) -> dict[str, str]:
+    resposta = cliente.get_queue_attributes(QueueUrl=url, AttributeNames=["QueueArn", *nomes])
+    return dict(resposta["Attributes"])
 
 
 @app.command("reprocessar-falhas")
@@ -307,10 +307,14 @@ def reprocessar_falhas() -> None:
         typer.echo("defina RADAR_FILA_URL e RADAR_FILA_FALHAS_URL", err=True)
         raise typer.Exit(code=2)
     cliente = _criar_cliente_sqs()
-    origem = _arn_da_fila(cliente, config.fila_falhas_url)
-    destino = _arn_da_fila(cliente, config.fila_url)
-    handle = FilaSQS(config.fila_url, cliente).mover_falhas(origem, destino)
-    typer.echo(f"reprocessar-falhas: movendo da fila de falhas para a principal, tarefa {handle}")
+    dlq = _atributos_da_fila(cliente, config.fila_falhas_url, "ApproximateNumberOfMessages")
+    quantas = int(dlq.get("ApproximateNumberOfMessages", "0"))
+    if quantas == 0:
+        typer.echo("nenhuma mensagem na fila de falhas")
+        return
+    destino = _atributos_da_fila(cliente, config.fila_url)["QueueArn"]
+    handle = FilaSQS(config.fila_url, cliente).mover_falhas(dlq["QueueArn"], destino)
+    typer.echo(f"{quantas} mensagens sendo movidas para a fila principal (tarefa {handle})")
 
 
 @app.command()

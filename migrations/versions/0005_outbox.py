@@ -5,7 +5,8 @@ Revises: 0004
 Create Date: 2026-11-26 20:00:00.000000
 
 Os retratos 'concluido' que já existem foram processados pelo fluxo síncrono antigo: recebem
-processado_em = concluido_em.
+processado_em = concluido_em. As páginas do PNCP ainda não processadas ganham uma mensagem
+`pagina_coletada` na outbox (o próximo relay as publica).
 """
 
 from collections.abc import Sequence
@@ -49,6 +50,12 @@ def upgrade() -> None:
     op.execute(
         "UPDATE coleta_retrato SET processado_em = concluido_em"
         " WHERE status = 'concluido' AND concluido_em IS NOT NULL"
+    )
+    # Páginas do PNCP que o fluxo síncrono deixou pendentes: sem mensagem, ficariam órfãs.
+    op.execute(
+        "INSERT INTO outbox (tipo, carga, criada_em)"
+        " SELECT 'pagina_coletada', jsonb_build_object('pagina_id', id), now()"
+        " FROM pagina_bruta WHERE processada_em IS NULL AND janela_id IS NOT NULL ORDER BY id"
     )
 
 
