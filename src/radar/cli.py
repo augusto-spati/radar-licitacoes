@@ -106,6 +106,55 @@ app_historico = typer.Typer(help="Carga histórica do PNCP.", no_args_is_help=Tr
 app.add_typer(app_historico, name="historico")
 app_resultados = typer.Typer(help="Resultados das contratações (PNCP).", no_args_is_help=True)
 app.add_typer(app_resultados, name="resultados")
+app_tcepe = typer.Typer(help="Dados abertos do TCE-PE (etapa 7b).", no_args_is_help=True)
+app.add_typer(app_tcepe, name="tcepe")
+
+UA_TCEPE = "radar-licitacoes-estudo (github.com/augusto-spati/radar-licitacoes)"
+URL_SONDA_TCEPE = (
+    "https://sistemas.tcepe.tc.br/DadosAbertos/Remessa_ProcessoContratacao!json?anoContratacao=2026"
+)
+
+
+@app_tcepe.command("sondar")
+def tcepe_sondar(
+    url: Annotated[str, typer.Option(help="URL a sondar.")] = URL_SONDA_TCEPE,
+    limite_bytes: Annotated[int, typer.Option(min=1)] = 65_536,
+) -> None:
+    """Testa se o TCE-PE responde daqui (a pesquisa diz que ele pode recusar IP estrangeiro).
+
+    Lê só o começo da resposta e imprime status, bytes e tempos; sai com 1 se não respondeu.
+    """
+    import httpx
+
+    configurar_logs()
+    inicio = time.monotonic()
+    try:
+        with (
+            httpx.Client(
+                timeout=60,
+                headers={"User-Agent": UA_TCEPE},
+            ) as http,
+            http.stream("GET", url) as resposta,
+        ):
+            primeiro = time.monotonic() - inicio
+            lidos = 0
+            for parte in resposta.iter_bytes():
+                lidos += len(parte)
+                if lidos >= limite_bytes:
+                    break
+            total = time.monotonic() - inicio
+            typer.echo(
+                f"tcepe: HTTP {resposta.status_code}, {lidos} bytes, "
+                f"primeiro byte em {primeiro:.1f} s, total {total:.1f} s, "
+                f"tipo {resposta.headers.get('content-type', '?')}"
+            )
+            if resposta.status_code != 200:
+                raise typer.Exit(code=1)
+    except httpx.HTTPError as erro:
+        decorrido = time.monotonic() - inicio
+        typer.echo(f"tcepe: sem resposta em {decorrido:.1f} s: {type(erro).__name__}: {erro}")
+        raise typer.Exit(code=1) from erro
+
 
 FUSO = ZoneInfo("America/Sao_Paulo")
 IDADE_MAXIMA_RETRATO = timedelta(hours=36)
