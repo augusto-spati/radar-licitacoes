@@ -186,3 +186,57 @@ resource "aws_scheduler_schedule" "analisar_diario" {
     }
   }
 }
+
+# ---------- Agenda da 7b.2: planilhas orcamentarias, todo dia 10:00 ----------
+
+# Depois do analisar das 09:00 (nao disputam o pncp.gov.br nem a trava): `radar planilhas
+# atualizar`, ate 10 editais por rodada. Mesma familia, rede e role do analisar (Bedrock, para
+# o texto picotado; os tetos da 7b.2 ficam em config/ia.toml). Nao usa o bucket de
+# documentos. Falha = exitCode != 0 (regra radar-coletor-falhou); a ultima linha e
+# "planilhas: ...", nunca "resultado:" (o log group e o do coletor).
+resource "aws_scheduler_schedule" "planilhas_diario" {
+  name                         = "radar-planilhas-diario"
+  state                        = var.analise_agendada ? "ENABLED" : "DISABLED"
+  schedule_expression          = "cron(0 10 * * ? *)"
+  schedule_expression_timezone = "America/Sao_Paulo"
+
+  flexible_time_window {
+    mode = "OFF"
+  }
+
+  target {
+    arn      = "arn:aws:scheduler:::aws-sdk:ecs:runTask"
+    role_arn = aws_iam_role.scheduler_coletor.arn
+
+    input = jsonencode({
+      Cluster         = aws_ecs_cluster.radar.arn
+      TaskDefinition  = local.familia_coletor
+      LaunchType      = "FARGATE"
+      PlatformVersion = "LATEST"
+      Count           = 1
+      NetworkConfiguration = {
+        AwsvpcConfiguration = {
+          Subnets        = data.aws_subnets.padrao.ids
+          SecurityGroups = [aws_security_group.coletor.id]
+          AssignPublicIp = "ENABLED"
+        }
+      }
+      Overrides = {
+        TaskRoleArn = aws_iam_role.analisador_task.arn
+        ContainerOverrides = [{
+          Name    = "coletor"
+          Command = ["planilhas", "atualizar"]
+          Environment = [
+            { Name = "RADAR_IA_PROVEDOR", Value = "bedrock" },
+            { Name = "RADAR_CONFIG_IA", Value = "/app/config/ia.toml" },
+          ]
+        }]
+      }
+    })
+
+    retry_policy {
+      maximum_retry_attempts       = 1
+      maximum_event_age_in_seconds = 3600
+    }
+  }
+}
