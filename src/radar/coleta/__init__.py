@@ -59,6 +59,7 @@ from radar.coleta.retratos import (
     ultimo_retrato,
 )
 from radar.coleta.sanepar import FonteSanepar
+from radar.coleta.tcepe import ClienteTcepe, ErroTcepe, criar_http_tcepe
 from radar.coleta.trava import liberar_trava, obter_trava, trava_fonte
 
 __all__ = [
@@ -69,10 +70,12 @@ __all__ = [
     "ClienteEducado",
     "ClientePNCP",
     "ClienteResultadosPNCP",
+    "ClienteTcepe",
     "DesfechoFatia",
     "ErroFonte",
     "ErroPNCP",
     "ErroResultados",
+    "ErroTcepe",
     "EstadoRetrato",
     "FonteCompesa",
     "FonteRetrato",
@@ -93,6 +96,7 @@ __all__ = [
     "criar_http",
     "criar_http_educado",
     "criar_http_resultados",
+    "criar_http_tcepe",
     "enfileirar_elegiveis",
     "estado_retrato",
     "frescor_por_fonte",
