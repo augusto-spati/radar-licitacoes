@@ -120,14 +120,20 @@ def _ano(texto: str) -> int:
     return ano + 2000 if ano < 100 else ano
 
 
+ANO_MIN = 2000  # data-base anterior é texto estranho (ou data inventada pela IA)
+ANO_MAX = 2100
+
+
 def data_de_token(token: str) -> date | None:
-    """ "ago/26", "jul-26", "07/2026" → dia 1 do mês."""
+    """ "ago/26", "jul-26", "07/2026" → dia 1 do mês. Ano fora de [2000, 2100] → None."""
     limpo = sem_acento(token).strip(" ;,.()")
     if m := _DATA_TOKEN.match(limpo):
-        return date(_ano(m.group(2)), _MESES[m.group(1)], 1)
-    if (m := _DATA_NUM.match(limpo)) and 1 <= int(m.group(1)) <= 12:
-        return date(int(m.group(2)), int(m.group(1)), 1)
-    return None
+        ano, mes = _ano(m.group(2)), _MESES[m.group(1)]
+    elif (m := _DATA_NUM.match(limpo)) and 1 <= int(m.group(1)) <= 12:
+        ano, mes = int(m.group(2)), int(m.group(1))
+    else:
+        return None
+    return date(ano, mes, 1) if ANO_MIN <= ano <= ANO_MAX else None
 
 
 def datas_do_cabecalho(texto: str) -> dict[str, date]:
@@ -524,10 +530,11 @@ class _TextoCorrido:
 
 def _dn_no_texto(dn: int, trecho: str) -> bool:
     """O DN na forma de diâmetro ("DN 100", "DN100", "Ø100", "100 mm", "DE=110"), no trecho
-    sem espaços: um número solto (a quantidade "100,00") não vale."""
+    sem espaços: um número solto (a quantidade "100,00") não vale. "DE" só com "=" ou ":": sem
+    espaços, "rede 100,00" vira "rede100,00" e não pode valer como diâmetro."""
     numero = str(dn)
     padrao = (
-        rf"(?:dn|de|ø|φ|diametro(?:nominal)?(?:de)?)[=:]?{numero}(?![\d])"
+        rf"(?:dn[=:]?|de[=:]|ø|φ|diametro(?:nominal)?(?:de)?[=:]?){numero}(?![\d])"
         rf"|(?<![\d.,]){numero}mm"
     )
     return re.search(padrao, trecho) is not None

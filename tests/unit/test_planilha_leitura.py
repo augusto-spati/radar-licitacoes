@@ -250,3 +250,20 @@ def test_ler_planilha_nunca_levanta_em_linha_numerica_estranha(linha: str) -> No
     for lida in ler_planilha([linha, f"2.1 Rede de esgoto PVC DN 150 {linha}"]):
         assert lida.preco_com_bdi > 0 and lida.total > 0
         assert lida.preco_sem_bdi is None or lida.preco_sem_bdi > 0
+
+
+def test_data_de_token_com_ano_absurdo_devolve_none_sem_levantar() -> None:
+    """ "01/0000" (ou um data_base inventado pela IA) levantava ValueError em `date(0, 1, 1)` e
+    derrubava a planilha inteira."""
+    for token in ("01/0000", "12/0001", "07/9999", "jan/00x"):
+        assert data_de_token(token) is None
+    assert data_de_token("07/2026") == date(2026, 7, 1)
+    assert data_de_token("ago/26") == date(2026, 8, 1)
+
+
+def test_dn_nao_casa_com_de_dentro_de_palavra() -> None:
+    from radar.precos.planilha_leitura import _dn_no_texto
+
+    assert not _dn_no_texto(100, "assentamentoderede100,00m")  # "rede100" não é "DE 100"
+    assert _dn_no_texto(110, "tubopvcde=110mm")
+    assert _dn_no_texto(100, "tubopvcdn100mm")
