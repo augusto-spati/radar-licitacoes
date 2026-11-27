@@ -23,12 +23,16 @@ from datetime import UTC, datetime
 from typing import Any, Literal, Protocol, cast
 
 import httpx
+from opentelemetry import trace
+from opentelemetry.context import Context
+from opentelemetry.trace import SpanKind, StatusCode
 from sqlalchemy import delete, desc, func, literal, select, tuple_, update
 from sqlalchemy.orm import Session
 
 from radar.coleta.modelos import ColetaRetrato, PaginaBruta
 from radar.coleta.trava import DURACAO_PADRAO, liberar_trava, obter_trava
-from radar.comum import enfileirar
+from radar.comum import enfileirar, metricas
+from radar.comum.telemetria import tracer
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +79,10 @@ class ClienteEducado:
 
     Não há POST de propósito. 403, 429, qualquer outro status de erro, falha de transporte
     ou corpo que casa com `marcador_bloqueio` (captcha, página de bloqueio) viram `ErroFonte`.
+
+    Telemetria por GET: span `GET` (CLIENT), log `requisicao_http`, `PaginaComErro` (0/1) e,
+    se `fonte` está no catálogo de métricas, `LatenciaRequisicao{fonte}` medida só em volta do
+    `http.get` (a pausa de cortesia fica de fora). Nenhum cabeçalho de trace sai para a fonte.
     """
 
     def __init__(
@@ -83,8 +91,13 @@ class ClienteEducado:
         intervalo_s: float = INTERVALO_S,
         dormir: Callable[[float], None] = time.sleep,
         marcador_bloqueio: str | None = None,
+        *,
+        fonte: str = "desconhecida",
+        cronometro: Callable[[], float] = time.monotonic,
     ) -> None:
         self._http = http
+        self._fonte = fonte
+        self._cronometro = cronometro
         self._http.headers["User-Agent"] = USER_AGENT
         self._intervalo_s = intervalo_s
         self._dormir = dormir
@@ -106,14 +119,61 @@ class ClienteEducado:
             self._dormir(self._intervalo_s)
         self._primeira = False
         try:
-            resposta = self._http.get(url, params=params, headers=headers)
-        except httpx.HTTPError as erro:
-            raise ErroFonte(f"{type(erro).__name__} em {url}: {erro}") from erro
-        if resposta.status_code >= 400:
-            raise ErroFonte(f"HTTP {resposta.status_code} em {url}", status=resposta.status_code)
-        if self._bloqueio is not None and self._bloqueio.search(resposta.text):
-            raise ErroFonte(f"bloqueio em {url}")
+            resposta = self._get_medido(url, params, headers)
+        except ErroFonte:
+            metricas.registrar("PaginaComErro", 1)
+            raise
+        metricas.registrar("PaginaComErro", 0)
         return resposta
+
+    def _get_medido(
+        self, url: str, params: dict[str, Any] | None, headers: dict[str, str] | None
+    ) -> httpx.Response:
+        host = self._http.base_url.join(url).host or "desconhecido"
+        with tracer().start_as_current_span(
+            "GET",
+            kind=SpanKind.CLIENT,
+            attributes={
+                "http.request.method": "GET",
+                "server.address": host,
+                "radar.fonte": self._fonte,
+            },
+        ) as span:
+            inicio = self._cronometro()
+            status: int | None = None
+            try:
+                resposta = self._http.get(url, params=params, headers=headers)
+                status = resposta.status_code
+            except httpx.HTTPError as erro:
+                span.set_attribute("error.type", type(erro).__name__)
+                raise ErroFonte(f"{type(erro).__name__} em {url}: {erro}") from erro
+            finally:
+                self._medir(host, status, self._cronometro() - inicio)
+            span.set_attribute("http.response.status_code", resposta.status_code)
+            if resposta.status_code >= 400:
+                span.set_attribute("error.type", str(resposta.status_code))
+                span.set_status(StatusCode.ERROR)
+                raise ErroFonte(
+                    f"HTTP {resposta.status_code} em {url}", status=resposta.status_code
+                )
+            if self._bloqueio is not None and self._bloqueio.search(resposta.text):
+                span.set_attribute("error.type", "bloqueio")
+                raise ErroFonte(f"bloqueio em {url}")
+            return resposta
+
+    def _medir(self, host: str, status: int | None, duracao: float) -> None:
+        if self._fonte in metricas.CATALOGO["LatenciaRequisicao"].valores_dimensao["fonte"]:
+            metricas.registrar("LatenciaRequisicao", duracao, {"fonte": self._fonte})
+        logger.info(
+            "requisicao_http",
+            extra={
+                "fonte": self._fonte,
+                "host": host,
+                "status": status,
+                "duracao_s": round(duracao, 3),
+                "tentativa": 1,  # o ClienteEducado não repete
+            },
+        )
 
     def close(self) -> None:
         self._http.close()
@@ -229,6 +289,33 @@ def _executar(
     relogio: Callable[[], datetime],
     renovar: Callable[[], bool],
 ) -> ResumoRetrato:
+    """O retrato dentro do span `coleta.retrato` (raiz: a unidade de trabalho é o retrato).
+
+    A mensagem `retrato_coletado` nasce dentro do span e leva o contexto dele. As métricas da
+    fonte são descarregadas no fim, com sucesso ou não.
+    """
+    try:
+        with tracer().start_as_current_span(
+            "coleta.retrato", context=Context(), attributes={"radar.fonte": fonte.nome}
+        ) as span:
+            resumo = _executar_retrato(sessao, fonte, cliente, agora, relogio, renovar)
+            span.set_attribute("radar.desfecho", resumo.status)
+            span.set_attribute("radar.retrato.registros", resumo.registros)
+            if resumo.status != "concluido":
+                span.set_status(StatusCode.ERROR, (resumo.erro or "")[:200])
+            return resumo
+    finally:
+        metricas.descarregar()
+
+
+def _executar_retrato(
+    sessao: Session,
+    fonte: FonteRetrato,
+    cliente: ClienteEducado,
+    agora: datetime,
+    relogio: Callable[[], datetime],
+    renovar: Callable[[], bool],
+) -> ResumoRetrato:
     # Com a trava da fonte, um retrato em_andamento só pode ser sobra de execução interrompida.
     sessao.execute(
         update(ColetaRetrato)
@@ -249,6 +336,8 @@ def _executar(
     retrato_id = retrato.id
     inicio = time.monotonic()
     dados = {"fonte": fonte.nome, "retrato_id": retrato_id}
+    span = trace.get_current_span()
+    span.set_attribute("radar.retrato.id", retrato_id)
     logger.info("retrato_iniciado", extra=dados)
 
     try:
@@ -261,8 +350,10 @@ def _executar(
             paginas.append(pagina)
         normalizados = fonte.extrair(paginas)
     except ErroFonte as erro:
+        span.record_exception(erro)
         return _falhar(sessao, retrato, str(erro), inicio)
     except Exception as erro:  # parser quebrado etc.; Ctrl+C continua parando o processo
+        span.record_exception(erro)
         sessao.rollback()
         logger.exception("retrato_erro_inesperado", extra=dados)
         return _falhar(sessao, retrato, repr(erro), inicio)
@@ -298,6 +389,7 @@ def _executar(
     retrato.status = "concluido"
     retrato.registros = registros
     retrato.concluido_em = quando
+    span.set_attribute("radar.retrato.paginas", retrato.paginas)
     # Mesmo commit que conclui: ou o retrato fica concluído com a mensagem, ou nenhum dos dois.
     enfileirar(sessao, "retrato_coletado", {"retrato_id": retrato_id})
     sessao.commit()

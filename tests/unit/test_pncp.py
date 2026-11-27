@@ -3,8 +3,12 @@ from unittest.mock import patch
 
 import httpx
 import pytest
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import SpanKind, StatusCode
 
 from radar.coleta.pncp import ClientePNCP, ErroPNCP, Pagina
+from radar.comum.telemetria import tracer
+from telemetria_memoria import EmissorEmMemoria
 
 CORPO_OK = {
     "data": [{"numeroControlePNCP": "1-1-1/2026"}, {"numeroControlePNCP": "2-1-1/2026"}],
@@ -191,3 +195,67 @@ def test_espera_apos_500_nao_tem_piso_de_429() -> None:
             "publicacao", date(2026, 11, 1), date(2026, 11, 1), 6, 1
         )
     assert esperas[0] < 0.5 * 12
+
+
+# ---------- Telemetria: spans por tentativa, latência e páginas com erro ----------
+
+
+def test_tentativas_viram_spans_get(
+    spans: InMemorySpanExporter, metricas: EmissorEmMemoria
+) -> None:
+    cliente, _ = cliente_com([httpx.Response(503), httpx.Response(200, json=CORPO_OK)])
+    buscar(cliente)
+    terminados = spans.get_finished_spans()
+    (busca,) = [s for s in terminados if s.name == "pncp.buscar"]
+    gets = [s for s in terminados if s.name == "GET"]
+    assert len(gets) == 2
+    assert all(g.parent is not None and g.parent.span_id == busca.context.span_id for g in gets)
+    assert all(g.kind == SpanKind.CLIENT for g in gets)
+    assert [g.attributes["http.response.status_code"] for g in gets] == [503, 200]  # type: ignore[index]
+    assert gets[0].attributes["server.address"] == "pncp.gov.br"  # type: ignore[index]
+    assert gets[0].attributes["radar.fonte"] == "pncp"  # type: ignore[index]
+    assert busca.attributes["radar.tentativas"] == 2  # type: ignore[index]
+    assert busca.attributes["radar.pagina"] == 2  # type: ignore[index]
+    assert len(metricas.valores("LatenciaRequisicao", fonte="pncp")) == 2
+    assert metricas.valores("PaginaComErro") == [0.0]
+
+
+def test_erro_definitivo_conta_pagina_com_erro(
+    spans: InMemorySpanExporter, metricas: EmissorEmMemoria
+) -> None:
+    cliente, _ = cliente_com([httpx.Response(503)] * 4)
+    with pytest.raises(ErroPNCP):
+        buscar(cliente)
+    (busca,) = [s for s in spans.get_finished_spans() if s.name == "pncp.buscar"]
+    assert busca.status.status_code == StatusCode.ERROR
+    assert metricas.valores("PaginaComErro") == [1.0]
+    assert len(metricas.valores("LatenciaRequisicao", fonte="pncp")) == 4
+
+
+def test_erro_4xx_tambem_conta_pagina_com_erro(metricas: EmissorEmMemoria) -> None:
+    cliente, _ = cliente_com([httpx.Response(400, text="ruim")])
+    with pytest.raises(ErroPNCP):
+        buscar(cliente)
+    assert metricas.valores("PaginaComErro") == [1.0]
+
+
+def test_requisicao_http_logada_sem_query(caplog: pytest.LogCaptureFixture) -> None:
+    cliente, _ = cliente_com([httpx.Response(200, json=CORPO_OK)])
+    with caplog.at_level("INFO", logger="radar.coleta.pncp"):
+        buscar(cliente)
+    (registro,) = [r for r in caplog.records if r.getMessage() == "requisicao_http"]
+    dados = registro.__dict__
+    assert dados["fonte"] == "pncp" and dados["status"] == 200 and dados["tentativa"] == 1
+    assert dados["host"] == "pncp.gov.br"
+    assert isinstance(dados["duracao_s"], float)
+    assert "dataInicial" not in str(dados)
+
+
+def test_nenhum_traceparent_no_pncp(spans: InMemorySpanExporter) -> None:
+    cliente, chamadas = cliente_com([httpx.Response(503), httpx.Response(200, json=CORPO_OK)])
+    with tracer().start_as_current_span("coleta.janela"):
+        buscar(cliente)
+    assert chamadas
+    for requisicao in chamadas:
+        nomes = {k.lower() for k in requisicao.headers}
+        assert not nomes & {"traceparent", "tracestate", "x-amzn-trace-id"}

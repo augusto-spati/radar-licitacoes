@@ -43,6 +43,7 @@ def processar_janela(
         lote=mensagem.carga["lote"],
         token=token,
         orcamento_s=orcamento_s,
+        traceparent=mensagem.traceparent,
     )
 
 

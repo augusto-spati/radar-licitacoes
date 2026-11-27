@@ -93,7 +93,9 @@ def _criar_cliente() -> ClientePNCP:
 
 
 def _criar_cliente_retrato(fonte: FonteRetrato) -> ClienteEducado:
-    return ClienteEducado(criar_http_educado(), marcador_bloqueio=fonte.marcador_bloqueio)
+    return ClienteEducado(
+        criar_http_educado(), marcador_bloqueio=fonte.marcador_bloqueio, fonte=fonte.nome
+    )
 
 
 def _criar_cliente_sqs(url: str) -> Any:

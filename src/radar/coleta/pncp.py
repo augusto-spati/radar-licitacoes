@@ -1,11 +1,14 @@
 """Cliente HTTP da API de consulta do PNCP, com retentativas."""
 
 import logging
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
 import httpx
+from opentelemetry.trace import SpanKind, StatusCode
 from tenacity import (
     RetryCallState,
     Retrying,
@@ -13,6 +16,9 @@ from tenacity import (
     stop_after_attempt,
     wait_exponential_jitter,
 )
+
+from radar.comum import metricas
+from radar.comum.telemetria import tracer
 
 logger = logging.getLogger(__name__)
 
@@ -70,8 +76,23 @@ def _interpretar(resposta: httpx.Response, pagina: int) -> Pagina:
 
 
 class ClientePNCP:
-    def __init__(self, http: httpx.Client, tentativas: int = 4, espera_base: float = 5.0) -> None:
+    """Busca páginas do PNCP com retentativa (tenacity).
+
+    Telemetria: um span `pncp.buscar` por página e um `GET` (CLIENT) por tentativa; a
+    latência de cada tentativa (só o `http.get`, sem a espera da retentativa) vai para
+    `LatenciaRequisicao{fonte=pncp}` e o desfecho da página para `PaginaComErro` (0/1).
+    Nenhum cabeçalho de trace sai para o PNCP.
+    """
+
+    def __init__(
+        self,
+        http: httpx.Client,
+        tentativas: int = 4,
+        espera_base: float = 5.0,
+        cronometro: Callable[[], float] = time.monotonic,
+    ) -> None:
         self._http = http
+        self._cronometro = cronometro
         self._tentativas = tentativas
         self._espera_base = espera_base
         self._espera_exponencial = wait_exponential_jitter(
@@ -98,18 +119,77 @@ class ClientePNCP:
             before_sleep=self._registrar_retentativa,
             reraise=True,
         )
-        try:
-            return tentativas(self._requisitar, caminho, parametros, pagina)
-        except _FalhaTransitoria as falha:
-            raise ErroPNCP(
-                f"PNCP falhou após {self._tentativas} tentativas: {falha}", falha.status
-            ) from falha
+        contador = [0]
+        with tracer().start_as_current_span(
+            "pncp.buscar",
+            attributes={"radar.endpoint": endpoint, "radar.pagina": pagina},
+            record_exception=False,
+            set_status_on_exception=False,
+        ) as span:
+            try:
+                resultado = tentativas(self._requisitar, caminho, parametros, pagina, contador)
+            except (_FalhaTransitoria, ErroPNCP) as falha:
+                erro = (
+                    falha
+                    if isinstance(falha, ErroPNCP)
+                    else ErroPNCP(
+                        f"PNCP falhou após {self._tentativas} tentativas: {falha}", falha.status
+                    )
+                )
+                span.set_attribute("radar.tentativas", contador[0])
+                span.record_exception(erro)
+                span.set_status(StatusCode.ERROR, str(erro)[:200])
+                metricas.registrar("PaginaComErro", 1)
+                if erro is falha:
+                    raise
+                raise erro from falha
+            span.set_attribute("radar.tentativas", contador[0])
+            metricas.registrar("PaginaComErro", 0)
+            return resultado
 
-    def _requisitar(self, caminho: str, parametros: dict[str, Any], pagina: int) -> Pagina:
-        try:
-            resposta = self._http.get(caminho, params=parametros)
-        except (httpx.TimeoutException, httpx.TransportError) as erro:
-            raise _FalhaTransitoria(f"{type(erro).__name__}: {erro}") from erro
+    def _requisitar(
+        self, caminho: str, parametros: dict[str, Any], pagina: int, contador: list[int]
+    ) -> Pagina:
+        contador[0] += 1
+        host = self._http.base_url.host or "pncp.gov.br"
+        with tracer().start_as_current_span(
+            "GET",
+            kind=SpanKind.CLIENT,
+            attributes={
+                "http.request.method": "GET",
+                "server.address": host,
+                "radar.fonte": "pncp",
+                "radar.tentativa": contador[0],
+            },
+        ) as span:
+            inicio = self._cronometro()
+            status: int | None = None
+            try:
+                resposta = self._http.get(caminho, params=parametros)
+                status = resposta.status_code
+            except (httpx.TimeoutException, httpx.TransportError) as erro:
+                span.set_attribute("error.type", type(erro).__name__)
+                raise _FalhaTransitoria(f"{type(erro).__name__}: {erro}") from erro
+            finally:
+                duracao = self._cronometro() - inicio
+                metricas.registrar("LatenciaRequisicao", duracao, {"fonte": "pncp"})
+                logger.info(
+                    "requisicao_http",
+                    extra={
+                        "fonte": "pncp",
+                        "host": host,
+                        "status": status,
+                        "duracao_s": round(duracao, 3),
+                        "tentativa": contador[0],
+                    },
+                )
+            span.set_attribute("http.response.status_code", status)
+            if status >= 400:
+                span.set_attribute("error.type", str(status))
+                span.set_status(StatusCode.ERROR)
+            return self._interpretar_status(resposta, pagina)
+
+    def _interpretar_status(self, resposta: httpx.Response, pagina: int) -> Pagina:
         status = resposta.status_code
         if status in STATUS_RETENTAVEIS:
             raise _FalhaTransitoria(f"HTTP {status}", status)
