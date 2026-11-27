@@ -93,8 +93,8 @@ def _criar_cliente_sqs(url: str) -> Any:
 def _criar_fila(fontes: dict[str, FonteRetrato]) -> Fila:
     """A fila de `RADAR_FILA`: local (consome aqui mesmo) ou SQS."""
     config = obter_config()
-    if config.fila == "sqs" and not config.fila_url:
-        typer.echo("RADAR_FILA=sqs exige RADAR_FILA_URL", err=True)
+    if config.fila == "sqs" and not (config.fila_url and config.fila_janelas_url):
+        typer.echo("RADAR_FILA=sqs exige RADAR_FILA_URL e RADAR_FILA_JANELAS_URL", err=True)
         raise typer.Exit(code=2)
     cliente = None
     if config.fila == "sqs" and config.fila_url:

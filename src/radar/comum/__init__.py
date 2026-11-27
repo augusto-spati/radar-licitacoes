@@ -2,6 +2,7 @@ from radar.comum.config import Config, obter_config
 from radar.comum.db import Base, criar_engine, fabrica_sessao
 from radar.comum.fila import (
     Fila,
+    FilaRoteada,
     FilaSQS,
     Mensagem,
     ResultadoEnvio,
@@ -18,6 +19,7 @@ __all__ = [
     "Base",
     "Config",
     "Fila",
+    "FilaRoteada",
     "FilaSQS",
     "Mensagem",
     "Outbox",

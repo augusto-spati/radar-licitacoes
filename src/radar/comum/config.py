@@ -20,6 +20,9 @@ class Config(BaseSettings):
     fila: Literal["local", "sqs"] = "local"
     fila_url: str | None = None
     fila_falhas_url: str | None = None
+    # Fila das janelas do PNCP (coletar_janela) e a DLQ dela.
+    fila_janelas_url: str | None = None
+    fila_janelas_falhas_url: str | None = None
 
 
 def obter_config() -> Config:

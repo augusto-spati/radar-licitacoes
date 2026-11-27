@@ -485,6 +485,7 @@ class SQSFalso:
 
 _URL_FILA = "https://sqs.us-east-2.amazonaws.com/123456789012/radar-editais"
 _URL_FALHAS = "https://sqs.us-east-2.amazonaws.com/123456789012/radar-editais-falhas"
+_URL_JANELAS = "https://sqs.us-east-2.amazonaws.com/123456789012/radar-janelas"
 
 
 def test_reprocessar_falhas_local_sai_com_2(fabrica: sessionmaker[Session]) -> None:
@@ -555,6 +556,7 @@ def test_processar_com_sqs_recusando_sai_com_1_e_guarda_o_erro(
 ) -> None:
     monkeypatch.setenv("RADAR_FILA", "sqs")
     monkeypatch.setenv("RADAR_FILA_URL", _URL_FILA)
+    monkeypatch.setenv("RADAR_FILA_JANELAS_URL", _URL_JANELAS)
     monkeypatch.setattr(cli, "_criar_cliente_sqs", lambda _url: SQSFalso())
     monkeypatch.setattr(cli, "_criar_cliente", lambda: como_cliente(ClienteFalso({})))
     _pagina_pendente(fabrica, "1/2026", AGORA - timedelta(hours=1))
@@ -568,3 +570,16 @@ def test_processar_com_sqs_recusando_sai_com_1_e_guarda_o_erro(
         assert (outbox.publicada_em, outbox.tentativas) == (None, 2)
         assert outbox.erro == "AWS.SimpleQueueService.Throttled: calma"
     assert _contar(fabrica, Edital) == 0
+
+
+def test_fila_sqs_sem_url_de_janelas_sai_com_2(
+    fabrica: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RADAR_FILA", "sqs")
+    monkeypatch.setenv("RADAR_FILA_URL", _URL_FILA)
+    monkeypatch.delenv("RADAR_FILA_JANELAS_URL", raising=False)
+
+    resultado = runner.invoke(cli.app, ["publicar"])
+
+    assert resultado.exit_code == 2
+    assert "RADAR_FILA_JANELAS_URL" in resultado.output
