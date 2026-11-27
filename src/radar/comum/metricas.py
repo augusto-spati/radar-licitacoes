@@ -123,8 +123,18 @@ class EmissorCloudWatch:
     def _obter_cliente(self) -> Any:
         if self._cliente is None:
             import boto3  # type: ignore[import-untyped]
+            from botocore.config import Config as ConfigBotocore  # type: ignore[import-untyped]
 
-            self._cliente = boto3.client("cloudwatch", region_name=self._regiao or regiao_aws())
+            # Teto curto: no pior caso ~2 tentativas de 7 s, não os 60 s padrão por tentativa.
+            self._cliente = boto3.client(
+                "cloudwatch",
+                region_name=self._regiao or regiao_aws(),
+                config=ConfigBotocore(
+                    connect_timeout=2,
+                    read_timeout=5,
+                    retries={"max_attempts": 2, "mode": "standard"},
+                ),
+            )
         return self._cliente
 
     def registrar(

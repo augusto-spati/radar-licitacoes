@@ -174,3 +174,31 @@ def test_configurar_e_idempotente(metricas: EmissorEmMemoria) -> None:
     assert m.emissor_atual() is metricas
     m.registrar("PaginaComErro", 1.0)
     assert [(r.nome, r.valor) for r in metricas.registros] == [("PaginaComErro", 1.0)]
+
+
+def test_cloudwatch_cliente_com_timeouts_e_retentativa_curtos(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    import boto3
+
+    pedidos: list[dict[str, Any]] = []
+
+    class Cliente:
+        def put_metric_data(self, **kwargs: Any) -> None:
+            raise RuntimeError("CloudWatch fora")
+
+    def client(servico: str, **kwargs: Any) -> Cliente:
+        pedidos.append({"servico": servico, **kwargs})
+        return Cliente()
+
+    monkeypatch.setattr(boto3, "client", client)
+    m.usar_emissor(m.EmissorCloudWatch(regiao="us-east-2"))
+    m.registrar("ExecucaoOk", 1)
+    with caplog.at_level(logging.WARNING):
+        m.descarregar()  # falha engolida e logada
+    (pedido,) = pedidos
+    assert pedido["servico"] == "cloudwatch" and pedido["region_name"] == "us-east-2"
+    config = pedido["config"]
+    assert (config.connect_timeout, config.read_timeout) == (2, 5)
+    assert config.retries == {"max_attempts": 2, "mode": "standard"}
+    assert any(r.getMessage() == "metricas_erro" for r in caplog.records)
