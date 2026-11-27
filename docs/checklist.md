@@ -44,10 +44,13 @@ Filas ficam como futuro, no tema 2: outbox + SQS (etapa 4a; o pgmq não existe n
 
 ## IA aplicada
 
-- [ ] Extração de PDF do edital (docling ou marker, escolhido testando editais reais).
-- [ ] Extração das exigências com saída estruturada (instructor).
-- [ ] Comparação com o perfil da empresa (pgvector).
-- [ ] Evals com gabarito feito à mão.
+- [x] Extração de texto do PDF do edital com pypdf (sem torch; OCR fora do escopo), PDF e texto no armazém (S3). `src/radar/analise/`, `docs/etapas/06-ia-editais.md`. Vídeo: a gravar (`docs/videos/06-ia-editais.md`).
+- [x] Extração das exigências com saída estruturada (Converse do Bedrock e Pydantic, sem instructor), ancoragem do trecho e junção entre trechos. `src/radar/analise/`, `docs/etapas/06-ia-editais.md`. Vídeo: a gravar.
+- [x] Comparação com o perfil da empresa por regras determinísticas (sem pgvector; o LLM só extrai). `src/radar/analise/comparacao.py`, `config/perfil.toml`. Vídeo: a gravar.
+- [x] Provedor de modelo trocável, cache por hash e teto de custo. `src/radar/analise/`, `config/ia.toml`. Vídeo: a gravar.
+- [x] Harness de evals com precisão e recall por campo e replay sem rede no CI. `evals/`, `src/radar/analise/evals.py`. Vídeo: a gravar.
+- [ ] Gabaritos conferidos pelo Augusto (12 rascunhos com `conferido: false` em `evals/gabarito/`), seguidos da rodada real comparando modelos.
+- [ ] Tela das exigências (etapa 6b).
 
 ## Front com IA
 
