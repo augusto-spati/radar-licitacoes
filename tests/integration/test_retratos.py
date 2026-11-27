@@ -26,6 +26,7 @@ from radar.coleta import (
     paginas_do_retrato,
     ultimo_retrato,
 )
+from radar.coleta.compesa import URL_GRADE, URL_PAGINA, FonteCompesa
 from radar.coleta.modelos import ColetaJanela, ColetaRetrato, PaginaBruta
 from radar.coleta.retratos import CHAVE_RETRATOS, USER_AGENT, chave_da_fonte
 from radar.coleta.sanepar import FonteSanepar
@@ -321,8 +322,18 @@ def test_paginas_do_retrato_reconstroi_json_e_html(sessao: Session) -> None:
     # O JSON volta re-serializado (espaços e escapes mudam); o que vale é o extrair igual.
     texto_json = '{ "ids" : ["OE-1/26", "OE-2/26"],\n "ufs": {"OE-2/26": "S\\u00c3O"} }'
     json_ = [PaginaColetada("https://json.test/p1", "json", texto_json)]
+    js = [
+        PaginaColetada(
+            URL_GRADE, "js", (DADOS / "compesa-p1-ptbr-reduzida.js.txt").read_text("utf-8")
+        ),
+        PaginaColetada(
+            URL_PAGINA, "js", (DADOS / "compesa-p2-ptbr-reduzida.js.txt").read_text("utf-8")
+        ),
+    ]
+    compesa = FonteCompesa(relogio=lambda: datetime(2026, 11, 26, 15, 0, tzinfo=ZoneInfo("UTC")))
     casos = [
         FonteAmostra("sanepar", html, FonteSanepar().extrair),
+        FonteAmostra("compesa", js, compesa.extrair),
         FonteAmostra("json", json_, FonteFalsa("json", paginas=1).extrair),
     ]
 

@@ -1,6 +1,7 @@
 """Fila de mensagens: formato do corpo, interface e implementação SQS."""
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Protocol, cast, get_args
 
@@ -41,6 +42,14 @@ def de_corpo(corpo: str) -> Mensagem:
     return Mensagem(outbox_id=outbox_id, tipo=tipo, carga=carga)
 
 
+def regiao_da_url(url: str) -> str:
+    """Região da fila, tirada de `https://sqs.<regiao>.amazonaws.com/...`."""
+    achado = re.match(r"https://sqs\.([a-z0-9-]+)\.amazonaws\.com/", url)
+    if achado is None:
+        raise ValueError(f"URL de fila SQS sem região reconhecível: {url!r}")
+    return achado.group(1)
+
+
 class Fila(Protocol):
     def enviar_lote(self, mensagens: list[Mensagem]) -> ResultadoEnvio: ...
 
@@ -50,7 +59,7 @@ class FilaSQS:
         if cliente is None:
             import boto3  # type: ignore[import-untyped]
 
-            cliente = boto3.client("sqs")
+            cliente = boto3.client("sqs", region_name=regiao_da_url(url))
         self._url = url
         self._cliente: Any = cliente
 

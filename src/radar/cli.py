@@ -40,6 +40,7 @@ from radar.comum import (
     obter_config,
     pendencias_outbox,
     publicar_outbox,
+    regiao_da_url,
 )
 from radar.editais import Criterios, EditalResumo, carregar_criterios
 from radar.editais import filtrar as filtrar_editais
@@ -83,10 +84,10 @@ def _criar_cliente_retrato(fonte: FonteRetrato) -> ClienteEducado:
     return ClienteEducado(criar_http_educado(), marcador_bloqueio=fonte.marcador_bloqueio)
 
 
-def _criar_cliente_sqs() -> Any:
+def _criar_cliente_sqs(url: str) -> Any:
     import boto3  # type: ignore[import-untyped]
 
-    return boto3.client("sqs")
+    return boto3.client("sqs", region_name=regiao_da_url(url))
 
 
 def _criar_fila(fontes: dict[str, FonteRetrato]) -> Fila:
@@ -95,7 +96,9 @@ def _criar_fila(fontes: dict[str, FonteRetrato]) -> Fila:
     if config.fila == "sqs" and not config.fila_url:
         typer.echo("RADAR_FILA=sqs exige RADAR_FILA_URL", err=True)
         raise typer.Exit(code=2)
-    cliente = _criar_cliente_sqs() if config.fila == "sqs" else None
+    cliente = None
+    if config.fila == "sqs" and config.fila_url:
+        cliente = _criar_cliente_sqs(config.fila_url)
     return criar_fila(config, _criar_sessao, fontes, _agora, cliente)
 
 
@@ -306,7 +309,7 @@ def reprocessar_falhas() -> None:
     if not config.fila_url or not config.fila_falhas_url:
         typer.echo("defina RADAR_FILA_URL e RADAR_FILA_FALHAS_URL", err=True)
         raise typer.Exit(code=2)
-    cliente = _criar_cliente_sqs()
+    cliente = _criar_cliente_sqs(config.fila_url)
     dlq = _atributos_da_fila(cliente, config.fila_falhas_url, "ApproximateNumberOfMessages")
     quantas = int(dlq.get("ApproximateNumberOfMessages", "0"))
     if quantas == 0:

@@ -4,7 +4,14 @@ from typing import Any
 
 import pytest
 
-from radar.comum.fila import FilaSQS, Mensagem, ResultadoEnvio, de_corpo, para_corpo
+from radar.comum.fila import (
+    FilaSQS,
+    Mensagem,
+    ResultadoEnvio,
+    de_corpo,
+    para_corpo,
+    regiao_da_url,
+)
 
 
 def test_ida_e_volta() -> None:
@@ -72,3 +79,10 @@ def test_mover_falhas_devolve_handle() -> None:
 
     assert fila.mover_falhas("arn:origem", "arn:destino") == "tarefa-1"
     assert cliente.movimentos == [{"SourceArn": "arn:origem", "DestinationArn": "arn:destino"}]
+
+
+def test_regiao_da_url() -> None:
+    assert regiao_da_url("https://sqs.sa-east-1.amazonaws.com/123456789012/fila") == "sa-east-1"
+    assert regiao_da_url("https://sqs.us-east-1.amazonaws.com/1/f.fifo") == "us-east-1"
+    with pytest.raises(ValueError):
+        regiao_da_url("http://localhost:9324/queue/fila")

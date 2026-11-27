@@ -129,6 +129,9 @@ def _sob_trava(
     paginas = paginas_do_retrato(sessao, retrato.id)
     if not paginas:
         return _falhar(sessao, retrato.id, fonte.nome, "páginas ausentes")
+    if len(paginas) != retrato.paginas:
+        erro = f"páginas incompletas: {len(paginas)} de {retrato.paginas}"
+        return _falhar(sessao, retrato.id, fonte.nome, erro)
     try:
         normalizados = fonte.extrair(paginas)
     except Exception as falha:  # parser quebrado: repetir não conserta (como na cli antiga)
@@ -136,6 +139,9 @@ def _sob_trava(
         logger.exception("retrato_erro_extrair", extra=dados)
         return _falhar(sessao, retrato.id, fonte.nome, f"extrair: {falha!r}")
     vistos = {str(n["id_na_fonte"]) for n in normalizados if n.get("id_na_fonte") not in (None, "")}
+    if len(vistos) < fonte.minimo_registros:
+        erro = f"abaixo do minimo no consumidor: {len(vistos)} < {fonte.minimo_registros}"
+        return _falhar(sessao, retrato.id, fonte.nome, erro)
     resultado = registrar_normalizados(sessao, normalizados)
     if resultado.invalidos > FRACAO_INVALIDOS * len(normalizados):
         sessao.rollback()  # desfaz o registro: nada gravado, nada reconciliado

@@ -292,6 +292,50 @@ def test_retrato_sem_paginas_e_falha_definitiva(
     assert "processamento_falhou" in [r.getMessage() for r in caplog.records]
 
 
+def test_retrato_com_paginas_incompletas_e_falha_definitiva(
+    sessao: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    _ja_abertos(sessao, "OE-1/26")
+    antes = _editais(sessao, "sanepar")
+    retrato_id = _retrato(sessao, _paginas_sanepar(_lista("lista-oe-abertura-p1.html")))
+    sessao.execute(update(ColetaRetrato).where(ColetaRetrato.id == retrato_id).values(paginas=3))
+    sessao.commit()
+
+    with caplog.at_level(logging.INFO):
+        assert processar_mensagem(sessao, _msg_retrato(retrato_id), FONTES, AGORA) == (
+            "falha_definitiva"
+        )
+
+    assert _editais(sessao, "sanepar") == antes
+    estado = _estado(sessao, retrato_id)
+    assert estado.status == "falha"
+    assert estado.erro == "páginas incompletas: 2 de 3"
+    assert "processamento_falhou" in [r.getMessage() for r in caplog.records]
+
+
+def test_retrato_abaixo_do_minimo_no_consumidor_e_falha_definitiva(
+    sessao: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    _ja_abertos(sessao, "OE-1/26")
+    antes = _editais(sessao, "sanepar")
+    retrato_id = _retrato(sessao, _paginas_sanepar(_lista("lista-oe-abertura-p1.html")))
+    fonte = FonteSanepar()
+    minimo = len(fonte.extrair(_paginas_sanepar(_lista("lista-oe-abertura-p1.html")))) + 1
+    fonte.minimo_registros = minimo
+    fontes: dict[str, FonteRetrato] = {"sanepar": fonte}
+
+    with caplog.at_level(logging.INFO):
+        assert processar_mensagem(sessao, _msg_retrato(retrato_id), fontes, AGORA) == (
+            "falha_definitiva"
+        )
+
+    assert _editais(sessao, "sanepar") == antes
+    estado = _estado(sessao, retrato_id)
+    assert estado.status == "falha"
+    assert estado.erro is not None and estado.erro.startswith("abaixo do minimo no consumidor:")
+    assert "processamento_falhou" in [r.getMessage() for r in caplog.records]
+
+
 def test_retrato_rebaixado_e_descartado(sessao: Session, caplog: pytest.LogCaptureFixture) -> None:
     _ja_abertos(sessao, "OE-1/26")
     antes = _editais(sessao, "sanepar")

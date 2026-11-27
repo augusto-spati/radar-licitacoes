@@ -356,6 +356,7 @@ class EstadoRetrato:
     status: str
     iniciado_em: datetime
     processado_em: datetime | None
+    paginas: int
 
 
 def estado_retrato(sessao: Session, retrato_id: int) -> EstadoRetrato | None:
@@ -369,6 +370,7 @@ def estado_retrato(sessao: Session, retrato_id: int) -> EstadoRetrato | None:
         status=retrato.status,
         iniciado_em=retrato.iniciado_em,
         processado_em=retrato.processado_em,
+        paginas=retrato.paginas,
     )
 
 

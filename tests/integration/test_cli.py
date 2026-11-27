@@ -501,7 +501,7 @@ def test_reprocessar_falhas_move_da_dlq_para_a_principal(
     monkeypatch.setenv("RADAR_FILA_URL", _URL_FILA)
     monkeypatch.setenv("RADAR_FILA_FALHAS_URL", _URL_FALHAS)
     sqs = SQSFalso()
-    monkeypatch.setattr(cli, "_criar_cliente_sqs", lambda: sqs)
+    monkeypatch.setattr(cli, "_criar_cliente_sqs", lambda _url: sqs)
 
     resultado = runner.invoke(cli.app, ["reprocessar-falhas"])
 
@@ -528,7 +528,7 @@ def test_reprocessar_falhas_com_dlq_vazia_nao_move(
     monkeypatch.setenv("RADAR_FILA_URL", _URL_FILA)
     monkeypatch.setenv("RADAR_FILA_FALHAS_URL", _URL_FALHAS)
     sqs = SQSFalso(na_dlq=0)
-    monkeypatch.setattr(cli, "_criar_cliente_sqs", lambda: sqs)
+    monkeypatch.setattr(cli, "_criar_cliente_sqs", lambda _url: sqs)
 
     resultado = runner.invoke(cli.app, ["reprocessar-falhas"])
 
@@ -542,7 +542,7 @@ def test_reprocessar_falhas_sem_url_da_dlq_sai_com_2(
 ) -> None:
     monkeypatch.setenv("RADAR_FILA", "sqs")
     monkeypatch.setenv("RADAR_FILA_URL", _URL_FILA)
-    monkeypatch.setattr(cli, "_criar_cliente_sqs", SQSFalso)
+    monkeypatch.setattr(cli, "_criar_cliente_sqs", lambda _url: SQSFalso())
 
     resultado = runner.invoke(cli.app, ["reprocessar-falhas"])
 
@@ -555,7 +555,7 @@ def test_processar_com_sqs_recusando_sai_com_1_e_guarda_o_erro(
 ) -> None:
     monkeypatch.setenv("RADAR_FILA", "sqs")
     monkeypatch.setenv("RADAR_FILA_URL", _URL_FILA)
-    monkeypatch.setattr(cli, "_criar_cliente_sqs", SQSFalso)
+    monkeypatch.setattr(cli, "_criar_cliente_sqs", lambda _url: SQSFalso())
     monkeypatch.setattr(cli, "_criar_cliente", lambda: como_cliente(ClienteFalso({})))
     _pagina_pendente(fabrica, "1/2026", AGORA - timedelta(hours=1))
 
