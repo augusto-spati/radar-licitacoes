@@ -1,6 +1,6 @@
 import type {Fonte, Filtros} from './fonte';
 import {obterToken, sair} from './sessao';
-import type {EditalDetalhe} from './tipos';
+import type {Analise, EditalDetalhe} from './tipos';
 
 export class ErroFonte extends Error {
   status?: number;
@@ -46,16 +46,22 @@ function consulta({linha, ufs, todos}: Filtros): string {
   return texto === '' ? '' : `?${texto}`;
 }
 
+// O id público é `<fonte>~<id>` e o id tem "/" (as rotas são {id_publico:path}):
+// codifica cada trecho e mantém a barra.
+const caminhoDoId = (id: string): string => id.split('/').map(encodeURIComponent).join('/');
+
+/** JSON da resposta, ou null quando o status diz "não tem" (404, e o que mais vier em `vazios`). */
+async function lerOuNulo<T>(caminho: string, vazios: number[] = [404]): Promise<T | null> {
+  const resposta = await buscar(caminho);
+  if (vazios.includes(resposta.status)) return null;
+  if (!resposta.ok) throw new ErroFonte(`A API respondeu ${resposta.status}`, resposta.status);
+  return (await resposta.json()) as T;
+}
+
 export const fonteApi: Fonte = {
   listar: f => lerJson(`/api/editais${consulta(f)}`),
   status: () => lerJson('/api/status'),
-  async obter(id) {
-    // O id público é `<fonte>~<id>` e o id tem "/" (a rota é {id_publico:path}):
-    // codifica cada trecho e mantém a barra.
-    const caminho = `/api/editais/${id.split('/').map(encodeURIComponent).join('/')}`;
-    const resposta = await buscar(caminho);
-    if (resposta.status === 404) return null;
-    if (!resposta.ok) throw new ErroFonte(`A API respondeu ${resposta.status}`, resposta.status);
-    return (await resposta.json()) as EditalDetalhe;
-  },
+  obter: id => lerOuNulo<EditalDetalhe>(`/api/editais/${caminhoDoId(id)}`),
+  // 404: edital ainda não analisado; 503: a API está sem modelo de IA configurado.
+  analise: id => lerOuNulo<Analise>(`/api/analises/${caminhoDoId(id)}`, [404, 503]),
 };

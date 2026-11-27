@@ -16,6 +16,7 @@ const AVISO =
 const src = path.dirname(fileURLToPath(import.meta.url));
 
 const COMPONENTES = [
+  'Aderencia.tsx',
   'AvisoDesatualizado.tsx',
   'CartaoEdital.tsx',
   'EstadoCarga.tsx',

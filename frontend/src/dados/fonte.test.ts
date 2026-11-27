@@ -125,6 +125,25 @@ describe('fonteApi', () => {
     expect(erro).toBeInstanceOf(ErroFonte);
     expect((erro as ErroFonte).status).toBe(500);
   });
+  it('analise lê /api/analises com a barra do id preservada', async () => {
+    const mock = simular(resposta({veredito: 'apto'}));
+    expect(await fonteApi.analise('pncp~13127340000120-1-000036/2025')).toEqual({
+      veredito: 'apto',
+    });
+    expect(mock).toHaveBeenCalledWith('/api/analises/pncp~13127340000120-1-000036/2025');
+  });
+  it.each([404, 503])('analise com %i (sem análise ou IA desligada) devolve null', async st => {
+    simular(resposta({detail: 'x'}, st));
+    expect(await fonteApi.analise('pncp~1-1-1/2025')).toBeNull();
+  });
+  it('analise com 500 vira ErroFonte', async () => {
+    simular(resposta({detail: 'x'}, 500));
+    const erro = await fonteApi.analise('pncp~1-1-1/2025').catch((e: unknown) => e);
+    expect((erro as ErroFonte).status).toBe(500);
+  });
+  it('fonteExemplo não traz análise', async () => {
+    expect(await fonteExemplo.analise('pncp~1-1-1/2025')).toBeNull();
+  });
   it('listar monta a consulta com uf repetido, linha e todos', async () => {
     const mock = simular(resposta({atualizado_em: null, editais: []}));
     await fonteApi.listar({linha: 'redes', ufs: ['SP', 'MG'], todos: true});
