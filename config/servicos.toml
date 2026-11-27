@@ -8,7 +8,25 @@
 #   unidades_aceitas:    unidade do item (sem acento, sem ponto nem espaço) -> fator.
 #                        quantidade canônica = quantidade x fator; preço canônico = preço / fator.
 # Serviço de rede (com `materiais`) exige material reconhecível, DN dentro de [dn_min, dn_max]
-# e escopo claro (só o tubo, só o assentamento ou os dois); sem um deles o item fica sem serviço. Um item que casa com mais de um serviço também fica sem.
+# e escopo claro (só o tubo, só o assentamento ou os dois); sem um deles o item fica sem serviço.
+# Linha de rede que cita água e esgoto ("PARA REDE DE AGUA OU ESGOTO") também fica sem, assim
+# como um item que casa com mais de um serviço.
+
+# Pré-filtro dos processos do TCE-PE (`radar.precos.tcepe.processo_de_saneamento`): substring
+# sobre o objeto, sem acento, sem palavras vazias e no singular. Os termos das linhas `redes` e
+# `perdas` da 7a (config/filtro.toml) não pegam "SISTEMAS DE ESGOTAMENTO SANITÁRIO" (Compesa,
+# GNR Sertão) nem "REDE COLETORAS DE ESGOTO" (Pedra). Medido nos 31.643 processos de 2026
+# (listagem de 2026-11-27): termos da 7a → 14 processos (13 homologados, 5 da Compesa); esta
+# lista → 170 (120 homologados, 19 da Compesa). Só itens com serviço-padrão são gravados, então
+# o excesso custa requisições (≥ 2 por processo homologado), não linhas.
+[processos]
+termos = [
+    "rede de agua", "rede de esgoto", "ligacao de agua", "ligacao de esgoto", "adutora",
+    "assentamento de tubulacao", "vazamento", "perdas de agua", "setorizacao", "hidrometro",
+    "macromedicao", "pitometria", "rede coletora", "esgotamento sanitario", "sistema de esgoto",
+    "esgoto sanitario", "abastecimento de agua", "sistema de abastecimento", "ligacao predial",
+    "saneamento",
+]
 
 [[servico]]
 nome = "ligacao_agua"
@@ -20,9 +38,12 @@ termos_qualquer = [
     "ligacao predial", "ligacoes prediais", "ramal predial", "ramais prediais",
     "ligacao domiciliar", "ligacoes domiciliares", "ramal domiciliar", "ramais domiciliares",
 ]
+# Conserto e manutenção de ramal existente não são ligação nova (TCE-PE: "CONSERTO DE RAMAIS
+# PREDIAIS DE ÁGUA DANIFICADOS DURANTE EXECUÇÃO DAS OBRAS").
 termos_excluidos = [
     "esgoto", "supress", "corte", "religa", "remanej", "desativ", "retirada", "cadastr",
-    "vistoria", "projeto",
+    "vistoria", "projeto", "conserto", "reparo", "manutenc", "substituicao de ramal",
+    "substituicao de ramais",
 ]
 [servico.unidades_aceitas]
 un = "1"
@@ -45,6 +66,7 @@ termos_qualquer = [
 ]
 termos_excluidos = [
     "supress", "corte", "remanej", "desativ", "retirada", "cadastr", "vistoria", "projeto",
+    "conserto", "reparo", "manutenc", "substituicao de ramal", "substituicao de ramais",
 ]
 [servico.unidades_aceitas]
 un = "1"
@@ -99,11 +121,15 @@ unidade = "m3"
 termos_obrigatorios = ["escavacao", "vala"]
 termos_qualquer = []
 # Manual e em rocha custam várias vezes a mecânica em solo; carga, manobra e transporte do
-# material escavado são outro item.
+# material escavado são outro item. Linha que junta escavação com reaterro/compactação
+# ("Escavação mecânica, reaterro e compactação vala") tem outro preço por m³.
 termos_excluidos = [
     "manual", "rocha", "3a categoria", "terceira categoria", "transporte", "carga", "descarga",
-    "manobra", "remanej", "bota-fora", "bota fora", "empolamento",
+    "manobra", "remanej", "bota-fora", "bota fora", "empolamento", "reaterro", "aterro",
+    "compactac",
 ]
+# A faixa de profundidade (até 1,5 m; 1,5 a 3 m; 3 a 6 m) faz parte da chave; sem ela, fica sem.
+exige_faixa = true
 [servico.unidades_aceitas]
 m3 = "1"
 metrocubico = "1"

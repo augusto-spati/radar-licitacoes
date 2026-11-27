@@ -8,7 +8,7 @@ importa a coleta: quem compõe é a CLI.
   o campo `BDI` é só informação, guardado como fração (< 1 já é fração; ≥ 1 é percentual).
 - Contratado: `Remessa_InstrumentoJuridico` não traz o id do processo, e o filtro por número
   pode trazer contrato de outro processo. Vale o contrato cujo total bate com o
-  `valorHomologado` (±1%); se nenhum bater sozinho, todos juntos (processo em lotes com mais
+  `valorHomologado` (±2%); se nenhum bater sozinho, todos juntos (processo em lotes com mais
   de um vencedor); senão, o item fica só com o estimado.
 - Os itens do contrato não têm número: casam por descrição normalizada + quantidade e, quando
   as duas listas têm o mesmo tamanho, pela mesma posição com a mesma descrição.
@@ -27,11 +27,17 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from radar.precos.modelos import Origem, PrecoItem, PrecoItemNovo
-from radar.precos.servicos import CURINGA, Servico, classificar, sem_acento
+from radar.precos.servicos import (
+    CURINGA,
+    Servico,
+    classificar,
+    sem_acento,
+    termos_processo_padrao,
+)
 
 ORIGEM: Origem = "tce_pe"
 UF = "PE"
-TOLERANCIA_VALOR = Decimal("0.01")
+TOLERANCIA_VALOR = Decimal("0.02")
 RAZAO_MIN = Decimal("0.3")
 RAZAO_MAX = Decimal("1.5")
 
@@ -71,11 +77,16 @@ def _padrao_objeto(termo: str) -> re.Pattern[str] | None:
     return re.compile("".join(partes))
 
 
-def processo_de_saneamento(processo: Registro, termos: Sequence[str]) -> bool:
-    """O `objeto` contém algum termo (sem acento, no singular; U+FFFD vale por uma letra)."""
+def processo_de_saneamento(processo: Registro, termos: Sequence[str] | None = None) -> bool:
+    """O `objeto` contém algum termo (sem acento, no singular; U+FFFD vale por uma letra).
+
+    Sem `termos`, usa `[processos] termos` de `config/servicos.toml`.
+    """
     objeto = processo.get("objeto")
     if not isinstance(objeto, str):
         return False
+    if termos is None:
+        termos = termos_processo_padrao()
     texto = _normalizar_objeto(objeto)
     padroes = [p for p in (_padrao_objeto(t) for t in termos) if p is not None]
     return any(p.search(texto) for p in padroes)
@@ -156,7 +167,7 @@ def _bate(total: Decimal, alvo: Decimal) -> bool:
 def escolher_contrato(
     processo: Registro, contratos: Sequence[tuple[Registro, list[Registro]]]
 ) -> list[Registro] | None:
-    """Itens do contrato do processo, ou None se nenhum total bater com o homologado (±1%).
+    """Itens do contrato do processo, ou None se nenhum total bater com o homologado (±2%).
 
     Um contrato bate se o `ValorGlobalAtualizado` ou a soma dos itens bater. Entre vários, o
     mais próximo. Se nenhum bater sozinho, vale a soma de todos (lotes com vencedores
@@ -237,7 +248,7 @@ def itens_de_processo(
     processo: Registro,
     orcamento: list[Registro],
     contratos: Sequence[tuple[Registro, list[Registro]]],
-    termos: Sequence[str],
+    termos: Sequence[str] | None = None,
     servicos: tuple[Servico, ...] | None = None,
 ) -> list[PrecoItemNovo]:
     """Itens do orçamento que casam com um serviço-padrão, com o contratado quando casa.
@@ -287,6 +298,7 @@ def itens_de_processo(
                 orgao_cnpj=None,
                 processo=rotulo,
                 data=data,
+                data_base=_data(item.get("DataReferencia")),
                 descricao=descricao,
                 unidade=unidade,
                 quantidade=_decimal(item.get("Quantidade")),
@@ -301,6 +313,7 @@ def itens_de_processo(
                 material=classificacao.material,
                 dn=classificacao.dn,
                 escopo=classificacao.escopo,
+                faixa=classificacao.faixa,
                 unidade_canonica=classificacao.unidade_canonica,
                 fator_unidade=classificacao.fator,
                 suspeito=suspeito,

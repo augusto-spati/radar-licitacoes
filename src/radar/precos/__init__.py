@@ -3,17 +3,22 @@
 from radar.precos.modelos import ORIGENS, Origem, PrecoItem, PrecoItemNovo
 from radar.precos.servicos import (
     ESCOPOS,
+    FAIXAS,
     Classificacao,
     Escopo,
+    Faixa,
     Material,
     Servico,
     carregar_servicos,
+    carregar_termos_processo,
     classificar,
     escopo_de_rede,
     extrair_dn,
+    faixa_profundidade,
     normalizar_unidade,
     sem_acento,
     tem_termo,
+    termos_processo_padrao,
 )
 from radar.precos.tcepe import (
     bdi_fracao,
@@ -27,9 +32,11 @@ from radar.precos.tcepe import (
 
 __all__ = [
     "ESCOPOS",
+    "FAIXAS",
     "ORIGENS",
     "Classificacao",
     "Escopo",
+    "Faixa",
     "Material",
     "Origem",
     "PrecoItem",
@@ -37,11 +44,13 @@ __all__ = [
     "Servico",
     "bdi_fracao",
     "carregar_servicos",
+    "carregar_termos_processo",
     "casar_itens",
     "classificar",
     "escolher_contrato",
     "escopo_de_rede",
     "extrair_dn",
+    "faixa_profundidade",
     "gravar_precos",
     "itens_de_processo",
     "normalizar_unidade",
@@ -49,4 +58,5 @@ __all__ = [
     "processo_homologado",
     "sem_acento",
     "tem_termo",
+    "termos_processo_padrao",
 ]

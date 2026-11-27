@@ -141,6 +141,11 @@ def test_pedra_itens_classificados_com_contratado() -> None:
         ("tce_pe", "PE", "Pedra", "462/016/2026")
     }
     assert tubo.data is not None and tubo.data.isoformat() == "2026-04-15"
+    # Data-base do preço: o DataReferencia do item (em Pedra, a data do orçamento).
+    assert tubo.data_base is not None and tubo.data_base.isoformat() == "2026-01-29"
+    escavacao = next(n for n in novos if n.servico == "escavacao_vala")
+    assert escavacao.faixa == "ate_1_5m"
+    assert tubo.faixa is None
 
 
 def test_compesa_bdi_em_fracao_e_contrato_pelo_valor_global() -> None:
@@ -152,6 +157,9 @@ def test_compesa_bdi_em_fracao_e_contrato_pelo_valor_global() -> None:
     assert [n.preco_contratado_com_bdi for n in novos] == [Decimal("8.3500"), Decimal("12.6500")]
     assert {n.bdi for n in novos} == {Decimal("0.2467")}
     assert {n.municipio for n in novos} == {None}
+    # Orçamento da Compesa com base de preço de maio/2025, homologado em 2026.
+    assert {n.data_base.isoformat() for n in novos if n.data_base} == {"2025-05-01"}
+    assert {n.faixa for n in novos} == {"ate_1_5m"}
 
 
 def test_contrato_de_outro_processo_e_descartado() -> None:
@@ -168,16 +176,30 @@ def test_contrato_de_outro_processo_e_descartado() -> None:
     assert all(n.suspeito is False for n in novos)
 
 
-def test_contrato_fora_da_tolerancia_de_um_por_cento() -> None:
-    processo, orcamento, instrumento, itens = _pedra()
-    fora = dict(instrumento, ValorGlobalAtualizado="592000.00")  # +2%
-    itens_fora = [
-        dict(i, ValorTotal=str(Decimal(i["ValorTotal"]) * Decimal("1.02"))) for i in itens
-    ]
-    dentro = dict(instrumento, ValorGlobalAtualizado="584000.00")  # +0,65%
+def _escalar(itens: list[dict[str, Any]], fator: str) -> list[dict[str, Any]]:
+    return [dict(i, ValorTotal=str(Decimal(i["ValorTotal"]) * Decimal(fator))) for i in itens]
+
+
+def test_contrato_fora_da_tolerancia_de_dois_por_cento() -> None:
+    processo, orcamento, instrumento, itens = _pedra()  # homologado 580.240,72
+    fora = dict(instrumento, ValorGlobalAtualizado="595000.00")  # +2,5%
+    itens_fora = _escalar(itens, "1.025")
+    dentro = dict(instrumento, ValorGlobalAtualizado="590000.00")  # +1,7%
 
     assert escolher_contrato(processo, [(fora, itens_fora)]) is None
     assert escolher_contrato(processo, [(dentro, itens_fora)]) is itens_fora
+
+
+def test_contrato_a_menos_1_3_por_cento_e_aceito() -> None:
+    """Real: Belo Jardim (60127312), contrato 7.499.999,48 contra homologado 7.598.076,01."""
+    processo, orcamento, instrumento, itens = _pedra()
+    pelo_global = dict(instrumento, ValorGlobalAtualizado="572697.59")  # -1,3%
+    itens_longe = _escalar(itens, "0.9")
+    so_itens = {k: v for k, v in instrumento.items() if k != "ValorGlobalAtualizado"}
+    itens_menos = _escalar(itens, "0.987")  # -1,3% pela soma dos itens
+
+    assert escolher_contrato(processo, [(pelo_global, itens_longe)]) is itens_longe
+    assert escolher_contrato(processo, [(so_itens, itens_menos)]) is itens_menos
 
 
 def test_escolhe_o_contrato_certo_entre_varios() -> None:
@@ -318,6 +340,21 @@ def test_gravar_precos_upsert_idempotente(sessao: Session) -> None:
     )
     assert tubo.bdi == Decimal("0.2097")
     assert tubo.fator_unidade == Decimal("1")
+    assert tubo.data_base is not None
+    escavacao = next(linha for linha in linhas if linha.servico == "escavacao_vala")
+    assert escavacao.faixa == "ate_1_5m"
+
+
+def test_pre_filtro_usa_os_termos_da_config_por_padrao() -> None:
+    pedra, _, _, _ = _pedra()
+    compesa, _, _, _ = _compesa()
+    assert processo_de_saneamento(pedra)
+    assert processo_de_saneamento(compesa)
+    assert not processo_de_saneamento(_processo("60136399"))  # caixas d'agua de escolas
+    # Os termos da 7a sozinhos nao pegam os dois casos de referencia.
+    termos_7a = ["rede de agua", "rede de esgoto", "ligacao de agua", "ligacao de esgoto"]
+    assert not processo_de_saneamento(pedra, termos_7a)
+    assert not processo_de_saneamento(compesa, termos_7a)
 
 
 def test_gravar_lista_vazia(sessao: Session) -> None:

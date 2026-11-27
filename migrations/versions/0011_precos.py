@@ -32,6 +32,7 @@ def upgrade() -> None:
         sa.Column("orgao_cnpj", sa.Text(), nullable=True),
         sa.Column("processo", sa.Text(), nullable=False),
         sa.Column("data", sa.Date(), nullable=True),
+        sa.Column("data_base", sa.Date(), nullable=True),
         sa.Column("descricao", sa.Text(), nullable=False),
         sa.Column("unidade", sa.Text(), nullable=False),
         sa.Column("quantidade", sa.Numeric(), nullable=True),
@@ -46,6 +47,7 @@ def upgrade() -> None:
         sa.Column("material", sa.Text(), nullable=True),
         sa.Column("dn", sa.Integer(), nullable=True),
         sa.Column("escopo", sa.Text(), nullable=True),
+        sa.Column("faixa", sa.Text(), nullable=True),
         sa.Column("unidade_canonica", sa.Text(), nullable=False),
         sa.Column("fator_unidade", sa.Numeric(), nullable=False),
         sa.Column("suspeito", sa.Boolean(), server_default=sa.false(), nullable=False),
@@ -56,6 +58,9 @@ def upgrade() -> None:
         sa.CheckConstraint("origem IN ('tce_pe', 'planilha_edital')", name="ck_preco_item_origem"),
         sa.CheckConstraint(
             "escopo IN ('material', 'assentamento', 'completo')", name="ck_preco_item_escopo"
+        ),
+        sa.CheckConstraint(
+            "faixa IN ('ate_1_5m', '1_5_a_3m', '3_a_6m')", name="ck_preco_item_faixa"
         ),
     )
     op.create_index("ix_preco_item_servico_uf", "preco_item", ["servico", "uf"])

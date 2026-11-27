@@ -1,5 +1,6 @@
 """Tabela `preco_item`: chave por origem, origem e escopo restritos."""
 
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -71,3 +72,21 @@ def test_escopo_nulo_fora_de_rede(sessao: Session) -> None:
     sessao.flush()
 
     assert sessao.query(PrecoItem).one().escopo is None
+
+
+def test_faixa_e_data_base_de_escavacao(sessao: Session) -> None:
+    item = _item(escopo=None)
+    item.servico, item.faixa, item.data_base = "escavacao_vala", "1_5_a_3m", date(2025, 5, 1)
+    sessao.add(item)
+    sessao.flush()
+
+    linha = sessao.query(PrecoItem).one()
+    assert (linha.faixa, linha.data_base) == ("1_5_a_3m", date(2025, 5, 1))
+
+
+def test_faixa_desconhecida_viola_check(sessao: Session) -> None:
+    item = _item(escopo=None)
+    item.faixa = "ate_2m"
+    sessao.add(item)
+    with pytest.raises(IntegrityError):
+        sessao.flush()

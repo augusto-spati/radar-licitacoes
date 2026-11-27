@@ -166,6 +166,39 @@ def test_numero_com_zeros_a_esquerda_confere():
     assert len(_cliente(handler).instrumentos(462, "16", 2026)) == 1
 
 
+def test_numero_por_substring_descarta_o_outro_processo():
+    # Real (UJ 66, 2026): pedir o processo 44 trouxe também o contrato do processo 144.
+    base = {"unidadeJurisdicionadaId": "66", "AnoProcessoContratacao": "2026"}
+    registros = [
+        dict(base, instrumentoJuridicoId="60320712", NumeroProcessoContratacao="44"),
+        dict(base, instrumentoJuridicoId="60341704", NumeroProcessoContratacao="144"),
+        dict(base, instrumentoJuridicoId="60341705", NumeroProcessoContratacao="0440"),
+    ]
+
+    def handler(req):
+        return _resposta("Remessa_InstrumentoJuridico", registros)
+
+    achados = _cliente(handler).instrumentos(66, "44", 2026)
+
+    assert [i["instrumentoJuridicoId"] for i in achados] == ["60320712"]
+
+
+def test_numero_que_nem_contem_o_pedido_vira_erro():
+    registros = [
+        {
+            "unidadeJurisdicionadaId": "66",
+            "AnoProcessoContratacao": "2026",
+            "NumeroProcessoContratacao": "51",
+        }
+    ]
+
+    def handler(req):
+        return _resposta("Remessa_InstrumentoJuridico", registros)
+
+    with pytest.raises(ErroTcepe, match="NumeroProcessoContratacao"):
+        _cliente(handler).instrumentos(66, "44", 2026)
+
+
 def test_resultado_no_limite_e_truncado():
     registros = [{"anoContratacao": "2026"}] * 3
 

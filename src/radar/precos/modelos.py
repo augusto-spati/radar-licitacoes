@@ -21,7 +21,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from radar.comum import Base
-from radar.precos.servicos import ESCOPOS
+from radar.precos.servicos import ESCOPOS, FAIXAS
 
 Origem = Literal["tce_pe", "planilha_edital"]
 ORIGENS: tuple[str, ...] = get_args(Origem)
@@ -45,6 +45,10 @@ class PrecoItem(Base):
             "escopo IN (" + ", ".join(f"'{e}'" for e in ESCOPOS) + ")",
             name="ck_preco_item_escopo",
         ),
+        CheckConstraint(
+            "faixa IN (" + ", ".join(f"'{f}'" for f in FAIXAS) + ")",
+            name="ck_preco_item_faixa",
+        ),
         Index("ix_preco_item_servico_uf", "servico", "uf"),
     )
 
@@ -56,7 +60,10 @@ class PrecoItem(Base):
     orgao_nome: Mapped[str] = mapped_column(Text)
     orgao_cnpj: Mapped[str | None] = mapped_column(Text)
     processo: Mapped[str] = mapped_column(Text)
+    # Data do processo (homologação); `data_base` é a data-base do preço (no TCE-PE, o
+    # `DataReferencia` do item), que pode ser bem anterior.
     data: Mapped[date | None] = mapped_column(Date)
+    data_base: Mapped[date | None] = mapped_column(Date)
     descricao: Mapped[str] = mapped_column(Text)
     unidade: Mapped[str] = mapped_column(Text)
     quantidade: Mapped[Decimal | None] = mapped_column(Numeric)
@@ -78,6 +85,8 @@ class PrecoItem(Base):
     dn: Mapped[int | None] = mapped_column(Integer)
     # Só em rede: material, assentamento ou completo (ver servicos.escopo_de_rede).
     escopo: Mapped[str | None] = mapped_column(Text)
+    # Só em escavação: faixa de profundidade (ate_1_5m, 1_5_a_3m, 3_a_6m).
+    faixa: Mapped[str | None] = mapped_column(Text)
     unidade_canonica: Mapped[str] = mapped_column(Text)
     fator_unidade: Mapped[Decimal] = mapped_column(Numeric)
     suspeito: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
@@ -96,6 +105,7 @@ class PrecoItemNovo:
     orgao_cnpj: str | None
     processo: str
     data: date | None
+    data_base: date | None
     descricao: str
     unidade: str
     quantidade: Decimal | None
@@ -110,6 +120,7 @@ class PrecoItemNovo:
     material: str | None
     dn: int | None
     escopo: str | None
+    faixa: str | None
     unidade_canonica: str
     fator_unidade: Decimal
     suspeito: bool

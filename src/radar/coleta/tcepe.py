@@ -32,6 +32,8 @@ Quirks tratados aqui:
   como bytes UTF-8 (lidos como "ï¿½"), que voltam a ser U+FFFD.
 - Filtro com nome errado é ignorado em silêncio (devolve os 100 mil primeiros): cada registro é
   conferido contra o filtro pedido, e resultado no limite é tratado como truncado.
+- ``NumeroProcessoContratacao`` casa por substring ("44" traz também o "144"): o registro que
+  só contém o número é descartado, sem erro.
 - Filtro numérico com valor não numérico dá HTTP 500 com corpo "ERRO": os ids são validados antes.
 - JSON inválido ("Extra data") aconteceu uma vez e passou na repetição: é transitório.
 """
@@ -107,6 +109,19 @@ def _mesmo_numero(registro: Any, campo: str, valor: str) -> bool:
     return texto.isdigit() and int(texto) == int(valor)
 
 
+def _contem_numero(registro: Any, campo: str, valor: str) -> bool:
+    """O campo traz o número pedido dentro dele ("144" contém "44"): casamento por substring."""
+    if not isinstance(registro, dict) or campo not in registro:
+        return False
+    return str(int(valor)) in str(registro[campo]).strip()
+
+
+# Filtros que o servidor aplica como substring (LIKE): `NumeroProcessoContratacao=44` devolve
+# também o processo "144" (visto em 2026-11-27, UJ 66). O registro que só contém o número é
+# descartado; o que nem contém continua sendo filtro ignorado (erro).
+_FILTROS_SUBSTRING = frozenset({"NumeroProcessoContratacao"})
+
+
 class ClienteTcepe:
     """Uma requisição por vez, com pausa entre elas; cada registro conferido contra o filtro."""
 
@@ -164,13 +179,23 @@ class ClienteTcepe:
         limite = str(resposta.get("limiteResultado", "")).strip()
         if limite.isdigit() and len(registros) >= int(limite):
             raise ErroTcepe(f"{entidade} chegou ao limite de {limite} registros (truncado)")
+        conferidos = []
         for registro in registros:
+            descartar = False
             for campo, valor in filtros.items():
-                if not _mesmo_numero(registro, campo, valor):
-                    raise ErroTcepe(
-                        f"{entidade} ignorou o filtro {campo}={valor}: veio {str(registro)[:200]}"
-                    )
-        return registros
+                if _mesmo_numero(registro, campo, valor):
+                    continue
+                if campo in _FILTROS_SUBSTRING and _contem_numero(registro, campo, valor):
+                    descartar = True
+                    continue
+                raise ErroTcepe(
+                    f"{entidade} ignorou o filtro {campo}={valor}: veio {str(registro)[:200]}"
+                )
+            if descartar:
+                logger.debug("tcepe_descartado_por_substring entidade=%s", entidade)
+            else:
+                conferidos.append(registro)
+        return conferidos
 
     def _com_tentativas(self, entidade: str, filtros: dict[str, str]) -> Any:
         tentativas = Retrying(

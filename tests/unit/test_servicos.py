@@ -9,9 +9,11 @@ from radar.precos import (
     Classificacao,
     Escopo,
     carregar_servicos,
+    carregar_termos_processo,
     classificar,
     escopo_de_rede,
     extrair_dn,
+    faixa_profundidade,
     normalizar_unidade,
     sem_acento,
     tem_termo,
@@ -168,12 +170,18 @@ def _rede(servico: str, material: str, dn: int, escopo: Escopo, fator: str = "1"
         (
             "ESCAVACAO MECANICA DE VALA EM MATERIAL DE 1A CATEGORIA ATE 1,50 M",
             "M3",
-            Classificacao("escavacao_vala", None, None, None, "m3", Decimal(1)),
+            Classificacao("escavacao_vala", None, None, None, "m3", Decimal(1), "ate_1_5m"),
         ),
         (
-            f"ESCAVA{FFFD}{FFFD}O MEC{FFFD}NICA DE VALA",
+            f"ESCAVA{FFFD}{FFFD}O MEC{FFFD}NICA DE VALA AT{FFFD} 1,5 M",
             "m³",
-            Classificacao("escavacao_vala", None, None, None, "m3", Decimal(1)),
+            Classificacao("escavacao_vala", None, None, None, "m3", Decimal(1), "ate_1_5m"),
+        ),
+        (
+            "ESCAVAÇÃO MECANIZADA DE VALA COM PROF. MAIOR QUE 1,5 M ATÉ 3,0 M (MÉDIA MONTANTE E "
+            "JUSANTE/UMA COMPOSIÇÃO POR TRECHO), RETROESCAV. (0,26 M3), LARG. DE 0,8 M A 1,5 M",
+            "M3",
+            Classificacao("escavacao_vala", None, None, None, "m3", Decimal(1), "1_5_a_3m"),
         ),
         (
             "RECOMPOSICAO DE PAVIMENTO ASFALTICO EM CBUQ E=5CM",
@@ -249,6 +257,25 @@ def test_classifica_descricoes_reais(descricao: str, unidade: str, esperado: Cla
         ("REMANEJAMENTO DE REDE DE AGUA PVC DN 100, INCLUSIVE ASSENTAMENTO", "M"),
         ("CARGA, MANOBRA E DESCARGA DE TUBO PVC P/ REDE DE ESGOTO DN 150, MAO DE OBRA", "M"),
         ("ESCAVACAO MECANICA DE VALA, INCLUSIVE CARGA", "M3"),
+        # Fix round 1: falsos positivos vistos no TCE-PE (2026-11-27).
+        ("CONSERTO DE RAMAIS PREDIAIS DE ÁGUA DANIFICADOS DURANTE EXECUÇÃO DAS OBRAS.", "UN"),
+        ("CONSERTO DE RAMAIS PREDIAIS DE ESGOTO DANIFICADOS DURANTE EXECUÇÃO DAS OBRAS.", "UN"),
+        ("REPARO DE LIGACAO PREDIAL DE AGUA", "UN"),
+        ("MANUTENÇÃO DE RAMAL PREDIAL DE ESGOTO", "UN"),
+        ("INSTALAÇÃO OU SUBSTITUIÇÃO DE RAMAL PREDIAL DE ESGOTO ATÉ 5,00 M SEM PAVIMENTO.", "UN"),
+        (
+            "TUBO DE POLIETILENO DE ALTA DENSIDADE, PEAD, PE-80, DE= 315 MM X 28,7 MM PAREDE, "
+            "(SDR 11 - PN 12,5) PARA REDE DE AGUA OU ESGOTO",
+            "M",
+        ),
+        ("FORNECIMENTO E ASSENTAMENTO DE TUBO PVC DN 150 PARA REDE DE ÁGUA E ESGOTO", "M"),
+        ("Escavação mecânica, reaterro e compactação vala material 1ª categoria ate 1,5 m", "M3"),
+        ("ESCAVACAO MECANICA DE VALA ATE 1,5 M, INCLUSIVE COMPACTACAO DO FUNDO", "M3"),
+        # Escavação sem faixa de profundidade, ou com faixa que atravessa um limite.
+        (f"ESCAVA{FFFD}{FFFD}O MEC{FFFD}NICA DE VALA", "m³"),
+        ("ESCAVACAO MECANICA DE VALA ATE 3,0 M", "M3"),
+        ("ESCAVACAO MECANICA DE VALA ACIMA DE 1,5 M", "M3"),
+        ("ESCAVACAO MECANICA DE VALA PROF. ATE 7,0 M", "M3"),
         ("RELIGACAO DE AGUA", "UN"),
     ],
 )
@@ -276,3 +303,63 @@ def test_nao_casa(descricao: str, unidade: str) -> None:
 )
 def test_escopo_de_rede(descricao: str, escopo: str | None) -> None:
     assert escopo_de_rede(sem_acento(descricao)) == escopo
+
+
+@pytest.mark.parametrize(
+    ("descricao", "faixa"),
+    [
+        # Descrições reais do TCE-PE (Compesa, Pedra, Palmares; 2026).
+        (
+            "ESCAVAÇÃO MECANIZADA DE VALA COM PROF. ATÉ 1,5 M (MÉDIA MONTANTE E JUSANTE/UMA "
+            "COMPOSIÇÃO POR TRECHO), RETROESCAV. (0,26 M3), LARG. DE 0,8 M A 1,5 M, EM SOLO DE",
+            "ate_1_5m",
+        ),
+        (
+            "ESCAVAÇÃO MECANIZADA DE VALA COM PROFUNDIDADE ATÉ 1,5\nM (MÉDIA ENTRE MONTANTE E "
+            "JUSANTE/UMA COMPOSIÇÃO POR\nTRECHO) COM RETROESCAVADEIRA (CAPACIDADE DA CAÇAMBA DA "
+            "RETRO: 0,26 M³ / POTÊNCIA: 88\nHP), LARGURA MENOR QUE 0,8 M",
+            "ate_1_5m",
+        ),
+        (
+            "ESCAVAÇÃO MANUAL DE VALA COM PROFUNDIDADE MENOR OU IGUAL A 1,30 M. AF_02/2021",
+            "ate_1_5m",
+        ),
+        (
+            "ESCAVAÇÃO MECANIZADA DE VALA COM PROF. MAIOR QUE 1,50 M ATÉ 3,0 M (MÉDIA MONTANTE E "
+            "JUSANTE/UMA COMPOSIÇÃO POR TRECHO)",
+            "1_5_a_3m",
+        ),
+        (
+            "ESCAVAÇÃO MANUAL DE VALAS EM MATERIAL DE 1ª E/OU 2ª CATEGORIAS ACIMA DE 1,50 M E ATÉ "
+            "3,00 M DE PROFUNDIDADE",
+            "1_5_a_3m",
+        ),
+        ("ESCAVACAO DE VALA 1,5 A 3,0 M", "1_5_a_3m"),
+        (
+            "ESCAVAÇÃO MECANIZADA DE VALA COM PROF. DE 3,0 M ATÉ 4,5 M(MÉDIA MONTANTE E "
+            "JUSANTE/UMA COMPOSIÇÃO POR TRECHO), ESCAVADEIRA",
+            "3_a_6m",
+        ),
+        (
+            "ESCAVAÇÃO MECANIZADA DE VALA COM PROF. MAIOR QUE 4,5 M ATÉ 6,0 M (MÉDIA MONTANTE E "
+            "JUSANTE/UMA COMPOSIÇÃO POR TRECHO)",
+            "3_a_6m",
+        ),
+        ("ESCAVACAO DE VALA ACIMA DE 3,00 M", "3_a_6m"),
+        # Sem profundidade, só a largura, faixa que atravessa um limite ou duas faixas.
+        ("ESCAVACAO MECANICA DE VALA", None),
+        ("ESCAVACAO DE VALA, LARG. DE 0,8 M A 1,5 M", None),
+        ("ESCAVACAO DE VALA ATE 3,0 M", None),
+        ("ESCAVACAO DE VALA ACIMA DE 1,5 M", None),
+        ("ESCAVACAO DE VALA ATE 1,5 M E DE 1,5 A 3,0 M", None),
+        ("RETROESCAVADEIRA (0,26 M3)", None),
+    ],
+)
+def test_faixa_profundidade(descricao: str, faixa: str | None) -> None:
+    assert faixa_profundidade(sem_acento(descricao)) == faixa
+
+
+def test_termos_de_processo_na_config() -> None:
+    termos = carregar_termos_processo()
+    assert {"esgotamento sanitario", "rede coletora", "rede de agua"} <= set(termos)
+    assert all(t == sem_acento(t) for t in termos)
