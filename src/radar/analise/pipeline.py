@@ -31,7 +31,6 @@ from radar.analise.extrator import SISTEMA, extrair_exigencias
 from radar.analise.modelos import AnaliseEdital, DocumentoEdital, StatusDocumento
 from radar.analise.perfil import Perfil
 from radar.analise.provedor import ConfigIA, Provedor, Resposta
-from radar.editais.modelos import Edital
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +40,9 @@ class AlvoAnalise:
     fonte: str
     id_na_fonte: str
     valor_estimado: Decimal | None
+    # Registro bruto da fonte, para quem tira os documentos dele (Sanepar: `detalhe.anexos`).
+    # Quem monta o alvo lê do banco (`radar.editais.bruto_do_edital`): analise não importa editais.
+    bruto: dict[str, Any] | None = field(default=None, compare=False, repr=False)
 
 
 @dataclass(frozen=True)
@@ -222,7 +224,7 @@ def _processar_documento(
 
 
 def _arquivos_da_fonte(
-    sessao: Session, alvo: AlvoAnalise, dep: Dependencias
+    alvo: AlvoAnalise, dep: Dependencias
 ) -> tuple[ClienteArquivosPNCP, list[ArquivoPNCP]]:
     """Quem baixa e o quê: API de arquivos do PNCP, ou os anexos que a coleta da Sanepar guardou."""
     if alvo.fonte == "pncp":
@@ -233,20 +235,14 @@ def _arquivos_da_fonte(
     if alvo.fonte == "sanepar":
         if dep.cliente_sanepar is None:
             raise ValueError("sem cliente de documentos da Sanepar")
-        bruto = sessao.scalar(
-            select(Edital.bruto).where(
-                Edital.fonte == alvo.fonte, Edital.id_na_fonte == alvo.id_na_fonte
-            )
-        )
-        sessao.commit()  # fecha a leitura antes da rede
-        return dep.cliente_sanepar, arquivos_sanepar(bruto)
+        return dep.cliente_sanepar, arquivos_sanepar(alvo.bruto)
     raise ValueError(f"fonte sem análise: {alvo.fonte}~{alvo.id_na_fonte}")
 
 
 def _documentos(
     sessao: Session, alvo: AlvoAnalise, dep: Dependencias, agora: datetime
 ) -> _Documentos:
-    cliente, escolhidos = _arquivos_da_fonte(sessao, alvo, dep)
+    cliente, escolhidos = _arquivos_da_fonte(alvo, dep)
     resultado = _Documentos()
     for arquivo in escolhidos:
         inicio = len(resultado.paginas) + 1

@@ -6,6 +6,7 @@ import json
 import logging
 import time
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -60,6 +61,7 @@ from radar.comum.telemetria import telemetria_do_processo, tracer
 from radar.editais import (
     Criterios,
     EditalResumo,
+    bruto_do_edital,
     carregar_criterios,
     obter_edital,
     separar_id_publico,
@@ -685,6 +687,10 @@ def _alvos_analise(
         if not refazer and ja_analisado(sessao, alvo, modelo, versao):
             pulados += 1
             continue
+        if alvo.fonte == "sanepar":
+            # Os documentos da Sanepar saem dos anexos que a coleta guardou no bruto.
+            bruto = bruto_do_edital(sessao, alvo.fonte, alvo.id_na_fonte)
+            alvo = replace(alvo, bruto=bruto)
         alvos.append(alvo)
     return alvos, pulados
 

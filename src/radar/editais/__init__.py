@@ -4,6 +4,7 @@ from radar.editais.filtro import (
     Criterios,
     EditalDetalhe,
     EditalResumo,
+    bruto_do_edital,
     carregar_criterios,
     filtrar,
     id_publico,
@@ -20,6 +21,7 @@ from radar.editais.registro import (
 )
 
 __all__ = [
+    "bruto_do_edital",
     "Criterios",
     "EditalDetalhe",
     "EditalResumo",
