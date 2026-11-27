@@ -260,3 +260,35 @@ def test_recomparar_refaz_veredito_com_perfil_novo_sem_ia(sessao: Session, tmp_p
     assert capital["situacao"] == "nao_atende"
     assert recomparar(sessao, menor) == (1, 0)  # idempotente
     assert recomparar(sessao, PERFIL) == (1, 1)
+
+
+def _zip(arquivos: dict[str, bytes]) -> bytes:
+    import io
+    import zipfile
+
+    saida = io.BytesIO()
+    with zipfile.ZipFile(saida, "w") as pacote:
+        for nome, dados in arquivos.items():
+            pacote.writestr(nome, dados)
+    return saida.getvalue()
+
+
+def test_documento_em_zip_le_o_edital_de_dentro(sessao: Session, tmp_path: Path) -> None:
+    # Como a Prefeitura de Patrocínio Paulista publica no PNCP: o edital num ZIP.
+    rede = Rede({1: _zip({"EDITAL - CONCORRENCIA ELETRONICA 03 2026.pdf": PDF_TEXTO})})
+    analise = analisar_edital(sessao, ALVO, _dep(rede, tmp_path, ProvedorFalso()), AGORA)
+    assert analise.veredito == "apto"
+    [documento] = sessao.scalars(select(DocumentoEdital)).all()
+    assert documento.status == "extraido"
+    assert documento.titulo == "doc1.pdf › EDITAL - CONCORRENCIA ELETRONICA 03 2026.pdf"
+
+
+def test_zip_sem_edital_fica_nao_pdf_com_motivo(sessao: Session, tmp_path: Path) -> None:
+    rede = Rede({1: _zip({"ANEXO XVIII - BDI.pdf": PDF_TEXTO}), 2: PDF_TEXTO})
+    analisar_edital(sessao, ALVO, _dep(rede, tmp_path, ProvedorFalso()), AGORA)
+    status = {d.sequencial: (d.status, d.erro) for d in sessao.scalars(select(DocumentoEdital))}
+    assert status[1] == (
+        "nao_pdf",
+        "ZIP sem edital, termo de referência ou habilitação em PDF ou Word",
+    )
+    assert status[2] == ("extraido", None)

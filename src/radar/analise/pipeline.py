@@ -39,6 +39,13 @@ from radar.analise.extracao import (
 )
 from radar.analise.extrator import SISTEMA, extrair_exigencias
 from radar.analise.modelos import AnaliseEdital, DocumentoEdital, StatusDocumento
+from radar.analise.pacotes import (
+    base_do_nome,
+    escolher_no_pacote,
+    legivel,
+    ler_entrada,
+    ler_pacote,
+)
 from radar.analise.perfil import Perfil
 from radar.analise.provedor import ConfigIA, Provedor, Resposta
 
@@ -205,7 +212,7 @@ def _processar_documento(
     paginas: list[str] = []
     status: StatusDocumento
     try:
-        dados = cliente.baixar(arquivo.url)
+        dados = _abrir_se_pacote(cliente.baixar(arquivo.url), valores)
     except GrandeDemais as erro:
         status, valores["erro"] = "grande_demais", str(erro)
     except ErroArquivos as erro:
@@ -245,6 +252,25 @@ def _processar_documento(
         )
     _upsert_documento(sessao, valores)
     return _Documento(arquivo.sequencial, valores["sha256"], status), paginas
+
+
+def _abrir_se_pacote(dados: bytes, valores: dict[str, Any]) -> bytes:
+    """Documento que é ZIP (não .docx): o edital, TR ou habilitação de dentro dele.
+
+    O PNCP aceita ZIP como documento: a Prefeitura de Patrocínio Paulista publicou a
+    Concorrência 03/2026 em 12 ZIPs, todos do tipo "Edital", com o PDF do edital dentro do 1º.
+    Sem nada que sirva dentro, os bytes voltam como estão e o documento fica `nao_pdf`.
+    """
+    if dados[:4] != b"PK" or eh_docx(dados):
+        return dados
+    pacote = ler_pacote(dados)
+    escolhidos = [] if pacote is None else escolher_no_pacote(pacote.namelist(), limite=1)
+    if pacote is None or not escolhidos:
+        valores["erro"] = "ZIP sem edital, termo de referência ou habilitação em PDF ou Word"
+        return dados
+    nome = escolhidos[0].nome
+    valores["titulo"] = f"{valores['titulo']} › {base_do_nome(legivel(nome))}"
+    return ler_entrada(pacote, nome)
 
 
 def _extrator(dados: bytes) -> Callable[[bytes], TextoExtraido] | None:
