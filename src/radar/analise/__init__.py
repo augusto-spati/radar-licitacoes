@@ -11,7 +11,11 @@ from radar.analise.arquivos_pncp import (
     criar_http_arquivos,
     escolher_documentos,
 )
-from radar.analise.arquivos_sanepar import arquivos_sanepar, criar_cliente_sanepar
+from radar.analise.arquivos_sanepar import (
+    DocumentosSanepar,
+    arquivos_sanepar,
+    criar_cliente_sanepar,
+)
 from radar.analise.cache import (
     CacheArquivos,
     CacheBanco,
@@ -87,6 +91,7 @@ __all__ = [
     "DocumentosCompesa",
     "SemDocumentos",
     "criar_documentos_compesa",
+    "DocumentosSanepar",
     "arquivos_sanepar",
     "criar_cliente_sanepar",
     "CAMPOS",

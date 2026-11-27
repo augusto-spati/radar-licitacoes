@@ -735,6 +735,7 @@ def analisar(
         FONTES_ANALISADAS,
         CacheBanco,
         Dependencias,
+        DocumentosSanepar,
         ProvedorComCache,
         SemDocumentos,
         TetoAtingido,
@@ -806,13 +807,13 @@ def analisar(
                         guarda_teto(sessao, config_ia, _agora, lambda: Decimal(0)),
                     )
                     cliente = _criar_cliente_arquivos()
-                    cliente_sanepar = _criar_cliente_sanepar()
+                    documentos_sanepar = DocumentosSanepar(_criar_cliente_sanepar())
                     documentos_compesa = (
                         _criar_documentos_compesa() if "compesa" in fontes_pedidas else None
                     )
                     dep = Dependencias(
                         cliente_arquivos=cliente,
-                        cliente_sanepar=cliente_sanepar,
+                        documentos_sanepar=documentos_sanepar,
                         documentos_compesa=documentos_compesa,
                         armazem=criar_armazem(ambiente.documentos),
                         provedor=provedor,
@@ -882,7 +883,7 @@ def analisar(
                             analisados += 1
                     finally:
                         cliente.fechar()
-                        cliente_sanepar.fechar()
+                        documentos_sanepar.fechar()
                         if documentos_compesa is not None:
                             documentos_compesa.fechar()
                 finally:
