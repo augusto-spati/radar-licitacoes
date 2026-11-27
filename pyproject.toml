@@ -98,6 +98,7 @@ forbidden_modules = [
     "radar.editais.registro",
     "radar.editais.resultados",
     "radar.editais.modelos",
+    "radar.editais.planilhas",
     "radar.analise.exigencias",
     "radar.analise.modelos",
     "radar.analise.normalizacao",

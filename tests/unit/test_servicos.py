@@ -297,6 +297,11 @@ def test_nao_casa(descricao: str, unidade: str) -> None:
         ("FORNECIMENTO E ASSENTAMENTO DE TUBO PVC DN 150", "completo"),
         ("EXECUCAO DE REDE DE AGUA DN 100 INCLUSIVE FORNECIMENTO", "completo"),
         ("ASSENTAMENTO DE TUBO PVC DN 150 EXCLUSIVE FORNECIMENTO", "assentamento"),
+        # SINAPI: "(NÃO INCLUI O FORNECIMENTO)" (Ibaté, 7b.2) era lido como completo.
+        (
+            "ASSENTAMENTO DE TUBO DE FERRO FUNDIDO DN 150 (NÃO INCLUI O FORNECIMENTO)",
+            "assentamento",
+        ),
         (f"FORNECIMENTO E INSTALA{FFFD}{FFFD}O DE TUBO PVC DN 150", "completo"),
         ("REDE DE AGUA PVC DN 150, MAO DE OBRA", "assentamento"),
         # Sem verbo nem "TUBO" no começo: não dá para saber se inclui o tubo.

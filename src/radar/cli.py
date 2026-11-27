@@ -10,7 +10,7 @@ from dataclasses import replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -69,10 +69,13 @@ from radar.comum import (
 from radar.comum.telemetria import telemetria_do_processo, tracer
 from radar.editais import (
     FONTE_TCEPE,
+    AlvoPlanilha,
     Criterios,
     EditalResumo,
     VencedorExterno,
     alvo_historico_tcepe,
+    alvo_planilha,
+    alvos_planilha,
     alvos_resultado,
     apagar_casos_externos,
     bruto_do_edital,
@@ -92,13 +95,22 @@ from radar.editais import (
 )
 from radar.editais import filtrar as filtrar_editais
 from radar.precos import (
+    EditalPlanilha,
+    LinhaPlanilha,
     apagar_processos,
     contratados_gravados,
+    gasto_planilhas_do_mes,
+    gravar_planilha,
     gravar_precos,
+    itens_da_planilha,
     itens_de_processo,
+    ler_planilha,
+    linhas_da_ia,
+    planilhas_a_ignorar,
     processo_de_saneamento,
     processo_homologado,
     processos_gravados,
+    registrar_planilha,
 )
 from radar.processador import (
     FilaLocal,
@@ -115,8 +127,11 @@ if TYPE_CHECKING:
         AlvoAnalise,
         ClienteArquivosPNCP,
         ConfigIA,
+        ConfigPlanilhas,
+        DocumentoPlanilha,
         DocumentosCompesa,
         Provedor,
+        ProvedorComCache,
     )
 
 logger = logging.getLogger(__name__)
@@ -132,6 +147,10 @@ app_resultados = typer.Typer(help="Resultados das contratações (PNCP).", no_ar
 app.add_typer(app_resultados, name="resultados")
 app_tcepe = typer.Typer(help="Dados abertos do TCE-PE (etapa 7b).", no_args_is_help=True)
 app.add_typer(app_tcepe, name="tcepe")
+app_planilhas = typer.Typer(
+    help="Planilhas orçamentárias dos editais do PNCP (etapa 7b.2).", no_args_is_help=True
+)
+app.add_typer(app_planilhas, name="planilhas")
 
 UA_TCEPE = "radar-licitacoes-estudo (github.com/augusto-spati/radar-licitacoes)"
 URL_SONDA_TCEPE = (
@@ -1419,6 +1438,324 @@ def tcepe_atualizar(
         )
     )
     _sair_sem_resultado(falhas)
+
+
+# --- 7b.2: planilhas orçamentárias do PNCP ---
+
+TRAVA_PLANILHAS = "planilhas"
+DURACAO_TRAVA_PLANILHAS = timedelta(minutes=30)
+FALHAS_SEGUIDAS_PLANILHAS = 5
+
+
+class _Rodada:
+    """Contagens da rodada de `planilhas atualizar` (para a última linha da saída)."""
+
+    def __init__(self) -> None:
+        self.contagem: dict[str, int] = {}
+        self.linhas_gravadas = 0
+        self.custo_usd = Decimal(0)
+
+    def contar(self, desfecho: str) -> None:
+        self.contagem[desfecho] = self.contagem.get(desfecho, 0) + 1
+
+    def de(self, desfecho: str) -> int:
+        return self.contagem.get(desfecho, 0)
+
+
+def _edital_planilha(alvo: AlvoPlanilha) -> EditalPlanilha | None:
+    if not alvo.uf:
+        return None
+    return EditalPlanilha(
+        id_pncp=alvo.id_na_fonte,
+        uf=alvo.uf,
+        municipio=alvo.municipio,
+        orgao_nome=alvo.orgao_nome,
+        orgao_cnpj=alvo.orgao_cnpj,
+        objeto=alvo.objeto,
+        data=alvo.data_publicacao.date() if alvo.data_publicacao else None,
+    )
+
+
+def _melhor(
+    documentos: list["DocumentoPlanilha"], so_paginas_com_precos: bool, minimo_rs: int
+) -> tuple["DocumentoPlanilha | None", list[LinhaPlanilha]]:
+    """O documento com mais linhas coerentes (uma planilha por edital) e as linhas dele."""
+    from radar.analise import paginas_com_precos
+
+    escolhido: DocumentoPlanilha | None = None
+    linhas: list[LinhaPlanilha] = []
+    for documento in documentos:
+        paginas = documento.paginas
+        if so_paginas_com_precos:
+            paginas = [paginas[i] for i in paginas_com_precos(paginas, minimo_rs)]
+        lidas = ler_planilha(paginas)
+        if len(lidas) > len(linhas):
+            escolhido, linhas = documento, lidas
+    return escolhido, linhas
+
+
+def _texto_ia(
+    busca_planilhas: list["DocumentoPlanilha"],
+    editais: list["DocumentoPlanilha"],
+    config: "ConfigPlanilhas",
+) -> tuple["DocumentoPlanilha | None", str]:
+    """Documento e texto para a IA: a planilha pelo nome (todas as páginas, até o corte) ou,
+    sem ela, o documento do edital com mais páginas de preço (só essas páginas)."""
+    from radar.analise import paginas_com_precos, texto_para_ia
+
+    if busca_planilhas:
+        documento = busca_planilhas[0]
+        return documento, "\n".join(documento.paginas)[: config.max_caracteres]
+    if not editais:
+        return None, ""
+    documento = max(
+        editais, key=lambda d: len(paginas_com_precos(d.paginas, config.minimo_rs_por_pagina))
+    )
+    return documento, texto_para_ia(documento.paginas, config)
+
+
+def _planilha_de_um_edital(
+    sessao: Session,
+    cliente: "ClienteArquivosPNCP",
+    provedor: "ProvedorComCache | None",
+    config_ia: "ConfigIA",
+    config: "ConfigPlanilhas",
+    alvo: AlvoPlanilha,
+    gasto_mes: Decimal,
+    rodada: _Rodada,
+) -> str:
+    """Acha, lê e grava a planilha de um edital; commita e devolve o desfecho."""
+    from radar.analise import PuladoTeto, documentos_do_edital, extrair_planilha_ia
+    from radar.analise import procurar_planilhas as procurar
+
+    edital = _edital_planilha(alvo)
+    if edital is None:
+        registrar_planilha(sessao, alvo.id_na_fonte, "falhou", motivo="edital sem UF")
+        sessao.commit()
+        return "falhou"
+    arquivos = cliente.listar(alvo.cnpj, alvo.ano, alvo.sequencial)
+
+    def baixar(url: str, limite: int) -> bytes:
+        return cliente.baixar(url, limite)
+
+    busca = procurar(arquivos, baixar, config)
+    documento, linhas = _melhor(busca.planilhas, False, config.minimo_rs_por_pagina)
+    editais: list[DocumentoPlanilha] = []
+    if len(linhas) < config.minimo_linhas:
+        editais = documentos_do_edital(arquivos, baixar, config, busca)
+        doc_edital, linhas_edital = _melhor(editais, True, config.minimo_rs_por_pagina)
+        if len(linhas_edital) > len(linhas):
+            documento, linhas = doc_edital, linhas_edital
+    metodo: Literal["deterministico", "ia"] = "deterministico"
+    custo = Decimal(0)
+    if len(linhas) < config.minimo_linhas:
+        alvo_ia, texto = _texto_ia(busca.planilhas, editais, config)
+        if alvo_ia is not None and texto.strip() and provedor is not None:
+            try:
+                resposta = extrair_planilha_ia(
+                    texto, provedor, config_ia.modelo_padrao, config_ia, config, gasto_mes
+                )
+            except PuladoTeto:
+                registrar_planilha(
+                    sessao,
+                    edital.id_pncp,
+                    "pulado_teto",
+                    sha256=alvo_ia.sha256,
+                    documento=alvo_ia.nome,
+                    orgao_cnpj=edital.orgao_cnpj,
+                )
+                sessao.commit()
+                return "pulado_teto"
+            custo = resposta.custo_usd
+            rodada.custo_usd += custo
+            linhas_ia = linhas_da_ia(resposta.linhas, texto, resposta.total_planilha)
+            if len(linhas_ia) > len(linhas):
+                documento, linhas, metodo = alvo_ia, linhas_ia, "ia"
+            elif not linhas:
+                registrar_planilha(
+                    sessao,
+                    edital.id_pncp,
+                    "sem_planilha",
+                    metodo="ia",
+                    sha256=alvo_ia.sha256,
+                    documento=alvo_ia.nome,
+                    orgao_cnpj=edital.orgao_cnpj,
+                    custo_usd=custo,
+                    motivo=f"IA: {len(resposta.linhas)} linhas, nenhuma passou na conta",
+                )
+                sessao.commit()
+                return "sem_planilha"
+        elif alvo_ia is not None and texto.strip() and not linhas:
+            # Pede IA e ela está desligada: tenta de novo depois (`falhou`).
+            registrar_planilha(sessao, edital.id_pncp, "falhou", motivo="IA desligada")
+            sessao.commit()
+            return "falhou"
+    if documento is None or not linhas:
+        registrar_planilha(sessao, edital.id_pncp, "sem_planilha", orgao_cnpj=edital.orgao_cnpj)
+        sessao.commit()
+        return "sem_planilha"
+    itens = itens_da_planilha(edital, documento.sha256, linhas)
+    gravacao = gravar_planilha(
+        sessao,
+        edital,
+        documento.sha256,
+        itens,
+        metodo=metodo,
+        documento=documento.nome,
+        linhas_lidas=len(linhas),
+        custo_usd=custo,
+    )
+    sessao.commit()
+    rodada.linhas_gravadas += gravacao.gravadas
+    logger.info(
+        "planilha_extraida",
+        extra={
+            "id_pncp": edital.id_pncp,
+            "metodo": metodo,
+            "linhas_lidas": len(linhas),
+            "linhas_gravadas": gravacao.gravadas,
+            "republicadas": len(gravacao.republicadas),
+        },
+    )
+    return f"extraida_{metodo}"
+
+
+def _alvos_planilhas(
+    sessao: Session,
+    criterios: Criterios,
+    config: "ConfigPlanilhas",
+    edital: str | None,
+    limite: int | None,
+    refazer: bool,
+) -> list[AlvoPlanilha]:
+    if edital is not None:
+        unico = alvo_planilha(sessao, edital)
+        if unico is None:
+            typer.echo(f"edital do PNCP não encontrado: {edital}", err=True)
+            raise typer.Exit(code=2)
+        return [unico]
+    ignorar = set() if refazer else planilhas_a_ignorar(sessao, _agora())
+    return alvos_planilha(
+        sessao,
+        criterios,
+        _agora(),
+        config.janela_dias,
+        limite or config.max_editais_por_rodada,
+        ignorar,
+    )
+
+
+@app_planilhas.command("atualizar")
+def planilhas_atualizar(
+    limite: Annotated[
+        int | None, typer.Option(min=1, help="Máximo de editais (padrão: config/ia.toml).")
+    ] = None,
+    edital: Annotated[
+        str | None, typer.Option(help="Só este id_publico (pncp~...), mesmo já processado.")
+    ] = None,
+    refazer: Annotated[bool, typer.Option("--refazer", help="Ignora o estado gravado.")] = False,
+    config: OpcaoConfig = ARQUIVO_CONFIG,
+) -> None:
+    """Lê as planilhas orçamentárias dos editais do PNCP (redes e perdas) e grava os preços."""
+    from radar.analise import (
+        CacheBanco,
+        ErroArquivos,
+        ProvedorComCache,
+        TetoAtingido,
+        carregar_config_ia,
+        carregar_config_planilhas,
+        guarda_teto,
+    )
+
+    configurar_logs()
+    ambiente = obter_config()
+    config_ia = carregar_config_ia(ambiente.config_ia)
+    config_planilhas = carregar_config_planilhas(ambiente.config_ia)
+    criterios = carregar_criterios(config)
+    rodada = _Rodada()
+    alvos: list[AlvoPlanilha] = []
+    falhas = seguidas = 0
+    interrompida = teto = False
+    dono = uuid4()
+    with telemetria_do_processo("radar-planilhas"), _criar_sessao() as sessao:
+        if not obter_trava(sessao, TRAVA_PLANILHAS, dono, DURACAO_TRAVA_PLANILHAS):
+            # Não é falha: a outra rodada está fazendo o trabalho.
+            typer.echo("planilhas: outra rodada em andamento; nada feito")
+            return
+        try:
+            alvos = _alvos_planilhas(sessao, criterios, config_planilhas, edital, limite, refazer)
+            gasto_mes = gasto_planilhas_do_mes(sessao, _agora())
+            sessao.rollback()  # só leitura: nada aberto durante a rede e o Bedrock
+            provedor = None
+            if ambiente.ia_provedor != "desligado":
+                # O cache no banco commita cada resposta paga na hora: entra no gasto do mês.
+                provedor = ProvedorComCache(
+                    _criar_provedor_ia(config_ia),
+                    CacheBanco(sessao),
+                    "gravar",
+                    config_ia,
+                    guarda_teto(sessao, config_ia, _agora, lambda: Decimal(0)),
+                )
+            cliente = _criar_cliente_arquivos()
+            try:
+                for alvo in alvos:
+                    if not obter_trava(sessao, TRAVA_PLANILHAS, dono, DURACAO_TRAVA_PLANILHAS):
+                        typer.echo("trava das planilhas perdida: rodada interrompida", err=True)
+                        falhas += 1
+                        break
+                    try:
+                        desfecho = _planilha_de_um_edital(
+                            sessao,
+                            cliente,
+                            provedor,
+                            config_ia,
+                            config_planilhas,
+                            alvo,
+                            gasto_mes + rodada.custo_usd,
+                            rodada,
+                        )
+                    except TetoAtingido:
+                        sessao.rollback()
+                        teto = True
+                        typer.echo("teto mensal da IA atingido: rodada interrompida")
+                        break
+                    except Exception as erro:  # um edital ruim não para a rodada
+                        sessao.rollback()
+                        logger.exception("planilha_falhou", extra={"id_pncp": alvo.id_na_fonte})
+                        falhas += 1
+                        try:
+                            # Só o tipo: a mensagem pode trazer texto do edital ou do modelo.
+                            registrar_planilha(
+                                sessao, alvo.id_na_fonte, "falhou", motivo=type(erro).__name__
+                            )
+                            sessao.commit()
+                        except Exception:
+                            sessao.rollback()
+                        seguidas = seguidas + 1 if isinstance(erro, ErroArquivos) else 0
+                        if seguidas >= FALHAS_SEGUIDAS_PLANILHAS:
+                            interrompida = True
+                            break
+                        continue
+                    seguidas = 0
+                    rodada.contar(desfecho)
+            finally:
+                cliente.fechar()
+        finally:
+            liberar_trava(sessao, TRAVA_PLANILHAS, dono)
+    # A última linha da saída. Nunca "resultado:": roda na task do analisar, no log group do
+    # coletor, e essa linha calaria o alarme "não rodou".
+    typer.echo(
+        f"planilhas: {len(alvos)} editais, {rodada.de('extraida_deterministico')} lidas sem IA, "
+        f"{rodada.de('extraida_ia')} com IA, {rodada.de('sem_planilha')} sem planilha, "
+        f"{rodada.de('pulado_teto')} puladas pelo teto, {falhas + rodada.de('falhou')} falhas, "
+        f"{rodada.linhas_gravadas} linhas gravadas, US$ {rodada.custo_usd:.4f}"
+        + (
+            f" (interrompida após {FALHAS_SEGUIDAS_PLANILHAS} falhas seguidas do PNCP)"
+            if interrompida
+            else ""
+        )
+    )
+    _sair_sem_resultado(falhas + int(teto))
 
 
 OpcaoRaizEvals = Annotated[Path, typer.Option("--raiz", help="Pasta do corpus de evals.")]

@@ -45,6 +45,7 @@ from radar.editais.modelos import (
     ResultadoItem,
     Situacao,
 )
+from radar.editais.planilhas import AlvoPlanilha, alvo_planilha, alvos_planilha
 from radar.editais.registro import (
     ResultadoRegistro,
     reconciliar_retrato,
@@ -78,6 +79,9 @@ __all__ = [
     "situacao_tcepe",
     "vencedor_gravado",
     "vencedor_tcepe",
+    "AlvoPlanilha",
+    "alvo_planilha",
+    "alvos_planilha",
     "ContratacaoPassada",
     "HistoricoOrgao",
     "Regua",

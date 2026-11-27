@@ -161,6 +161,7 @@ _SEM_FORNECIMENTO = (
     "exclusive fornecimento",
     "exceto fornecimento",
     "nao inclui fornecimento",
+    "nao inclui o fornecimento",
 )
 _FORNECIMENTO = ("fornecimento", "aquisicao")
 _INCLUSIVE = ("inclusive fornecimento", "inclusive o fornecimento", "inclusive tubo")
