@@ -21,6 +21,7 @@ from radar.analise.arquivos_pncp import (
     chave_pncp,
     escolher_documentos,
 )
+from radar.analise.arquivos_sanepar import arquivos_sanepar
 from radar.analise.cache import versao_prompt
 from radar.analise.comparacao import comparar
 from radar.analise.custos import custo
@@ -30,6 +31,7 @@ from radar.analise.extrator import SISTEMA, extrair_exigencias
 from radar.analise.modelos import AnaliseEdital, DocumentoEdital, StatusDocumento
 from radar.analise.perfil import Perfil
 from radar.analise.provedor import ConfigIA, Provedor, Resposta
+from radar.editais.modelos import Edital
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +51,12 @@ class Dependencias:
     config: ConfigIA
     perfil: Perfil
     modelo: str
+    # Documentos da Sanepar: outro cliente, preso a www.sanepar.com.br. Sem ele, edital da
+    # Sanepar falha com ValueError (a CLI sempre passa; testes do PNCP não precisam).
+    cliente_sanepar: ClienteArquivosPNCP | None = None
+
+
+FONTES_ANALISADAS = ("pncp", "sanepar")
 
 
 @dataclass(frozen=True)
@@ -148,6 +156,7 @@ def _processar_documento(
     dep: Dependencias,
     agora: datetime,
     pagina: int,
+    cliente: ClienteArquivosPNCP,
 ) -> tuple[_Documento, list[str]]:
     """Baixa, extrai e grava um documento. `pagina` = onde ele começaria no texto juntado."""
     guardado = _texto_guardado(sessao, alvo, arquivo, dep.armazem, pagina)
@@ -171,7 +180,7 @@ def _processar_documento(
     paginas: list[str] = []
     status: StatusDocumento
     try:
-        dados = dep.cliente_arquivos.baixar(arquivo.url)
+        dados = cliente.baixar(arquivo.url)
     except GrandeDemais as erro:
         status, valores["erro"] = "grande_demais", str(erro)
     except ErroArquivos as erro:
@@ -212,17 +221,38 @@ def _processar_documento(
     return _Documento(arquivo.sequencial, valores["sha256"], status), paginas
 
 
+def _arquivos_da_fonte(
+    sessao: Session, alvo: AlvoAnalise, dep: Dependencias
+) -> tuple[ClienteArquivosPNCP, list[ArquivoPNCP]]:
+    """Quem baixa e o quê: API de arquivos do PNCP, ou os anexos que a coleta da Sanepar guardou."""
+    if alvo.fonte == "pncp":
+        chave = chave_pncp(alvo.id_na_fonte)
+        if chave is None:
+            raise ValueError(f"id do PNCP fora do formato: {alvo.id_na_fonte}")
+        return dep.cliente_arquivos, escolher_documentos(dep.cliente_arquivos.listar(*chave))
+    if alvo.fonte == "sanepar":
+        if dep.cliente_sanepar is None:
+            raise ValueError("sem cliente de documentos da Sanepar")
+        bruto = sessao.scalar(
+            select(Edital.bruto).where(
+                Edital.fonte == alvo.fonte, Edital.id_na_fonte == alvo.id_na_fonte
+            )
+        )
+        sessao.commit()  # fecha a leitura antes da rede
+        return dep.cliente_sanepar, arquivos_sanepar(bruto)
+    raise ValueError(f"fonte sem análise: {alvo.fonte}~{alvo.id_na_fonte}")
+
+
 def _documentos(
     sessao: Session, alvo: AlvoAnalise, dep: Dependencias, agora: datetime
 ) -> _Documentos:
-    chave = chave_pncp(alvo.id_na_fonte) if alvo.fonte == "pncp" else None
-    if chave is None:
-        raise ValueError(f"só editais do PNCP nesta etapa: {alvo.fonte}~{alvo.id_na_fonte}")
-    escolhidos = escolher_documentos(dep.cliente_arquivos.listar(*chave))
+    cliente, escolhidos = _arquivos_da_fonte(sessao, alvo, dep)
     resultado = _Documentos()
     for arquivo in escolhidos:
         inicio = len(resultado.paginas) + 1
-        documento, paginas = _processar_documento(sessao, alvo, arquivo, dep, agora, inicio)
+        documento, paginas = _processar_documento(
+            sessao, alvo, arquivo, dep, agora, inicio, cliente
+        )
         resultado.linhas.append(documento)
         resultado.paginas.extend(paginas)
     return resultado

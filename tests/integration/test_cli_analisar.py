@@ -58,9 +58,13 @@ class ProvedorFalso:
 class Rede:
     def __init__(self) -> None:
         self.listagens: list[str] = []
+        self.sanepar: list[str] = []
 
     def tratar(self, requisicao: httpx.Request) -> httpx.Response:
         caminho = requisicao.url.path
+        if requisicao.url.host == "www.sanepar.com.br":
+            self.sanepar.append(caminho)
+            return httpx.Response(200, content=PDF_TEXTO)
         if caminho.endswith("/arquivos"):
             self.listagens.append(caminho)
             return httpx.Response(
@@ -96,7 +100,17 @@ def rede(
         return ClienteArquivosPNCP(http, pausa_s=0, espera_base=0)
 
     monkeypatch.setattr(cli, "_criar_provedor_ia", provedor)
+
+    def cliente_sanepar() -> ClienteArquivosPNCP:
+        http = httpx.Client(
+            base_url="https://www.sanepar.com.br", transport=httpx.MockTransport(rede.tratar)
+        )
+        return ClienteArquivosPNCP(
+            http, pausa_s=0, espera_base=0, origem=("https", "www.sanepar.com.br")
+        )
+
     monkeypatch.setattr(cli, "_criar_cliente_arquivos", cliente_arquivos)
+    monkeypatch.setattr(cli, "_criar_cliente_sanepar", cliente_sanepar)
     monkeypatch.setenv("RADAR_IA_PROVEDOR", "bedrock")
     monkeypatch.setenv("RADAR_DOCUMENTOS", str(tmp_path / "documentos"))
     monkeypatch.delenv("RADAR_CONFIG_IA", raising=False)
@@ -138,11 +152,11 @@ def _sanepar() -> dict[str, Any]:
         "situacao_original": "Abertura",
         "situacao_normalizada": "aberta",
         "data_encerramento_proposta": "2026-12-10T09:00:00",
-        "bruto": {},
+        "bruto": {"detalhe": {"anexos": [{"nome": "EDITAL LE 345 2026", "id": "221507"}]}},
     }
 
 
-def _popular(fabrica: sessionmaker[Session]) -> None:
+def _popular(fabrica: sessionmaker[Session], com_sanepar: bool = False) -> None:
     with fabrica() as sessao:
         registrar(
             sessao,
@@ -153,7 +167,8 @@ def _popular(fabrica: sessionmaker[Session]) -> None:
                 _registro("78200482000110-1-000301/2026", objeto="Obra de ponte"),
             ],
         )
-        registrar_normalizados(sessao, [_sanepar()])
+        if com_sanepar:
+            registrar_normalizados(sessao, [_sanepar()])
         sessao.commit()
 
 
@@ -166,14 +181,27 @@ def _analisados(fabrica: sessionmaker[Session]) -> set[str]:
         return set(sessao.scalars(select(AnaliseEdital.id_na_fonte)))
 
 
-def test_analisar_so_pncp_aberto_que_casa(
+def test_analisar_pncp_e_sanepar_abertos_que_casam(
+    rede: tuple[sessionmaker[Session], Rede], config_filtro: Path
+) -> None:
+    fabrica, rede_ = rede
+    _popular(fabrica, com_sanepar=True)
+    resultado = _analisar(config_filtro)
+    assert resultado.exit_code == 0, resultado.output
+    assert _analisados(fabrica) == {ABERTO, OUTRO_ABERTO, "OE-345/26"}
+    # O PDF da Sanepar vem do portal dela, pelo anexo que a coleta guardou.
+    assert rede_.sanepar == ["/licitacao/arquivo/221507"]
+
+
+def test_sanepar_tem_vaga_reservada_na_rodada(
     rede: tuple[sessionmaker[Session], Rede], config_filtro: Path
 ) -> None:
     fabrica, _ = rede
-    _popular(fabrica)
-    resultado = _analisar(config_filtro)
+    _popular(fabrica, com_sanepar=True)
+    # Com uma vaga só, a Sanepar (encerra depois dos dois do PNCP) ainda entra.
+    resultado = _analisar(config_filtro, "--limite", "1")
     assert resultado.exit_code == 0, resultado.output
-    assert _analisados(fabrica) == {ABERTO, OUTRO_ABERTO}
+    assert _analisados(fabrica) == {"OE-345/26"}
 
 
 def test_saida_nao_tem_resultado_dois_pontos(

@@ -189,7 +189,7 @@ def test_baixar_estoura_prazo_total_mesmo_recebendo_aos_poucos() -> None:
 )
 def test_baixar_so_de_https_pncp(url: str) -> None:
     cliente, chamadas = _cliente([httpx.Response(200, content=b"%PDF")])
-    with pytest.raises(ErroArquivos, match="fora do PNCP"):
+    with pytest.raises(ErroArquivos, match="fora de https://pncp.gov.br"):
         cliente.baixar(url)
     assert chamadas == []
 
@@ -198,7 +198,7 @@ def test_redirect_para_fora_do_pncp_nao_e_seguido() -> None:
     cliente, chamadas = _cliente(
         [httpx.Response(302, headers={"Location": "https://evil.example/edital.pdf"})]
     )
-    with pytest.raises(ErroArquivos, match="fora do PNCP"):
+    with pytest.raises(ErroArquivos, match="fora de https://pncp.gov.br"):
         cliente.baixar(f"{BASE}/x/1")
     assert [str(c.url.host) for c in chamadas] == ["pncp.gov.br"]
 
