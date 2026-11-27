@@ -78,3 +78,42 @@ def test_pessoa_fisica_mascarada_e_situacao():
     assert itens[0].fornecedor_nome == "Pessoa física" and itens[0].fornecedor_ni is None
     assert itens[0].valor_total_homologado == 90 and itens[0].data_resultado is not None
     assert [i.situacao for i in itens] == ["homologado", "anulado", "em_andamento"]
+
+
+def test_decimal_rejeita_nan_e_infinito():
+    itens = interpretar_itens(
+        [
+            {
+                "numeroItem": 1,
+                "valorTotal": "NaN",
+                "quantidade": "Infinity",
+                "situacaoCompraItemNome": "Homologado",
+            }
+        ]
+    )
+    assert itens[0].valor_total_estimado is None and itens[0].quantidade is None
+
+
+def test_itens_de_pessoa_fisica_nao_se_somam_no_vencedor():
+    def pf(n, hom):
+        return _item(n, hom=hom, nome="Pessoa física", ni=None)
+
+    r = resumir([pf(1, "60"), pf(2, "50"), _item(3, hom="80", nome="Acme", ni="9")])
+    # soma de PF (110) não pode vencer: cada item conta à parte
+    assert r.vencedor_nome == "Acme"
+
+
+def test_vencedor_agrupa_por_ni():
+    r = resumir(
+        [
+            _item(1, hom="40", nome="A Ltda", ni="1"),
+            _item(2, hom="40", nome="A LTDA", ni="1"),
+            _item(3, hom="70", nome="B", ni="2"),
+        ]
+    )
+    assert r.vencedor_ni == "1"
+
+
+def test_mistos():
+    assert resumir([_item(sit="fracassado"), _item(2, sit="deserto")]).situacao == "fracassada"
+    assert resumir([_item(), _item(2, sit="anulado")]).situacao == "homologada"

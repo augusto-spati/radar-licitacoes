@@ -1,15 +1,19 @@
-"""Resultados das contratações: interpretar itens do PNCP, resumir, gravar e escolher alvos."""
+"""Resultados das contratações: interpretar itens do PNCP, resumir, gravar e escolher alvos.
+
+Situação agregada em casos mistos: fracassado + deserto (sem homologado) → fracassada;
+homologado + fracassado/deserto/anulado → homologada (ou parcial, se houver item em andamento).
+"""
 
 import logging
 import re
 import unicodedata
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, delete, false, or_, select
+from sqlalchemy import and_, delete, false, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -148,9 +152,10 @@ def _decimal(valor: Any) -> Decimal | None:
     if valor is None or valor == "":
         return None
     try:
-        return Decimal(str(valor))
+        numero = Decimal(str(valor))
     except ArithmeticError:
         return None
+    return numero if numero.is_finite() else None
 
 
 def _soma(valores: list[Decimal | None]) -> Decimal | None:
@@ -241,15 +246,27 @@ def resumir(itens: list[ItemResultado]) -> ResumoContratacao:
         estimado = sum((i.valor_total_estimado or Decimal(0) for i in comparaveis), Decimal(0))
         homologado = sum((i.valor_total_homologado or Decimal(0) for i in comparaveis), Decimal(0))
         desconto = (1 - homologado / estimado).quantize(Decimal("0.0001"))
-    totais: dict[tuple[str | None, str | None, str | None], Decimal] = {}
+    totais: dict[tuple[str, str | int], Decimal] = {}
+    quem: dict[tuple[str, str | int], ItemResultado] = {}
     for i in homologados:
-        if i.fornecedor_nome is None and i.fornecedor_ni is None:
+        if i.fornecedor_ni:
+            chave: tuple[str, str | int] = ("ni", i.fornecedor_ni)
+        elif i.fornecedor_nome == PESSOA_FISICA:
+            chave = ("pf", i.numero_item)  # cada item de pessoa física conta à parte
+        elif i.fornecedor_nome:
+            chave = ("nome", i.fornecedor_nome)
+        else:
             continue
-        chave = (i.fornecedor_ni, i.fornecedor_nome, i.fornecedor_porte)
+        quem.setdefault(chave, i)
         totais[chave] = totais.get(chave, Decimal(0)) + (i.valor_total_homologado or Decimal(0))
     ni = nome = porte = None
     if totais:
-        ni, nome, porte = max(totais, key=lambda c: totais[c])
+        vencedor = quem[max(totais, key=lambda c: totais[c])]
+        ni, nome, porte = (
+            vencedor.fornecedor_ni,
+            vencedor.fornecedor_nome,
+            vencedor.fornecedor_porte,
+        )
     return ResumoContratacao(
         _situacao_agregada(itens), desconto, estimado, homologado, ni, nome, porte
     )
@@ -262,29 +279,54 @@ def gravar_resultados(
     itens: list[ItemResultado],
     agora: datetime,
 ) -> ResumoContratacao:
-    """Upsert dos itens e do resumo da busca (sem commit). Itens que sumiram são removidos."""
-    resumo = resumir(itens)
+    """Upsert dos itens e do resumo da busca (sem commit).
+
+    Lista vazia com itens já gravados não apaga nada (resposta transitória): só renova
+    `buscado_em`. Resultado que vinha preenchido nunca é trocado por nulo. O resumo sai das
+    linhas já mescladas.
+    """
     chaves = {"fonte": fonte, "id_na_fonte": id_na_fonte}
-    if itens:
-        linhas = [{**chaves, **asdict(i)} for i in itens]
+    unicos = {i.numero_item: i for i in itens}  # número repetido no lote: o último vence
+    if unicos:
+        linhas = [{**chaves, **asdict(i)} for i in unicos.values()]
         insercao = insert(ResultadoItem).values(linhas)
+        preservados = {
+            "fornecedor_ni",
+            "fornecedor_nome",
+            "fornecedor_porte",
+            "quantidade_homologada",
+            "valor_unitario_homologado",
+            "valor_total_homologado",
+            "data_resultado",
+        }
         sessao.execute(
             insercao.on_conflict_do_update(
                 constraint="uq_resultado_item",
                 set_={
-                    c: insercao.excluded[c]
+                    c: func.coalesce(insercao.excluded[c], ResultadoItem.__table__.c[c])
+                    if c in preservados
+                    else insercao.excluded[c]
                     for c in linhas[0]
                     if c not in ("fonte", "id_na_fonte", "numero_item")
                 },
             )
         )
-    sessao.execute(
-        delete(ResultadoItem).where(
-            ResultadoItem.fonte == fonte,
-            ResultadoItem.id_na_fonte == id_na_fonte,
-            ResultadoItem.numero_item.not_in([i.numero_item for i in itens]),
+        sessao.execute(
+            delete(ResultadoItem).where(
+                ResultadoItem.fonte == fonte,
+                ResultadoItem.id_na_fonte == id_na_fonte,
+                ResultadoItem.numero_item.not_in(list(unicos)),
+            )
+        )
+    campos = [f.name for f in fields(ItemResultado)]
+    gravados = sessao.execute(
+        select(*(ResultadoItem.__table__.c[c] for c in campos)).where(
+            ResultadoItem.fonte == fonte, ResultadoItem.id_na_fonte == id_na_fonte
         )
     )
+    itens_gravados = [ItemResultado(**dict(zip(campos, linha, strict=True))) for linha in gravados]
+    resumo = resumir(itens_gravados)
+    itens = itens_gravados
     busca = {
         **chaves,
         "buscado_em": agora,

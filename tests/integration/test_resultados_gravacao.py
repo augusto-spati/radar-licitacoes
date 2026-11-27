@@ -1,6 +1,7 @@
 import copy
 import json
 from datetime import datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -42,8 +43,17 @@ def _registro(seq: int, dias_desde_encerramento: int) -> dict[str, Any]:
     return r
 
 
-def _item(situacao: str = "homologado") -> ItemResultado:
-    return ItemResultado(1, "d", None, None, None, None, False, situacao)
+def _item(
+    situacao: str = "homologado", numero: int = 1, com_vencedor: bool = False
+) -> ItemResultado:
+    extra: dict[str, Any] = {}
+    if com_vencedor:
+        extra = {
+            "fornecedor_ni": "11111111000111",
+            "fornecedor_nome": "Acme",
+            "valor_total_homologado": Decimal("80"),
+        }
+    return ItemResultado(numero, "d", None, None, None, Decimal("100"), False, situacao, **extra)
 
 
 def test_alvos(sessao: Session) -> None:
@@ -55,7 +65,11 @@ def test_alvos(sessao: Session) -> None:
         text("UPDATE edital SET fonte='sanepar' WHERE id_na_fonte=:i").bindparams(i=_id(6))
     )
     gravar_resultados(sessao, "pncp", _id(3), [_item("homologado")], AGORA - timedelta(days=1))
-    gravar_resultados(sessao, "pncp", _id(4), [_item("em_andamento")], AGORA - timedelta(days=8))
+    parcial = [_item("homologado", 1), _item("em_andamento", 2)]
+    assert (
+        gravar_resultados(sessao, "pncp", _id(4), parcial, AGORA - timedelta(days=8)).situacao
+        == "parcial"
+    )
     sessao.flush()
 
     alvos = alvos_resultado(sessao, CRITERIOS, AGORA, 10)
@@ -76,3 +90,44 @@ def test_gravar_duas_vezes_nao_duplica(sessao: Session) -> None:
     assert sessao.scalar(select(ResultadoItem.situacao)) == "homologado"
     busca = sessao.scalars(select(ResultadoBusca)).one()
     assert busca.situacao == "homologada" and busca.itens == 1
+
+
+def test_lista_vazia_nao_apaga_o_que_ja_estava_gravado(sessao: Session) -> None:
+    registrar(sessao, [_registro(9, 10)])
+    gravar_resultados(sessao, "pncp", _id(9), [_item(com_vencedor=True)], AGORA)
+    resumo = gravar_resultados(sessao, "pncp", _id(9), [], AGORA + timedelta(days=8))
+    sessao.flush()
+
+    assert resumo.situacao == "homologada" and resumo.vencedor_nome == "Acme"
+    assert sessao.scalar(select(func.count()).select_from(ResultadoItem)) == 1
+    busca = sessao.scalars(select(ResultadoBusca)).one()
+    assert busca.situacao == "homologada" and busca.itens == 1
+    assert busca.buscado_em == AGORA + timedelta(days=8)
+
+
+def test_lista_vazia_sem_nada_gravado_vira_sem_itens_e_e_rebuscada(sessao: Session) -> None:
+    registrar(sessao, [_registro(9, 10)])
+    resumo = gravar_resultados(sessao, "pncp", _id(9), [], AGORA - timedelta(days=8))
+    sessao.flush()
+
+    assert resumo.situacao == "sem_itens"
+    assert [a.id_na_fonte for a in alvos_resultado(sessao, CRITERIOS, AGORA, 10)] == [_id(9)]
+
+
+def test_item_que_volta_sem_resultado_nao_perde_o_vencedor(sessao: Session) -> None:
+    registrar(sessao, [_registro(9, 10)])
+    gravar_resultados(sessao, "pncp", _id(9), [_item(com_vencedor=True)], AGORA)
+    resumo = gravar_resultados(sessao, "pncp", _id(9), [_item()], AGORA + timedelta(days=1))
+    sessao.flush()
+
+    assert resumo.desconto == Decimal("0.2000") and resumo.vencedor_nome == "Acme"
+    item = sessao.scalars(select(ResultadoItem)).one()
+    assert item.fornecedor_ni == "11111111000111" and item.valor_total_homologado == 80
+
+
+def test_numero_de_item_repetido_no_lote_vale_o_ultimo(sessao: Session) -> None:
+    registrar(sessao, [_registro(9, 10)])
+    gravar_resultados(sessao, "pncp", _id(9), [_item("em_andamento"), _item("homologado")], AGORA)
+    sessao.flush()
+
+    assert sessao.scalar(select(ResultadoItem.situacao)) == "homologado"
