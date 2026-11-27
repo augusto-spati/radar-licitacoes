@@ -67,15 +67,13 @@ resource "aws_iam_role_policy" "analisador_metricas" {
 
 # ---------- Spans (Transaction Search) ----------
 
-# Criado antes de ligar o Transaction Search: o X-Ray aceita o log group existente e a
-# retencao fica curta (a ingestao e cobrada por GB). Se o Transaction Search ja tiver sido
-# ligado antes deste apply, o X-Ray ja criou aws/spans e o create falha com
-# ResourceAlreadyExistsException; nesse caso, importe antes:
-#   terraform import aws_cloudwatch_log_group.spans aws/spans
-resource "aws_cloudwatch_log_group" "spans" {
-  name              = "aws/spans"
-  retention_in_days = 7
-}
+# O log group aws/spans NAO e criado aqui: nomes que comecam com "aws/" sao reservados
+# (CreateLogGroup devolve InvalidParameterException). O proprio X-Ray o cria ao ligar o
+# Transaction Search. Runbook, depois do apply (a politica abaixo vem antes):
+#   aws xray update-trace-segment-destination --destination CloudWatchLogs
+#   aws xray update-indexing-rule --name Default --rule '{"Probabilistic":{"DesiredSamplingPercentage":1}}'
+#   aws logs put-retention-policy --log-group-name aws/spans --retention-in-days 7
+#   aws xray get-trace-segment-destination   (ate Status = ACTIVE)
 
 # Passo 1 da doc Enable-TransactionSearch (ligar pela API/CLI): politica de recurso do
 # CloudWatch Logs que deixa o X-Ray, so desta conta e regiao, gravar os spans.
