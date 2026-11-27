@@ -1025,6 +1025,14 @@ def resultados_atualizar(
                         extra={"fonte": alvo.fonte, "id_na_fonte": alvo.id_na_fonte},
                     )
                     falhas += 1
+                    # Marca como buscado (sem itens): um edital que falha sempre não volta ao topo
+                    # dos "nunca buscados" todo dia; a regra dos 7 dias o tenta de novo. Se já
+                    # havia itens gravados, a lista vazia não apaga nada (gravar_resultados).
+                    try:
+                        gravar_resultados(sessao, alvo.fonte, alvo.id_na_fonte, [], _agora())
+                        sessao.commit()
+                    except Exception:
+                        sessao.rollback()
                     # Disjuntor: PNCP fora do ar não vira 300 requisições com retentativas.
                     seguidas = seguidas + 1 if isinstance(erro, ErroResultados) else 0
                     if seguidas >= FALHAS_SEGUIDAS_PNCP:

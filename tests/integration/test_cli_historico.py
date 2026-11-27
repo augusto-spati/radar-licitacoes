@@ -145,6 +145,10 @@ def test_resultados_atualizar_falha_de_um_edital_segue_e_sai_com_1(
     assert resultado.exit_code == 1
     assert "resultados: 1 editais, 1 itens, 1 homologadas, 1 falhas" in resultado.output
     assert "resultado:" not in resultado.output.replace("resultados:", "")
+    # O edital que falhou fica marcado como buscado: não volta amanhã ao topo da fila.
+    segunda = runner.invoke(cli.app, ["resultados", "atualizar", "--config", str(config_filtro)])
+    assert segunda.exit_code == 0, segunda.output
+    assert "resultados: 0 editais" in segunda.output
 
 
 def test_resultados_atualizar_para_apos_5_falhas_seguidas_do_pncp(
