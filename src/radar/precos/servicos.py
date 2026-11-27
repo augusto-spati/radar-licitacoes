@@ -15,9 +15,14 @@ from functools import cache
 from pathlib import Path
 from typing import Literal, get_args
 
-from radar.comum import RAIZ_REPOSITORIO
+from radar.comum import obter_config
 
-CAMINHO_PADRAO = RAIZ_REPOSITORIO / "config" / "servicos.toml"
+
+def caminho_padrao() -> Path:
+    """`RADAR_CONFIG_SERVICOS` (imagens do coletor e da API) ou o config do repositório."""
+    return obter_config().config_servicos
+
+
 CURINGA = "�"
 
 Escopo = Literal["material", "assentamento", "completo"]
@@ -328,8 +333,9 @@ def _servico(dados: dict[str, object]) -> Servico:
     )
 
 
-def carregar_termos_processo(caminho: Path = CAMINHO_PADRAO) -> tuple[str, ...]:
+def carregar_termos_processo(caminho: Path | None = None) -> tuple[str, ...]:
     """Termos do pré-filtro de processo do TCE-PE (`[processos] termos`)."""
+    caminho = caminho if caminho is not None else caminho_padrao()
     with caminho.open("rb") as arquivo:
         dados = tomllib.load(arquivo)
     processos = dados.get("processos")
@@ -343,7 +349,9 @@ def termos_processo_padrao() -> tuple[str, ...]:
     return carregar_termos_processo()
 
 
-def carregar_servicos(caminho: Path = CAMINHO_PADRAO) -> tuple[Servico, ...]:
+def carregar_servicos(caminho: Path | None = None) -> tuple[Servico, ...]:
+    """Serviços do arquivo dado ou do `RADAR_CONFIG_SERVICOS` (padrão: config do repositório)."""
+    caminho = caminho if caminho is not None else caminho_padrao()
     with caminho.open("rb") as arquivo:
         dados = tomllib.load(arquivo)
     servicos = tuple(_servico(s) for s in dados["servico"])

@@ -485,3 +485,12 @@ def test_csp_so_libera_o_proprio_site_e_o_cognito() -> None:
 
 def test_site_com_http3() -> None:
     assert re.search(r'http_version\s*=\s*"http2and3"', _tf("front.tf"))
+
+
+def test_imagens_apontam_os_configs_copiados() -> None:
+    """O pacote instalado não fica ao lado de config/: cada config lido em produção precisa
+    de variável de ambiente nas duas imagens (a 1ª coleta do TCE-PE caiu por isso)."""
+    for arquivo, raiz in (("coletor.Dockerfile", "/app"), ("api-lambda.Dockerfile", "/var/task")):
+        texto = (RAIZ / "docker" / arquivo).read_text(encoding="utf-8")
+        assert f"RADAR_CONFIG_FILTRO={raiz}/config/filtro.toml" in texto
+        assert f"RADAR_CONFIG_SERVICOS={raiz}/config/servicos.toml" in texto

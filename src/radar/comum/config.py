@@ -24,6 +24,9 @@ class Config(BaseSettings):
     fila_falhas_url: str | None = None
     # Análise dos editais com IA (etapa 6).
     config_ia: Path = RAIZ_REPOSITORIO / "config" / "ia.toml"
+    # Serviços-padrão do preço unitário (etapa 7b). Nas imagens, `RADAR_CONFIG_SERVICOS` aponta
+    # para o config copiado (o pacote instalado não fica ao lado de config/).
+    config_servicos: Path = RAIZ_REPOSITORIO / "config" / "servicos.toml"
     # O perfil do repositório só tem valores de exemplo; o real fica fora dele (arquivo local
     # ou s3://<bucket privado>/perfil/perfil.toml).
     config_perfil: str = str(RAIZ_REPOSITORIO / "config" / "perfil.toml")
