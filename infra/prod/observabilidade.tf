@@ -68,29 +68,69 @@ resource "aws_iam_role_policy" "analisador_metricas" {
 # ---------- Spans (Transaction Search) ----------
 
 # Criado antes de ligar o Transaction Search: o X-Ray aceita o log group existente e a
-# retencao fica curta (a ingestao e cobrada por GB).
+# retencao fica curta (a ingestao e cobrada por GB). Se o Transaction Search ja tiver sido
+# ligado antes deste apply, o X-Ray ja criou aws/spans e o create falha com
+# ResourceAlreadyExistsException; nesse caso, importe antes:
+#   terraform import aws_cloudwatch_log_group.spans aws/spans
 resource "aws_cloudwatch_log_group" "spans" {
   name              = "aws/spans"
   retention_in_days = 7
 }
 
+# Passo 1 da doc Enable-TransactionSearch (ligar pela API/CLI): politica de recurso do
+# CloudWatch Logs que deixa o X-Ray, so desta conta e regiao, gravar os spans.
+data "aws_iam_policy_document" "transaction_search" {
+  statement {
+    sid     = "TransactionSearchXRayAccess"
+    effect  = "Allow"
+    actions = ["logs:PutLogEvents"]
+    resources = [
+      "arn:aws:logs:${var.regiao}:${data.aws_caller_identity.atual.account_id}:log-group:aws/spans:*",
+      "arn:aws:logs:${var.regiao}:${data.aws_caller_identity.atual.account_id}:log-group:/aws/application-signals/data:*",
+    ]
+
+    principals {
+      type        = "Service"
+      identifiers = ["xray.amazonaws.com"]
+    }
+
+    condition {
+      test     = "ArnLike"
+      variable = "aws:SourceArn"
+      values   = ["arn:aws:xray:${var.regiao}:${data.aws_caller_identity.atual.account_id}:*"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.atual.account_id]
+    }
+  }
+}
+
+resource "aws_cloudwatch_log_resource_policy" "transaction_search" {
+  policy_name     = "radar-transaction-search"
+  policy_document = data.aws_iam_policy_document.transaction_search.json
+}
+
 # ---------- Alarmes de SLO ----------
 
-# Frescor: Maximum (a pior fonte) acima de 36 h em 6 periodos de 6 h. As medicoes saem no
-# comeco e no fim de cada `atualizar`; periodo sem medicao conta como violacao, entao 36 h
-# sem medir nada tambem e frescor estourado.
+# Frescor: o SLI e "medicao acima de 36 h". As medicoes saem no comeco e no fim de cada
+# `atualizar`; o Maximum do dia (a pior fonte, a pior medicao) acima de 36 h dispara, uma
+# vez por dia com medicao estourada. Dia sem medicao nao dispara (notBreaching): o coletor
+# parado e coberto pelo alarme radar-coletor-nao-rodou.
 resource "aws_cloudwatch_metric_alarm" "frescor_estourado" {
   alarm_name          = "radar-frescor-estourado"
-  alarm_description   = "Alguma fonte sem dado novo em edital ha mais de 36 h (ou sem medicao em 36 h)."
+  alarm_description   = "Alguma medicao de frescor do dia passou de 36 h sem dado novo em edital."
   namespace           = "Radar"
   metric_name         = "FrescorHoras"
   statistic           = "Maximum"
-  period              = 21600
-  evaluation_periods  = 6
-  datapoints_to_alarm = 6
+  period              = 86400
+  evaluation_periods  = 1
+  datapoints_to_alarm = 1
   threshold           = 36
   comparison_operator = "GreaterThanThreshold"
-  treat_missing_data  = "breaching"
+  treat_missing_data  = "notBreaching"
   alarm_actions       = [aws_sns_topic.alertas.arn]
 }
 

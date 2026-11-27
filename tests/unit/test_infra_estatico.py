@@ -311,13 +311,14 @@ def test_alarmes_de_slo() -> None:
         'alarm_name = "radar-frescor-estourado"',
         'metric_name = "FrescorHoras"',
         'statistic = "Maximum"',
-        "period = 21600",
-        "evaluation_periods = 6",
-        "datapoints_to_alarm = 6",
+        "period = 86400",
+        "evaluation_periods = 1",
+        "datapoints_to_alarm = 1",
         "threshold = 36",
-        'treat_missing_data = "breaching"',
+        'treat_missing_data = "notBreaching"',
     ):
         assert trecho in frescor.group(1), trecho
+    assert 'breaching"' not in frescor.group(1).replace('"notBreaching"', "")
     for trecho in (
         'alarm_name = "radar-paginas-com-erro"',
         'metric_name = "PaginaComErro"',
@@ -371,3 +372,25 @@ def test_analisador_ganha_so_a_telemetria_do_coletor() -> None:
     assert "policy = data.aws_iam_policy_document.coletor_metricas.json" in bloco.group(1)
     analise = _analise_tf()
     assert "cloudwatch" not in analise and "xray" not in analise.lower()
+
+
+def test_xray_pode_escrever_os_spans_nos_logs() -> None:
+    """Política de recurso do CloudWatch Logs da doc Enable-TransactionSearch (passo 1)."""
+    obs = re.sub(r"\s+", " ", _tf("observabilidade.tf"))
+    assert 'resource "aws_cloudwatch_log_resource_policy" "transaction_search"' in obs
+    bloco = obs[obs.index('data "aws_iam_policy_document" "transaction_search"') :]
+    bloco = bloco[: bloco.index('resource "aws_cloudwatch_log_resource_policy"')]
+    for trecho in (
+        'actions = ["logs:PutLogEvents"]',
+        'identifiers = ["xray.amazonaws.com"]',
+        "log-group:aws/spans:*",
+        "log-group:/aws/application-signals/data:*",
+        'test = "ArnLike"',
+        'variable = "aws:SourceArn"',
+        '"arn:aws:xray:${var.regiao}:${data.aws_caller_identity.atual.account_id}:*"',
+        'test = "StringEquals"',
+        'variable = "aws:SourceAccount"',
+        "values = [data.aws_caller_identity.atual.account_id]",
+    ):
+        assert trecho in bloco, trecho
+    assert "terraform import aws_cloudwatch_log_group.spans aws/spans" in _tf("observabilidade.tf")
