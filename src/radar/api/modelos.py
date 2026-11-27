@@ -6,7 +6,8 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
 
-from radar.editais import EditalDetalhe, EditalResumo, Fonte, Situacao
+from radar.analise import AnaliseLida, SituacaoItem, StatusDocumento, Veredito
+from radar.editais import EditalDetalhe, EditalResumo, Fonte, Situacao, id_publico
 
 FUSO = ZoneInfo("America/Sao_Paulo")
 
@@ -108,4 +109,62 @@ def detalhe_out(edital: EditalDetalhe) -> EditalDetalheOut:
         situacao_normalizada=edital.situacao_normalizada,
         data_publicacao=_iso(edital.data_publicacao),
         data_abertura_proposta=_iso(edital.data_abertura_proposta),
+    )
+
+
+AVISO_ANALISE = (
+    "Segundo o que foi extraído do edital por IA: exigência que a extração perdeu não aparece."
+    " Confira cada item no trecho e na página indicados."
+)
+
+
+class ItemAnaliseOut(BaseModel):
+    campo: str
+    situacao: SituacaoItem
+    exigido: str
+    perfil: str
+    motivo: str
+    trecho: str | None
+    pagina: int | None
+
+
+class DocumentoAnaliseOut(BaseModel):
+    titulo: str
+    url: str
+    paginas: int | None
+    status: StatusDocumento
+
+
+class AnaliseOut(BaseModel):
+    id_publico: str
+    modelo: str
+    versao_prompt: str
+    criada_em: str | None
+    veredito: Veredito
+    incompleta: bool
+    aviso: str
+    itens: list[ItemAnaliseOut]
+    documentos: list[DocumentoAnaliseOut]
+
+
+def analise_out(lida: AnaliseLida) -> AnaliseOut:
+    analise = lida.analise
+    return AnaliseOut(
+        id_publico=id_publico(analise.fonte, analise.id_na_fonte),
+        modelo=analise.modelo,
+        versao_prompt=analise.versao_prompt,
+        criada_em=iso_com_fuso(analise.criada_em),
+        veredito=analise.veredito,  # type: ignore[arg-type]
+        incompleta=analise.incompleta,
+        aviso=AVISO_ANALISE,
+        itens=[ItemAnaliseOut.model_validate(i) for i in analise.comparacao.get("itens", [])],
+        documentos=[
+            DocumentoAnaliseOut(
+                titulo=d.titulo,
+                url=d.url,
+                paginas=d.paginas,
+                status=d.status,  # type: ignore[arg-type]
+            )
+            for d in lida.documentos
+        ],
     )

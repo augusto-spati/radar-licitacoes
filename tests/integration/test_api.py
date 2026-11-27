@@ -206,3 +206,94 @@ def test_valor_sai_como_string_decimal(cliente: TestClient, sessao: Session) -> 
 
     assert editais["pncp~com-valor/2026"]["valor_estimado"] == "1369661.52"
     assert editais["pncp~sem-valor/2026"]["valor_estimado"] is None
+
+
+def _gravar_analise(sessao: Session, id_na_fonte: str) -> None:
+    from radar.analise import AnaliseEdital, DocumentoEdital, carregar_config_ia
+
+    modelo = carregar_config_ia(RAIZ / "config" / "ia.toml").modelo_padrao
+    item = {
+        "campo": "capital_social_minimo",
+        "situacao": "atende",
+        "exigido": "R$ 250.000,00",
+        "perfil": "R$ 1.000.000,00",
+        "motivo": "perfil ≥ exigido",
+        "trecho": "capital social mínimo de R$ 250.000,00",
+        "pagina": 4,
+    }
+    sessao.add_all(
+        [
+            AnaliseEdital(
+                fonte="pncp",
+                id_na_fonte=id_na_fonte,
+                modelo=modelo,
+                versao_prompt="abc123def456",
+                hash_documentos="h",
+                veredito="apto",
+                incompleta=False,
+                exigencias={},
+                comparacao={"veredito": "apto", "itens": [item]},
+                trechos=1,
+                trechos_invalidos=0,
+                achados_descartados=0,
+                truncado=False,
+                tokens_entrada=10,
+                tokens_saida=5,
+                custo_usd=0,
+                criada_em=datetime(2026, 11, 27, 12, tzinfo=UTC),
+            ),
+            DocumentoEdital(
+                fonte="pncp",
+                id_na_fonte=id_na_fonte,
+                sequencial=1,
+                titulo="edital.pdf",
+                tipo_nome="Edital",
+                url="https://pncp.gov.br/pncp-api/v1/orgaos/1/compras/2026/298/arquivos/1",
+                sha256="s",
+                paginas=12,
+                status="extraido",
+                baixado_em=datetime(2026, 11, 27, 12, tzinfo=UTC),
+            ),
+        ]
+    )
+    sessao.flush()
+
+
+def test_analise_404_sem_analise(cliente: TestClient) -> None:
+    assert cliente.get("/api/analises/pncp~78200482000110-1-000298/2026").status_code == 404
+    assert cliente.get("/api/analises/sem-fonte").status_code == 404
+
+
+def test_analise_com_barra_no_id(cliente: TestClient, sessao: Session) -> None:
+    _gravar_analise(sessao, "78200482000110-1-000298/2026")
+
+    resposta = cliente.get("/api/analises/pncp~78200482000110-1-000298/2026")
+
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert corpo["veredito"] == "apto"
+    assert corpo["id_publico"] == "pncp~78200482000110-1-000298/2026"
+    assert corpo["criada_em"] == "2026-11-27T09:00:00-03:00"
+    assert "segundo o que foi extraído" in corpo["aviso"].lower()
+    assert corpo["itens"][0]["pagina"] == 4
+    assert corpo["documentos"] == [
+        {
+            "titulo": "edital.pdf",
+            "url": "https://pncp.gov.br/pncp-api/v1/orgaos/1/compras/2026/298/arquivos/1",
+            "paginas": 12,
+            "status": "extraido",
+        }
+    ]
+    codificado = cliente.get("/api/analises/pncp~78200482000110-1-000298%2F2026")
+    assert codificado.status_code == 200
+
+
+def test_analise_sem_config_ia_da_503_e_o_resto_funciona(
+    sessao: Session, config_filtro: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("RADAR_CONFIG_IA", str(tmp_path / "nao-existe.toml"))
+    fabrica = cast(Callable[[], Session], lambda: _SessaoEmprestada(sessao))
+    cliente = TestClient(criar_app(fabrica, config_filtro, relogio=lambda: AGORA))
+
+    assert cliente.get("/api/analises/pncp~1-1-1/2026").status_code == 503
+    assert cliente.get("/api/status").status_code == 200

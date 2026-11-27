@@ -67,10 +67,12 @@ def extrair_exigencias(
             invalidos += 1
             logger.warning(
                 "trecho_invalido",
+                # Sem o texto da resposta: o log group é o do coletor, e um "resultado:" vindo
+                # do modelo calaria o alarme "coletor não rodou".
                 extra={
                     "trecho": indice,
                     "erros": erro.error_count(),
-                    "inicio": resposta.texto[:200],
+                    "tamanho": len(resposta.texto),
                 },
             )
             continue

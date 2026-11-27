@@ -1,5 +1,6 @@
 """Aplicação FastAPI: rotas de leitura sob /api."""
 
+import logging
 from collections.abc import Callable, Iterator
 from dataclasses import replace
 from datetime import datetime
@@ -11,10 +12,13 @@ from zoneinfo import ZoneInfo
 from fastapi import Depends, FastAPI, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from radar.analise import carregar_config_ia, obter_analise
 from radar.api.modelos import (
+    AnaliseOut,
     EditalDetalheOut,
     ListaOut,
     StatusOut,
+    analise_out,
     detalhe_out,
     iso_com_fuso,
     resumo_out,
@@ -24,6 +28,7 @@ from radar.comum import criar_engine, fabrica_sessao, obter_config
 from radar.editais import carregar_criterios, filtrar, obter_edital, separar_id_publico
 
 FUSO = ZoneInfo("America/Sao_Paulo")
+logger = logging.getLogger(__name__)
 
 
 def _agora() -> datetime:
@@ -43,6 +48,12 @@ def criar_app(
     fabrica = fabrica or fabrica_sessao(criar_engine(config))
     relogio = relogio or _agora
     criterios = carregar_criterios(config_filtro or config.config_filtro)
+    # Sem config/ia.toml (ex.: Lambda sem RADAR_CONFIG_IA), só a rota da análise fica fora.
+    try:
+        modelo_padrao: str | None = carregar_config_ia(config.config_ia).modelo_padrao
+    except FileNotFoundError:
+        logger.warning("config_ia_ausente", extra={"caminho": str(config.config_ia)})
+        modelo_padrao = None
     # `linha` e `uf` são enums dos critérios carregados: o OpenAPI (e o api.d.ts do
     # front) carrega as uniões `Linha` e `UF`, e valor fora delas é 422 da validação.
     # Para o mypy são strings (StrEnum é str); o tipo real só existe em tempo de execução.
@@ -92,5 +103,16 @@ def criar_app(
         if edital is None:
             raise HTTPException(status_code=404, detail="edital não encontrado")
         return detalhe_out(edital)
+
+    @app.get("/api/analises/{id_publico:path}")
+    def analise(id_publico: str, sessao: SessaoDep) -> AnaliseOut:
+        """Exigências extraídas por IA e comparadas com o perfil (modelo padrão)."""
+        if modelo_padrao is None:
+            raise HTTPException(status_code=503, detail="análise indisponível")
+        chave = separar_id_publico(id_publico)
+        lida = None if chave is None else obter_analise(sessao, *chave, modelo_padrao)
+        if lida is None:
+            raise HTTPException(status_code=404, detail="análise não encontrada")
+        return analise_out(lida)
 
     return app

@@ -4,6 +4,7 @@ import functools
 import logging
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Annotated, Any
 from zoneinfo import ZoneInfo
@@ -13,6 +14,25 @@ import uvicorn
 from sqlalchemy.orm import Session, sessionmaker
 
 from radar import __version__
+from radar.analise import (
+    AlvoAnalise,
+    CacheBanco,
+    ClienteArquivosPNCP,
+    ConfigIA,
+    Dependencias,
+    Provedor,
+    ProvedorBedrock,
+    ProvedorComCache,
+    TetoAtingido,
+    analisar_edital,
+    carregar_config_ia,
+    carregar_perfil,
+    criar_armazem,
+    criar_http_arquivos,
+    guarda_teto,
+    ja_analisado,
+    versao_prompt_atual,
+)
 from radar.api.app import criar_app
 from radar.coleta import (
     ClienteEducado,
@@ -42,7 +62,13 @@ from radar.comum import (
     publicar_outbox,
     regiao_da_url,
 )
-from radar.editais import Criterios, EditalResumo, carregar_criterios
+from radar.editais import (
+    Criterios,
+    EditalResumo,
+    carregar_criterios,
+    obter_edital,
+    separar_id_publico,
+)
 from radar.editais import filtrar as filtrar_editais
 from radar.processador import FilaLocal, criar_fila, fontes_retrato
 
@@ -411,6 +437,130 @@ def filtrar(
     for edital in editais:
         typer.echo(_linha(edital))
     typer.echo(f"{len(editais)} editais")
+
+
+def _criar_provedor_ia(config: ConfigIA) -> Provedor:
+    return ProvedorBedrock(config)
+
+
+def _criar_cliente_arquivos() -> ClienteArquivosPNCP:
+    return ClienteArquivosPNCP(criar_http_arquivos())
+
+
+# Quantos editais abertos o `analisar` considera antes de cortar no limite da rodada.
+CANDIDATOS_ANALISE = 1000
+
+
+def _alvos_analise(
+    sessao: Session,
+    criterios: Criterios,
+    edital: str | None,
+    modelo: str,
+    refazer: bool,
+    limite: int,
+) -> tuple[list[AlvoAnalise], int]:
+    """Os editais a analisar e quantos foram pulados por já terem análise."""
+    versao = versao_prompt_atual()
+    if edital is not None:
+        chave = separar_id_publico(edital)
+        detalhe = None if chave is None else obter_edital(sessao, *chave, criterios)
+        if detalhe is None:
+            typer.echo(f"edital não encontrado: {edital}", err=True)
+            raise typer.Exit(code=2)
+        candidatos: list[EditalResumo] = [detalhe]
+    else:
+        abertos = filtrar_editais(
+            sessao, criterios, _agora(), somente_abertos=True, limite=CANDIDATOS_ANALISE
+        )
+        candidatos = [e for e in abertos if e.fonte == "pncp"]
+    alvos: list[AlvoAnalise] = []
+    pulados = 0
+    for candidato in candidatos:
+        if len(alvos) >= limite:
+            break
+        alvo = AlvoAnalise(candidato.fonte, candidato.id_na_fonte, candidato.valor_estimado)
+        if not refazer and ja_analisado(sessao, alvo, modelo, versao):
+            pulados += 1
+            continue
+        alvos.append(alvo)
+    return alvos, pulados
+
+
+@app.command()
+def analisar(
+    limite: Annotated[
+        int | None, typer.Option(min=1, help="Máximo de editais (padrão: config/ia.toml).")
+    ] = None,
+    modelo: Annotated[
+        str | None, typer.Option(help="Id do modelo (padrão: modelo_padrao de config/ia.toml).")
+    ] = None,
+    edital: Annotated[
+        str | None, typer.Option(help="Analisa só este id_publico, mesmo encerrado.")
+    ] = None,
+    refazer: Annotated[bool, typer.Option("--refazer", help="Ignora a análise existente.")] = False,
+    config: OpcaoConfig = ARQUIVO_CONFIG,
+) -> None:
+    """Extrai as exigências dos editais abertos do PNCP com IA e compara com o perfil."""
+    configurar_logs()
+    ambiente = obter_config()
+    if ambiente.ia_provedor == "desligado":
+        typer.echo("IA desligada: defina RADAR_IA_PROVEDOR=bedrock", err=True)
+        raise typer.Exit(code=2)
+    config_ia = carregar_config_ia(ambiente.config_ia)
+    modelo = modelo or config_ia.modelo_padrao
+    if modelo not in config_ia.modelos:
+        typer.echo(f"modelo fora de config/ia.toml: {modelo}", err=True)
+        raise typer.Exit(code=2)
+    perfil = carregar_perfil(ambiente.config_perfil)
+    criterios = carregar_criterios(config)
+    analisados = falhas = 0
+    teto = False
+    with _criar_sessao() as sessao:
+        alvos, pulados = _alvos_analise(
+            sessao, criterios, edital, modelo, refazer, limite or config_ia.max_editais_por_rodada
+        )
+        # O cache no banco grava na mesma sessão: o gasto da rodada já entra no do mês.
+        provedor = ProvedorComCache(
+            _criar_provedor_ia(config_ia),
+            CacheBanco(sessao),
+            "gravar",
+            config_ia,
+            guarda_teto(sessao, config_ia, _agora, lambda: Decimal(0)),
+        )
+        cliente = _criar_cliente_arquivos()
+        dep = Dependencias(
+            cliente_arquivos=cliente,
+            armazem=criar_armazem(ambiente.documentos),
+            provedor=provedor,
+            config=config_ia,
+            perfil=perfil,
+            modelo=modelo,
+        )
+        try:
+            for alvo in alvos:
+                try:
+                    analisar_edital(sessao, alvo, dep, _agora())
+                except TetoAtingido:
+                    teto = True
+                    typer.echo("teto mensal da IA atingido: rodada interrompida")
+                    break
+                except Exception:  # um edital ruim não para a rodada
+                    sessao.rollback()
+                    logger.exception(
+                        "analise_falhou",
+                        extra={"fonte": alvo.fonte, "id_na_fonte": alvo.id_na_fonte},
+                    )
+                    falhas += 1
+                    continue
+                analisados += 1
+        finally:
+            cliente.fechar()
+    # Nunca "resultado:": o log group é o do coletor e essa linha cala o alarme "não rodou".
+    typer.echo(
+        f"analise: {analisados} analisados, {pulados} pulados, {falhas} falhas, "
+        f"US$ {provedor.custo_usd:.4f}"
+    )
+    _encerrar(falhas + int(teto))
 
 
 @app.command()

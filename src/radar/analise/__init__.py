@@ -1,5 +1,26 @@
 """Módulo analise: exigências dos editais extraídas com LLM e comparadas com o perfil."""
 
+from radar.analise.armazem import Armazem, ArmazemLocal, ArmazemS3, criar_armazem
+from radar.analise.arquivos_pncp import (
+    ArquivoPNCP,
+    ClienteArquivosPNCP,
+    ErroArquivos,
+    GrandeDemais,
+    chave_pncp,
+    criar_http_arquivos,
+    escolher_documentos,
+)
+from radar.analise.cache import (
+    CacheArquivos,
+    CacheBanco,
+    ProvedorComCache,
+    RespostaAusente,
+    chave_cache,
+    versao_prompt,
+)
+from radar.analise.comparacao import Comparacao, ItemComparacao
+from radar.analise.comparacao import Situacao as SituacaoItem
+from radar.analise.custos import TetoAtingido, gasto_do_mes, guarda_teto
 from radar.analise.exigencias import (
     CAMPOS,
     DOCUMENTOS,
@@ -12,6 +33,8 @@ from radar.analise.exigencias import (
     ValorEvidencia,
     esquema_resposta,
 )
+from radar.analise.extracao import extrair_paginas
+from radar.analise.extrator import SISTEMA, Extracao, extrair_exigencias
 from radar.analise.modelos import (
     AnaliseEdital,
     DocumentoEdital,
@@ -19,21 +42,81 @@ from radar.analise.modelos import (
     StatusDocumento,
     Veredito,
 )
+from radar.analise.perfil import Perfil, carregar_perfil
+from radar.analise.pipeline import (
+    AlvoAnalise,
+    AnaliseLida,
+    Dependencias,
+    analisar_edital,
+    ja_analisado,
+    obter_analise,
+    versao_prompt_atual,
+)
+from radar.analise.provedor import (
+    ConfigIA,
+    Pedido,
+    Provedor,
+    ProvedorBedrock,
+    Resposta,
+    carregar_config_ia,
+)
 
 __all__ = [
     "CAMPOS",
     "DOCUMENTOS",
+    "SISTEMA",
     "Achado",
+    "AlvoAnalise",
     "AnaliseEdital",
+    "AnaliseLida",
+    "Armazem",
+    "ArmazemLocal",
+    "ArmazemS3",
+    "ArquivoPNCP",
     "Atestado",
+    "CacheArquivos",
+    "CacheBanco",
     "Campo",
     "CategoriaEvidencia",
+    "ClienteArquivosPNCP",
+    "Comparacao",
+    "ConfigIA",
+    "Dependencias",
     "DocumentoEdital",
+    "ErroArquivos",
     "Exigencias",
+    "Extracao",
+    "GrandeDemais",
+    "ItemComparacao",
+    "Pedido",
+    "Perfil",
+    "Provedor",
+    "ProvedorBedrock",
+    "ProvedorComCache",
+    "Resposta",
+    "RespostaAusente",
     "RespostaExtracao",
     "RespostaLLM",
+    "SituacaoItem",
     "StatusDocumento",
+    "TetoAtingido",
     "ValorEvidencia",
     "Veredito",
+    "analisar_edital",
+    "carregar_config_ia",
+    "carregar_perfil",
+    "chave_cache",
+    "chave_pncp",
+    "criar_armazem",
+    "criar_http_arquivos",
+    "escolher_documentos",
     "esquema_resposta",
+    "extrair_exigencias",
+    "extrair_paginas",
+    "gasto_do_mes",
+    "guarda_teto",
+    "ja_analisado",
+    "obter_analise",
+    "versao_prompt",
+    "versao_prompt_atual",
 ]

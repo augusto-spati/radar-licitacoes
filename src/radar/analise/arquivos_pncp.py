@@ -91,6 +91,9 @@ class ClienteArquivosPNCP:
         self._espera = wait_exponential(multiplier=espera_base, max=60)
         self._ultima: float | None = None
 
+    def fechar(self) -> None:
+        self._http.close()
+
     def listar(self, cnpj: str, ano: int, sequencial: int) -> list[ArquivoPNCP]:
         caminho = f"/orgaos/{cnpj}/compras/{ano}/{sequencial}/arquivos"
         corpo = self._com_tentativas(self._listar, caminho)

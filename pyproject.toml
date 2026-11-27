@@ -101,6 +101,7 @@ forbidden_modules = [
     "radar.analise.cache",
     "radar.analise.custos",
     "radar.analise.extrator",
+    "radar.analise.pipeline",
 ]
 allow_indirect_imports = true
 
