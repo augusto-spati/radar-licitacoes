@@ -93,6 +93,10 @@ forbidden_modules = [
     "radar.analise.normalizacao",
     "radar.analise.perfil",
     "radar.analise.comparacao",
+    "radar.analise.arquivos_pncp",
+    "radar.analise.extracao",
+    "radar.analise.trechos",
+    "radar.analise.armazem",
 ]
 allow_indirect_imports = true
 
