@@ -132,7 +132,8 @@ def test_janelas_tem_dlq_agenda_e_alarmes() -> None:
     # Confiança do Scheduler: aws:SourceAccount e aws:SourceArn da agenda do planejador.
     assert "data.aws_iam_policy_document.scheduler_assume_planejador.json" in janelas
     assert '"aws:SourceAccount"' in janelas and '"aws:SourceArn"' in janelas
-    assert ":schedule/default/${local.nome_agenda_planejador}" in janelas
+    # O aws:SourceArn do Scheduler é o do grupo de agendas, não o da agenda.
+    assert ':schedule-group/default"' in janelas
     assert 'nome_agenda_planejador = "radar-planejar-diario"' in janelas
     # Invocação assíncrona do planejador sem retry da Lambda (o retry é o do Scheduler).
     assert 'resource "aws_lambda_function_event_invoke_config" "planejador"' in janelas
