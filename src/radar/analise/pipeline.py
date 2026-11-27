@@ -23,7 +23,7 @@ from radar.analise.arquivos_pncp import (
     chave_pncp,
     escolher_documentos,
 )
-from radar.analise.arquivos_sanepar import arquivos_sanepar
+from radar.analise.arquivos_sanepar import DocumentosSanepar
 from radar.analise.cache import versao_prompt
 from radar.analise.comparacao import comparar
 from radar.analise.custos import custo
@@ -74,7 +74,7 @@ class Dependencias:
     modelo: str
     # Documentos da Sanepar: outro cliente, preso a www.sanepar.com.br. Sem ele, edital da
     # Sanepar falha com ValueError (a CLI sempre passa; testes do PNCP não precisam).
-    cliente_sanepar: ClienteArquivosPNCP | None = None
+    documentos_sanepar: DocumentosSanepar | None = None
     # Compesa: portal SCL (porta 8743) e nuvem.
     documentos_compesa: DocumentosCompesa | None = None
 
@@ -264,9 +264,9 @@ def _arquivos_da_fonte(alvo: AlvoAnalise, dep: Dependencias) -> tuple[Baixador, 
             raise ValueError(f"id do PNCP fora do formato: {alvo.id_na_fonte}")
         return dep.cliente_arquivos, escolher_documentos(dep.cliente_arquivos.listar(*chave))
     if alvo.fonte == "sanepar":
-        if dep.cliente_sanepar is None:
+        if dep.documentos_sanepar is None:
             raise ValueError("sem cliente de documentos da Sanepar")
-        return dep.cliente_sanepar, arquivos_sanepar(alvo.bruto)
+        return dep.documentos_sanepar, dep.documentos_sanepar.listar(alvo.bruto)
     if alvo.fonte == "compesa":
         if dep.documentos_compesa is None:
             raise ValueError("sem cliente de documentos da Compesa")

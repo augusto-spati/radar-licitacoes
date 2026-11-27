@@ -22,17 +22,14 @@ declarações, projetos, ZIP e RAR aninhados) fica de fora. Cada cliente só bai
 coletor precisa liberá-la (regra `coletor_compesa` em infra/prod/coletor.tf).
 """
 
-import io
 import re
 import zipfile
-from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlencode
 
 import httpx
 
 from radar.analise.arquivos_pncp import (
-    MAX_DOCUMENTOS,
     TIMEOUT_SEGUNDOS,
     USER_AGENT,
     ArquivoPNCP,
@@ -41,6 +38,15 @@ from radar.analise.arquivos_pncp import (
     GrandeDemais,
 )
 from radar.analise.normalizacao import sem_acento
+from radar.analise.pacotes import (
+    LIMITE_ENTRADA,
+    Escolhido,
+    base_do_nome,
+    escolher_no_pacote,
+    legivel,
+    ler_entrada,
+    ler_pacote,
+)
 
 BASE_PORTAL = "https://portalscl.compesa.com.br:8743/webrunstudio"
 ORIGEM_PORTAL = ("https", "portalscl.compesa.com.br")
@@ -48,8 +54,6 @@ ORIGEM_NUVEM = ("https", "nuvem.compesa.com.br")
 PAUSA_COMPESA_S = 2.0
 LIMITE_ZIP_PORTAL = 60_000_000
 LIMITE_PACOTE_NUVEM = 150_000_000
-LIMITE_ENTRADA = 30_000_000  # descompactado, por documento escolhido
-MAX_ENTRADAS = 5000
 REGRA_ID_ANEXO = "Carrega o id do anexo do edital"
 PARTICIPANTE_ANONIMO = "NÃO IDENTIFICADO"
 
@@ -57,76 +61,13 @@ _RETORNO_REGRA = re.compile(r"_ruleReturn\s*=\s*'?(\d*)'?\s*;")
 _LINK_NUVEM = re.compile(
     rb"https://nuvem\.compesa\.com\.br/public\.php\?service=files&t=([0-9a-f]{32})"
 )
-_EXTENSOES = (".pdf", ".docx")
-_EDITAL = re.compile(r"(^|[^a-z])edita(l)?([^a-z]|$)")
-_TERMO_REFERENCIA = re.compile(r"termo[\W_]*(de[\W_]*)?refer|(^|[\W_])tr([\W_]|$)")
-_TR_FORA = re.compile(r"seguranca|projeto|proj[\W_]*executivo")
-_LIXO = re.compile(r"(^|/)(~\$|thumbs\.db$|__macosx/)")
-
-
-@dataclass(frozen=True)
-class _Escolhido:
-    nome: str
-    tipo: str
-
-
-def _base(nome: str) -> str:
-    return nome.rsplit("/", 1)[-1]
-
-
-def legivel(nome: str) -> str:
-    """Nome de entrada de ZIP sem a marca de UTF-8: o zipfile o lê em cp437. ZIP do Windows
-    (o da LC 168/2026) grava mesmo na página OEM e já sai certo; quem grava UTF-8 sem a marca
-    sai embaralhado e volta pelos bytes."""
-    try:
-        return nome.encode("cp437").decode("utf-8")
-    except (UnicodeEncodeError, UnicodeDecodeError):
-        return nome
-
-
-def escolher_no_pacote(nomes: list[str]) -> list[_Escolhido]:
-    """Edital(is) primeiro, depois termos de referência; até 3; PDF ou .docx; na ordem do nome."""
-    editais: list[_Escolhido] = []
-    termos: list[_Escolhido] = []
-    for nome in sorted(nomes):
-        if nome.endswith("/") or _LIXO.search(nome.lower()):
-            continue
-        base = sem_acento(_base(legivel(nome)))
-        if not base.endswith(_EXTENSOES):
-            continue
-        if _EDITAL.search(base) and not base.startswith("anexo"):
-            editais.append(_Escolhido(nome, "Edital"))
-        elif _TERMO_REFERENCIA.search(base) and not _TR_FORA.search(base):
-            termos.append(_Escolhido(nome, "Termo de referência"))
-    return (editais + termos)[:MAX_DOCUMENTOS]
-
-
-def _ler_pacote(dados: bytes) -> zipfile.ZipFile | None:
-    try:
-        pacote = zipfile.ZipFile(io.BytesIO(dados))
-    except zipfile.BadZipFile:
-        return None
-    if len(pacote.infolist()) > MAX_ENTRADAS:
-        raise ErroArquivos(f"pacote com mais de {MAX_ENTRADAS} arquivos")
-    return pacote
-
-
-def _ler_entrada(pacote: zipfile.ZipFile, nome: str) -> bytes:
-    info = pacote.getinfo(nome)
-    if info.file_size > LIMITE_ENTRADA:
-        raise GrandeDemais(f"{_base(nome)}: {info.file_size} bytes descompactados")
-    with pacote.open(info) as arquivo:
-        dados = arquivo.read(LIMITE_ENTRADA + 1)
-    if len(dados) > LIMITE_ENTRADA:  # tamanho declarado mentiroso
-        raise GrandeDemais(f"{_base(nome)}: mais de {LIMITE_ENTRADA} bytes descompactados")
-    return dados
 
 
 def _link_da_nuvem(pacote: zipfile.ZipFile) -> str | None:
     for info in pacote.infolist():
         if info.is_dir() or info.file_size > LIMITE_ENTRADA:
             continue
-        if not sem_acento(_base(info.filename)).endswith(
+        if not sem_acento(base_do_nome(info.filename)).endswith(
             (".doc", ".docx", ".rtf", ".txt", ".htm", ".html")
         ):
             continue
@@ -184,7 +125,7 @@ class DocumentosCompesa:
         if ident is None:
             return []
         url_zip = f"{BASE_PORTAL}/Upload/{nome_zip[:-4]}{ident}.ZIP"
-        pacote = _ler_pacote(self._portal.baixar(url_zip, LIMITE_ZIP_PORTAL))
+        pacote = ler_pacote(self._portal.baixar(url_zip, LIMITE_ZIP_PORTAL))
         if pacote is None:
             raise ErroArquivos(f"pacote do portal não é ZIP: {url_zip}")
         escolhidos = escolher_no_pacote(pacote.namelist())
@@ -194,7 +135,7 @@ class DocumentosCompesa:
         if link is None:
             return []
         dados = self._nuvem.baixar(f"{link}&download", LIMITE_PACOTE_NUVEM)
-        da_nuvem = _ler_pacote(dados)
+        da_nuvem = ler_pacote(dados)
         if da_nuvem is None:
             # Compartilhamento de um arquivo só (PDF ou .docx): é o próprio documento.
             self._baixados[link] = dados
@@ -206,19 +147,19 @@ class DocumentosCompesa:
         return self._guardar(link, da_nuvem, escolher_no_pacote(da_nuvem.namelist()))
 
     def _guardar(
-        self, origem: str, pacote: zipfile.ZipFile, escolhidos: list[_Escolhido]
+        self, origem: str, pacote: zipfile.ZipFile, escolhidos: list[Escolhido]
     ) -> list[ArquivoPNCP]:
         arquivos: list[ArquivoPNCP] = []
         for sequencial, escolhido in enumerate(escolhidos, start=1):
             url = f"{origem}#{escolhido.nome}"
             try:
-                self._baixados[url] = _ler_entrada(pacote, escolhido.nome)
+                self._baixados[url] = ler_entrada(pacote, escolhido.nome)
             except GrandeDemais:
                 continue  # o documento seguinte ainda pode servir
             arquivos.append(
                 ArquivoPNCP(
                     sequencial=sequencial,
-                    titulo=_base(legivel(escolhido.nome)),
+                    titulo=base_do_nome(legivel(escolhido.nome)),
                     tipo_nome=escolhido.tipo,
                     url=url,
                 )
