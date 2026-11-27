@@ -8,8 +8,76 @@ data "aws_cloudfront_cache_policy" "desligada" {
   name = "Managed-CachingDisabled"
 }
 
-data "aws_cloudfront_response_headers_policy" "seguranca" {
-  name = "Managed-SecurityHeadersPolicy"
+# Cabecalhos de seguranca do site e da API (Front-End-Checklist). Substitui o
+# Managed-SecurityHeadersPolicy, que nao tem CSP nem Permissions-Policy.
+# A CSP segue o que o build carrega: JS, CSS e fontes do proprio site, a API no
+# mesmo dominio (/api) e o login direto na API JSON do Cognito da regiao
+# (src/dados/sessao.ts). style-src leva 'unsafe-inline' porque React e Astryx
+# poem atributos style em tempo de execucao (alturas do Skeleton, tema).
+locals {
+  csp_site = join("; ", [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data:",
+    "font-src 'self'",
+    "connect-src 'self' https://cognito-idp.${var.regiao}.amazonaws.com",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    "upgrade-insecure-requests",
+  ])
+}
+
+resource "aws_cloudfront_response_headers_policy" "seguranca" {
+  name    = "radar-seguranca"
+  comment = "HSTS, CSP, nosniff, frame DENY, referrer e permissions do radar"
+
+  security_headers_config {
+    strict_transport_security {
+      access_control_max_age_sec = 63072000
+      include_subdomains         = true
+      override                   = true
+    }
+
+    content_type_options {
+      override = true
+    }
+
+    frame_options {
+      frame_option = "DENY"
+      override     = true
+    }
+
+    referrer_policy {
+      referrer_policy = "strict-origin-when-cross-origin"
+      override        = true
+    }
+
+    content_security_policy {
+      content_security_policy = local.csp_site
+      override                = true
+    }
+  }
+
+  custom_headers_config {
+    items {
+      header   = "Permissions-Policy"
+      value    = "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+      override = true
+    }
+  }
+
+  # Nao conta ao visitante que a origem e S3 nem como o bucket cifra.
+  remove_headers_config {
+    items {
+      header = "Server"
+    }
+    items {
+      header = "X-Amz-Server-Side-Encryption"
+    }
+  }
 }
 
 data "aws_cloudfront_origin_request_policy" "todos_menos_host" {
@@ -58,6 +126,7 @@ resource "aws_cloudfront_distribution" "site" {
   comment             = "radar-licitacoes"
   default_root_object = "index.html"
   price_class         = "PriceClass_100"
+  http_version        = "http2and3"
 
   origin {
     origin_id                = "s3-front"
@@ -84,7 +153,7 @@ resource "aws_cloudfront_distribution" "site" {
     cached_methods         = ["GET", "HEAD"]
     cache_policy_id        = data.aws_cloudfront_cache_policy.otimizada.id
 
-    response_headers_policy_id = data.aws_cloudfront_response_headers_policy.seguranca.id
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.seguranca.id
     compress                   = true
   }
 
@@ -97,6 +166,9 @@ resource "aws_cloudfront_distribution" "site" {
     cache_policy_id          = data.aws_cloudfront_cache_policy.desligada.id
     origin_request_policy_id = data.aws_cloudfront_origin_request_policy.todos_menos_host.id
     compress                 = true
+
+    # Mesma politica na API: o JSON tambem ganha nosniff, HSTS e frame DENY.
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.seguranca.id
   }
 
   restrictions {

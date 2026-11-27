@@ -430,3 +430,44 @@ def test_auditoria_diaria_com_alarme() -> None:
     assert 'command = ["auditar", "--endpoint", "atualizacao"]' in coletor
     assert 'pattern = "\\"auditoria_falhou\\""' in coletor
     assert 'alarm_name = "radar-auditoria-falhou"' in coletor
+
+
+def test_site_e_api_com_cabecalhos_de_seguranca() -> None:
+    front = re.sub(r"\s+", " ", _tf("front.tf"))
+    # Politica propria (a gerenciada nao tem CSP) ligada no site e na /api.
+    assert 'resource "aws_cloudfront_response_headers_policy" "seguranca"' in front
+    assert 'data "aws_cloudfront_response_headers_policy"' not in front
+    ligacoes = front.count(
+        "response_headers_policy_id = aws_cloudfront_response_headers_policy.seguranca.id"
+    )
+    assert ligacoes == 2
+    assert "access_control_max_age_sec = 63072000" in front
+    assert "include_subdomains = true" in front
+    assert "content_type_options { override = true }" in front
+    assert 'frame_option = "DENY"' in front
+    assert 'referrer_policy = "strict-origin-when-cross-origin"' in front
+    assert "content_security_policy = local.csp_site" in front
+    assert 'header = "Permissions-Policy"' in front
+
+
+def test_csp_so_libera_o_proprio_site_e_o_cognito() -> None:
+    front = re.sub(r"\s+", " ", _tf("front.tf"))
+    for diretiva in (
+        "\"default-src 'self'\"",
+        "\"script-src 'self'\"",
+        "\"font-src 'self'\"",
+        "\"connect-src 'self' https://cognito-idp.${var.regiao}.amazonaws.com\"",
+        "\"object-src 'none'\"",
+        "\"base-uri 'self'\"",
+        "\"frame-ancestors 'none'\"",
+    ):
+        assert diretiva in front
+    # Script nunca inline nem eval; nada de curinga liberando qualquer origem.
+    csp = front[front.index("csp_site = join") : front.index("resource", front.index("csp_site"))]
+    assert "unsafe-eval" not in csp
+    assert "script-src 'self' 'unsafe-inline'" not in csp
+    assert " * " not in csp and "'*'" not in csp and 'https:"' not in csp
+
+
+def test_site_com_http3() -> None:
+    assert re.search(r'http_version\s*=\s*"http2and3"', _tf("front.tf"))

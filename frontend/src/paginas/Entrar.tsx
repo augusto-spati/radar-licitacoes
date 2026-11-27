@@ -27,6 +27,8 @@ export function Entrar() {
   const [aguardando, setAguardando] = useState(false);
 
   async function executar(acao: () => Promise<void>) {
+    // Enter no campo também dispara: não manda de novo enquanto espera.
+    if (aguardando) return;
     setErro(null);
     setAguardando(true);
     try {
@@ -78,7 +80,7 @@ export function Entrar() {
                 description="Aqui qualquer e-mail e código abrem a lista."
               />
             )}
-            {erro && <Banner status="error" title={erro} />}
+            {erro && <Banner status="error" title={erro} role="alert" />}
             {real && desafio && !erro && (
               <Banner status="info" title="Se este e-mail tiver acesso, o código chega em instantes." />
             )}
@@ -90,6 +92,11 @@ export function Entrar() {
               placeholder="voce@empresa.com.br"
               type="email"
               size="lg"
+              autoComplete="email"
+              autoCapitalize="none"
+              hasSpellCheck={false}
+              enterKeyHint={desafio ? 'next' : 'send'}
+              onEnter={desafio ? undefined : pedirCodigo}
             />
             {!desafio ? (
               <Button
@@ -107,6 +114,12 @@ export function Entrar() {
                   onChange={setCodigo}
                   placeholder="Código recebido por e-mail"
                   size="lg"
+                  autoComplete="one-time-code"
+                  inputMode="numeric"
+                  enterKeyHint="go"
+                  onEnter={entrar}
+                  // O campo aparece depois do clique: o foco vai para ele, não se perde no body.
+                  hasAutoFocus
                 />
                 <Button
                   label="Entrar"
