@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config as AlembicConfig
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.orm import Session
 from testcontainers.community.postgres import PostgresContainer
 
@@ -29,6 +29,20 @@ def engine() -> Iterator[Engine]:
             yield engine
         finally:
             engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def _sem_leases(request: pytest.FixtureRequest) -> Iterator[None]:
+    """Apaga os leases de trava_fonte ao fim de todo teste que usa o banco.
+
+    A trava commita na própria conexão: o rollback da sessão de teste não a desfaz. Testes
+    sem `engine`/`sessao` (os unitários) não sobem o container por causa disso.
+    """
+    yield
+    if {"engine", "sessao"} & set(request.fixturenames):
+        engine: Engine = request.getfixturevalue("engine")
+        with engine.begin() as conexao:
+            conexao.execute(text("DELETE FROM trava_fonte"))
 
 
 @pytest.fixture

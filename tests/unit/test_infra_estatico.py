@@ -160,3 +160,13 @@ def test_analise_sem_alarme_novo() -> None:
 def test_api_lambda_le_config_ia() -> None:
     api = (RAIZ / "infra" / "prod" / "api.tf").read_text(encoding="utf-8")
     assert 'RADAR_CONFIG_IA     = "/var/task/config/ia.toml"' in api
+
+
+def test_cli_imprime_a_linha_que_o_filtro_do_alarme_conta() -> None:
+    """O filtro `radar-coletor-execucoes` conta linhas `resultado:`; a CLI precisa imprimi-las."""
+    tf = (RAIZ / "infra" / "prod" / "coletor.tf").read_text(encoding="utf-8")
+    achado = re.search(r'pattern\s*=\s*"\\"([^"\\]+)\\""', tf)
+    assert achado, "padrao do filtro radar-coletor-execucoes nao encontrado em coletor.tf"
+    termo = achado.group(1)
+    cli = (RAIZ / "src" / "radar" / "cli.py").read_text(encoding="utf-8")
+    assert f"{termo} " in cli, f"cli.py nao imprime {termo!r}; o alarme nao-rodou dispararia"
