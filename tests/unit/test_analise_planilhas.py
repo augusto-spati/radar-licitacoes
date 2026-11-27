@@ -290,3 +290,21 @@ def test_ia_invalida_ou_cortada_sai_com_o_custo(tmp_path: Path) -> None:
     with pytest.raises(PlanilhaIAInvalida) as erro:
         extrair_planilha_ia("texto 2", lixo, "amazon.nova-lite-v1:0", CONFIG_IA, CONFIG, Decimal(0))
     assert erro.value.custo_usd == Decimal("0.001014")
+
+
+def test_zip_publicado_como_edital_e_aberto_no_passo_1() -> None:
+    """Ribeirão Preto (PNCP 56024581000156-1-000529/2026): o único arquivo, tipo Edital, é o
+    "CE_019_2026.zip" com a planilha no Anexo IV; o passo 2 só lê PDF e a perdia."""
+    arquivos = [_arquivo(1, "Edital", "Edital"), _arquivo(2, "CE_019_2026.zip", "Edital")]
+    pacote = _zip(
+        {
+            "Anexo IV/Planilha Orçamentária.pdf": PLANILHA,
+            "Anexo IV/Planilha de Cálculo de BDI.pdf": EDITAL,
+            "ed_conc_eletr_019_2026.pdf": EDITAL,
+        }
+    )
+    baixar = Baixador({1: EDITAL, 2: pacote})
+    busca = procurar_planilhas(arquivos, baixar, CONFIG)
+    assert [d.nome for d in busca.planilhas] == ["Anexo IV/Planilha Orçamentária.pdf"]
+    # O edital em PDF continua para o passo 2.
+    assert [seq for seq, _ in baixar.pedidos] == [2]

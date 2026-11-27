@@ -4,8 +4,9 @@ pedir as linhas à IA. Ler as linhas e gravar é de `radar.precos`; quem compõe
 Achar (spike de 2026-11-27: em 6 de 9 obras a planilha estava no PNCP; em 4, dentro de ZIP):
 1. Os arquivos do edital vêm sem extensão no título ("Processo_completo_revisado..."). Baixa,
    na ordem, os de título de planilha, os "outros documentos" que não são esclarecimento,
-   aviso, errata e afins, e abre os ZIPs; dentro, os PDFs com nome de planilha
-   (`nome_de_planilha`). Cópia em XLSX fica de fora na v1 (o PDF gêmeo tem as mesmas linhas).
+   aviso, errata e afins (e o "Edital" que é um .zip pelo título), e abre os ZIPs;
+   dentro, os PDFs com nome de planilha (`nome_de_planilha`). Cópia em XLSX fica de fora na v1
+   (o PDF gêmeo tem as mesmas linhas).
 2. Sem planilha pelo nome, o edital e o termo de referência: só as páginas com 8+ "R$"
    (`paginas_com_precos`), que no spike acharam a planilha nos dois editais que a traziam.
 Download com teto próprio desta etapa (40 MB: o ZIP de Santa Bárbara tinha 25,6 MB), sem
@@ -167,12 +168,19 @@ def _eh_edital(arquivo: ArquivoPNCP) -> bool:
     return "edital" in tipo or "termo de referencia" in tipo
 
 
+def _pacote_pelo_nome(arquivo: ArquivoPNCP) -> bool:
+    """ "CE_019_2026.zip" publicado como Edital (Ribeirão Preto): o passo 2 só lê PDF."""
+    return sem_acento(arquivo.titulo).strip().endswith(".zip")
+
+
 def _ordem_de_download(arquivos: list[ArquivoPNCP]) -> list[ArquivoPNCP]:
     nomeados = [a for a in arquivos if nome_de_planilha(a.titulo)]
     outros = [
         a
         for a in arquivos
-        if a not in nomeados and not _eh_edital(a) and not _TITULO_FORA.search(sem_acento(a.titulo))
+        if a not in nomeados
+        and (not _eh_edital(a) or _pacote_pelo_nome(a))
+        and not _TITULO_FORA.search(sem_acento(a.titulo))
     ]
     return sorted(nomeados, key=lambda a: a.sequencial) + sorted(outros, key=lambda a: a.sequencial)
 
