@@ -210,9 +210,11 @@ resource "aws_lambda_function_event_invoke_config" "planejador" {
 
 locals {
   nome_agenda_planejador = "radar-planejar-diario"
-  # Montado a mao: referenciar aws_scheduler_schedule aqui fecharia um ciclo (a agenda usa o
-  # papel). Grupo "default", o da agenda.
-  arn_agenda_planejador = "arn:aws:scheduler:${var.regiao}:${data.aws_caller_identity.atual.account_id}:schedule/default/${local.nome_agenda_planejador}"
+  # O aws:SourceArn que o Scheduler apresenta ao assumir o papel e o do GRUPO de agendas,
+  # nao o da agenda (https://docs.aws.amazon.com/scheduler/latest/UserGuide/cross-service-confused-deputy-prevention.html);
+  # com o ARN da agenda o CreateSchedule falha ("must allow AWS EventBridge Scheduler to
+  # assume the role"). Grupo "default", o da agenda.
+  arn_agenda_planejador = "arn:aws:scheduler:${var.regiao}:${data.aws_caller_identity.atual.account_id}:schedule-group/default"
 }
 
 # Confianca: so o Scheduler desta conta, e so pela agenda do planejador (confused deputy).
