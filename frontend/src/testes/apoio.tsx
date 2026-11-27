@@ -18,6 +18,7 @@ export function fonteFalsa(parcial: Partial<Fonte> = {}): Fonte {
     obter: async () => null,
     analise: async () => null,
     historico: async () => null,
+    precos: async () => null,
     status: async () => ({atualizado_em: null}),
     ...parcial,
   };

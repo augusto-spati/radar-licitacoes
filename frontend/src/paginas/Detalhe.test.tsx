@@ -2,7 +2,7 @@
 import {cleanup, fireEvent, screen} from '@testing-library/react';
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import type {Fonte} from '../dados/fonte';
-import type {Analise, Historico} from '../dados/tipos';
+import type {Analise, Historico, ReferenciaPreco} from '../dados/tipos';
 import {edital, fonteFalsa, renderizar} from '../testes/apoio';
 import {Detalhe} from './Detalhe';
 
@@ -466,6 +466,113 @@ describe('Detalhe: histórico do órgão', () => {
     expect(screen.getByRole('heading', {level: 2, name: 'Aderência à FR'})).toBeTruthy();
     fireEvent.click(screen.getByRole('button', {name: 'Tentar de novo'}));
     expect(await screen.findByText(/^12 licitações/)).toBeTruthy();
+    expect(pedir).toHaveBeenCalledTimes(2);
+  });
+});
+
+const referencia = (parcial: Partial<ReferenciaPreco> = {}): ReferenciaPreco => ({
+  servico: 'rede_agua',
+  rotulo: 'Rede de água',
+  linha: 'redes',
+  material: 'pvc',
+  dn: 150,
+  escopo: 'completo',
+  faixa: null,
+  unidade: 'm',
+  abrangencia: 'uf',
+  uf: 'PE',
+  casos_estimado: 14,
+  mediana_estimado: '182.40',
+  casos_contratado: 9,
+  mediana_contratado: '151.10',
+  data_base_inicio: '2025-05-01',
+  data_base_fim: '2025-06-01',
+  ...parcial,
+});
+
+describe('Detalhe: preços de referência', () => {
+  const abrirCom = (precos: Fonte['precos']) =>
+    renderizar(<Detalhe />, {
+      fonte: fonteFalsa({obter: async () => edital({uf: 'PE'}), precos}),
+      endereco: `/edital/${encodeURIComponent(ID)}`,
+      padrao: '/edital/:id',
+    });
+
+  it('mostra estimado e contratado em linhas separadas, com origem, período e rodapé', async () => {
+    const pedir = vi.fn(async () => ({uf: 'PE', referencias: [referencia()]}));
+    abrirCom(pedir);
+    expect(
+      await screen.findByText('Rede de água · PVC DN 150 · fornecimento e assentamento (m)'),
+    ).toBeTruthy();
+    expect(pedir).toHaveBeenCalledWith(ID);
+    expect(screen.getByRole('heading', {level: 2, name: 'Preços de referência'})).toBeTruthy();
+    expect(screen.getByText('Estimado pelo órgão: R$ 182,40/m (14 casos, PE)')).toBeTruthy();
+    expect(screen.getByText('Contratado: R$ 151,10/m (9 casos, PE)')).toBeTruthy();
+    expect(screen.getByText('preços de 05/2025 a 06/2025')).toBeTruthy();
+    expect(
+      screen.getByText('Estimado é o preço do órgão, com BDI. Contratado: só Pernambuco (TCE-PE).'),
+    ).toBeTruthy();
+  });
+
+  it('nacional diz Brasil; sem contratado nem data-base, só o estimado; faixa e unidade', async () => {
+    abrirCom(async () => ({
+      uf: 'SP',
+      referencias: [
+        referencia({
+          servico: 'escavacao_vala',
+          rotulo: 'Escavação mecânica de vala',
+          linha: 'redes',
+          material: null,
+          dn: null,
+          escopo: null,
+          faixa: '1_5_a_3m',
+          unidade: 'm3',
+          abrangencia: 'nacional',
+          uf: null,
+          casos_estimado: 1,
+          mediana_estimado: '1234.5',
+          casos_contratado: 0,
+          mediana_contratado: null,
+          data_base_inicio: null,
+          data_base_fim: null,
+        }),
+        referencia({
+          material: 'fofo',
+          escopo: 'material',
+          data_base_inicio: '2025-03-01',
+          data_base_fim: '2025-03-20',
+        }),
+      ],
+    }));
+    expect(await screen.findByText('Escavação mecânica de vala · 1,5 a 3 m (m³)')).toBeTruthy();
+    expect(screen.getByText('Estimado pelo órgão: R$ 1.234,50/m³ (1 caso, Brasil)')).toBeTruthy();
+    expect(screen.getAllByText(/^Contratado:/)).toHaveLength(1);
+    expect(screen.getByText('Rede de água · ferro fundido DN 150 · só o tubo (m)')).toBeTruthy();
+    expect(screen.getByText('preços de 03/2025')).toBeTruthy();
+    expect(screen.getAllByText(/^preços de/)).toHaveLength(1);
+  });
+
+  it.each([
+    ['lista vazia', async () => ({uf: 'PE', referencias: []})],
+    ['edital sem preços (null)', async () => null],
+  ])('%s mostra a frase de vazio, sem rodapé', async (_, precos) => {
+    abrirCom(precos);
+    expect(
+      await screen.findByText('Sem preços de referência para as linhas deste edital.'),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Estimado é o preço do órgão/)).toBeNull();
+  });
+
+  it('erro nos preços não derruba o edital e oferece tentar de novo', async () => {
+    const pedir = vi
+      .fn<Fonte['precos']>()
+      .mockRejectedValueOnce(new Error('A API respondeu 500'))
+      .mockResolvedValueOnce({uf: 'PE', referencias: [referencia()]});
+    abrirCom(pedir);
+    expect(await screen.findByText('Não foi possível carregar os preços')).toBeTruthy();
+    expect(screen.getByText('Execução de rede de esgoto no bairro Centro')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', {name: 'Tentar de novo'}));
+    expect(await screen.findByText(/^Estimado pelo órgão: R\$ 182,40\/m/)).toBeTruthy();
     expect(pedir).toHaveBeenCalledTimes(2);
   });
 });

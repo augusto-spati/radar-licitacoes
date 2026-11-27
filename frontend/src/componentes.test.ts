@@ -22,6 +22,7 @@ const COMPONENTES = [
   'EstadoCarga.tsx',
   'FiltrosEditais.tsx',
   'HistoricoOrgao.tsx',
+  'PrecosReferencia.tsx',
   'ReguaDesconto.tsx',
   'SeloFonte.tsx',
   'Shell.tsx',

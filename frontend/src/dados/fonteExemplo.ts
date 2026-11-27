@@ -44,6 +44,8 @@ export function criarFonteExemplo(
     analise: async () => null,
     // Nem histórico do órgão: o detalhe mostra "sem histórico".
     historico: async () => null,
+    // Nem preços de referência: o detalhe mostra "sem preços".
+    precos: async () => null,
     status: async () => ({atualizado_em: dados.atualizado_em}),
   };
 }
