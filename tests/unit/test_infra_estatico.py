@@ -157,3 +157,12 @@ def test_coletor_so_retratos() -> None:
     assert '{ name = "RADAR_FILA_JANELAS_URL", value = aws_sqs_queue.janelas.url }' in coletor
     assert "aws_sqs_queue.janelas.arn" in _tf("fila.tf")  # o relay do coletor pode enviar
 
+
+def test_deploy_atualiza_as_lambdas_novas() -> None:
+    deploy = (RAIZ / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
+    for funcao in ("radar-coletora", "radar-planejador"):
+        assert f"update-function-code --function-name {funcao}" in deploy
+        assert f"wait function-updated-v2 --function-name {funcao}" in deploy
+    oidc = _tf("github_oidc.tf")
+    assert "aws_lambda_function.coletora.arn" in oidc
+    assert "aws_lambda_function.planejador.arn" in oidc
