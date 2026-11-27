@@ -467,3 +467,7 @@ def test_csp_so_libera_o_proprio_site_e_o_cognito() -> None:
     assert "unsafe-eval" not in csp
     assert "script-src 'self' 'unsafe-inline'" not in csp
     assert " * " not in csp and "'*'" not in csp and 'https:"' not in csp
+
+
+def test_site_com_http3() -> None:
+    assert re.search(r'http_version\s*=\s*"http2and3"', _tf("front.tf"))

@@ -126,6 +126,7 @@ resource "aws_cloudfront_distribution" "site" {
   comment             = "radar-licitacoes"
   default_root_object = "index.html"
   price_class         = "PriceClass_100"
+  http_version        = "http2and3"
 
   origin {
     origin_id                = "s3-front"
