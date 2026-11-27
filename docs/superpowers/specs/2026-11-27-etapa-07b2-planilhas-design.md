@@ -167,3 +167,7 @@ Desvios do construtor:
 - Evals formais (gabarito em `evals/`) ficaram para depois; os trechos das planilhas em `tests/dados/planilhas/` com as classificações esperadas nos testes fazem o papel de gabarito rascunho.
 - "Estimado com desconto" não entrou (sem tela nova; fica para a consulta quando houver onde mostrar).
 - Migração `0014` com `down_revision = "0012"`: a 0013 é de outro ramo; religar no rebase.
+
+## Revisão final (2026-11-27)
+
+Correções pedidas pelo coordenador depois da revisão: gasto mensal da 7b.2 medido no provedor e anotado por chamada paga (`gasto_planilha`, migração 0014); resposta paga inválida ou cortada em `max_tokens` vira `ia_invalida` (não é comprada de novo); guarda das linhas da IA por números inteiros perto uns dos outros, DN e material da descrição no texto e total da planilha obrigatório; PE fora dos alvos (TCE-PE); BDI só plausível (5% a 45%) e coerente; ZIP com teto de planilhas e de bytes por edital; vigia de transação aberta; republicação simétrica (um lote não apaga a planilha maior); a planilha do próprio edital fora da referência dele; IA desligada → `aguarda_ia`; `falhou` com espera que dobra.
