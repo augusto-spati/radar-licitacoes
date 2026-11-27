@@ -105,8 +105,9 @@ function Resumo({historico}: {historico: Historico}) {
       <Text type="body">{contagens(historico)}</Text>
       {historico.vencedores.length > 0 && (
         <List hasDividers header={<Heading level={3}>Quem vence</Heading>}>
-          {historico.vencedores.map(v => (
-            <QuemVence key={v.nome} vencedor={v} />
+          {historico.vencedores.map((v, i) => (
+            // "Pessoa física" se repete: o nome sozinho não é chave.
+            <QuemVence key={`${i}-${v.nome}`} vencedor={v} />
           ))}
         </List>
       )}

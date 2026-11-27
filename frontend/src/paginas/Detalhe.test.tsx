@@ -429,6 +429,24 @@ describe('Detalhe: histórico do órgão', () => {
     expect(screen.getByText(/Abaixo de 75% do estimado/)).toBeTruthy();
   });
 
+  it('mais de um vencedor "Pessoa física" aparece sem chave repetida', async () => {
+    const erro = vi.spyOn(console, 'error').mockImplementation(() => {});
+    abrirCom(async () =>
+      historico({
+        vencedores: [
+          {nome: 'Pessoa física', porte: null, vitorias: 1, desconto_mediano: '0.10'},
+          {nome: 'Pessoa física', porte: null, vitorias: 1, desconto_mediano: '0.20'},
+        ],
+      }),
+    );
+    expect(await screen.findByText('1 vitória · desconto mediano 10%')).toBeTruthy();
+    expect(screen.getByText('1 vitória · desconto mediano 20%')).toBeTruthy();
+    expect(screen.getAllByText('Pessoa física')).toHaveLength(2);
+    const chaves = erro.mock.calls.filter(chamada => String(chamada[0]).includes('same key'));
+    erro.mockRestore();
+    expect(chaves).toEqual([]);
+  });
+
   it('órgão sem contratações mostra a frase de vazio', async () => {
     abrirCom(async () =>
       historico({contagens: {}, total: 0, ultimas: [], vencedores: [], reguas: []}),
