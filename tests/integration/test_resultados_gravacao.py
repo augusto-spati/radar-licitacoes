@@ -58,8 +58,9 @@ def _item(
 
 def test_alvos(sessao: Session) -> None:
     # 1 aberto, 2 encerrado há 10 dias sem busca, 3 buscado ontem, 4 parcial buscado há 8 dias,
-    # 5 encerrado há 200 dias, 6 de outra fonte.
-    dias = {1: -5, 2: 10, 3: 10, 4: 10, 5: 200, 6: 10}
+    # 5 encerrado há 200 dias e nunca buscado (entra: carga histórica), 6 de outra fonte,
+    # 7 encerrado há 200 dias, parcial buscado há 8 dias (fora da janela de rebusca).
+    dias = {1: -5, 2: 10, 3: 10, 4: 10, 5: 200, 6: 10, 7: 200}
     registrar(sessao, [_registro(n, d) for n, d in dias.items()])
     sessao.execute(
         text("UPDATE edital SET fonte='sanepar' WHERE id_na_fonte=:i").bindparams(i=_id(6))
@@ -70,13 +71,24 @@ def test_alvos(sessao: Session) -> None:
         gravar_resultados(sessao, "pncp", _id(4), parcial, AGORA - timedelta(days=8)).situacao
         == "parcial"
     )
+    gravar_resultados(sessao, "pncp", _id(7), parcial, AGORA - timedelta(days=8))
     sessao.flush()
 
     alvos = alvos_resultado(sessao, CRITERIOS, AGORA, 10)
 
-    assert [a.id_na_fonte for a in alvos] == [_id(2), _id(4)]  # nunca buscado primeiro
+    # Nunca buscados primeiro (o mais recente antes), depois a rebusca.
+    assert [a.id_na_fonte for a in alvos] == [_id(2), _id(5), _id(4)]
     assert (alvos[0].cnpj, alvos[0].ano, alvos[0].sequencial) == (CNPJ, 2026, 2)
     assert len(alvos_resultado(sessao, CRITERIOS, AGORA, 1)) == 1
+
+
+def test_homologada_sem_vencedor_e_rebuscada(sessao: Session) -> None:
+    registrar(sessao, [_registro(9, 10), _registro(8, 10)])
+    gravar_resultados(sessao, "pncp", _id(9), [_item("homologado")], AGORA - timedelta(days=8))
+    gravar_resultados(sessao, "pncp", _id(8), [_item("homologado")], AGORA - timedelta(days=1))
+    sessao.flush()
+
+    assert [a.id_na_fonte for a in alvos_resultado(sessao, CRITERIOS, AGORA, 10)] == [_id(9)]
 
 
 def test_gravar_duas_vezes_nao_duplica(sessao: Session) -> None:

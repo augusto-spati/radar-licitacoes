@@ -89,7 +89,12 @@ def _chave(id_na_fonte: str) -> tuple[str, int, int] | None:
 def alvos_resultado(
     sessao: Session, criterios: Criterios, agora: datetime, limite: int
 ) -> list[AlvoResultado]:
-    """Editais do PNCP que casam o filtro, já encerrados, para buscar ou rebuscar resultados."""
+    """Editais do PNCP que casam o filtro, já encerrados, para buscar ou rebuscar resultados.
+
+    Nunca buscado entra qualquer que seja a idade do encerramento. Rebusca (buscado há mais de
+    7 dias, em `parcial`/`em_andamento`/`sem_itens` ou `homologada` sem vencedor) só para
+    encerrado nos últimos 180 dias. Nunca buscados vêm primeiro.
+    """
     agora_brasilia = agora.astimezone(FUSO).replace(tzinfo=None)
     casamentos = _casamentos(criterios)
     sete_dias = agora - timedelta(days=REBUSCA_DIAS)
@@ -107,13 +112,22 @@ def alvos_resultado(
         .where(Edital.uf.in_(criterios.ufs))
         .where(_modalidade_aceita(criterios))
         .where(Edital.data_encerramento_proposta < agora_brasilia)
-        .where(Edital.data_encerramento_proposta > agora_brasilia - timedelta(days=JANELA_DIAS))
         .where(
             or_(
+                # Nunca buscado entra sem limite de idade (a carga histórica precisa disso).
                 ResultadoBusca.id_na_fonte.is_(None),
+                # Rebusca: só dentro da janela de 180 dias, uma vez por semana.
                 and_(
+                    Edital.data_encerramento_proposta
+                    > agora_brasilia - timedelta(days=JANELA_DIAS),
                     ResultadoBusca.buscado_em < sete_dias,
-                    ResultadoBusca.situacao.in_(_REBUSCAVEIS),
+                    or_(
+                        ResultadoBusca.situacao.in_(_REBUSCAVEIS),
+                        and_(
+                            ResultadoBusca.situacao == "homologada",
+                            ResultadoBusca.vencedor_nome.is_(None),
+                        ),
+                    ),
                 ),
             )
         )
@@ -230,21 +244,35 @@ def _situacao_agregada(itens: list[ItemResultado]) -> str:
     return "anulada"
 
 
+def _estimado_comparavel(item: ItemResultado) -> Decimal | None:
+    """Estimado da quantidade homologada: com homologação parcial da quantidade (0 < q_hom < q),
+    vale o unitário estimado × q_hom; senão, o total estimado do item."""
+    q, q_hom, unitario = item.quantidade, item.quantidade_homologada, item.valor_unitario_estimado
+    if q is not None and q_hom is not None and unitario is not None and 0 < q_hom < q:
+        return unitario * q_hom
+    return item.valor_total_estimado
+
+
 def resumir(itens: list[ItemResultado]) -> ResumoContratacao:
-    """Situação, desconto (Σ homologado ÷ Σ estimado dos itens com estimado conhecido), vencedor."""
+    """Situação, desconto (Σ homologado ÷ Σ estimado dos itens com estimado conhecido), vencedor.
+
+    O estimado de cada item é o da quantidade homologada (ver `_estimado_comparavel`).
+    """
     homologados = [i for i in itens if i.situacao == "homologado"]
-    comparaveis = [
-        i
-        for i in homologados
-        if not i.orcamento_sigiloso
-        and i.valor_total_estimado is not None
-        and i.valor_total_estimado > 0
-        and i.valor_total_homologado is not None
-    ]
+    pares: list[tuple[Decimal, Decimal]] = []
+    for i in homologados:
+        estimado_item = _estimado_comparavel(i)
+        if (
+            not i.orcamento_sigiloso
+            and estimado_item is not None
+            and estimado_item > 0
+            and i.valor_total_homologado is not None
+        ):
+            pares.append((estimado_item, i.valor_total_homologado))
     desconto = estimado = homologado = None
-    if comparaveis:
-        estimado = sum((i.valor_total_estimado or Decimal(0) for i in comparaveis), Decimal(0))
-        homologado = sum((i.valor_total_homologado or Decimal(0) for i in comparaveis), Decimal(0))
+    if pares:
+        estimado = sum((e for e, _ in pares), Decimal(0))
+        homologado = sum((h for _, h in pares), Decimal(0))
         desconto = (1 - homologado / estimado).quantize(Decimal("0.0001"))
     totais: dict[tuple[str, str | int], Decimal] = {}
     quem: dict[tuple[str, str | int], ItemResultado] = {}

@@ -117,3 +117,23 @@ def test_vencedor_agrupa_por_ni():
 def test_mistos():
     assert resumir([_item(sit="fracassado"), _item(2, sit="deserto")]).situacao == "fracassada"
     assert resumir([_item(), _item(2, sit="anulado")]).situacao == "homologada"
+
+
+def test_homologacao_de_quantidade_menor_compara_com_o_estimado_dessa_quantidade():
+    item = ItemResultado(
+        numero_item=1,
+        descricao="x",
+        unidade="un",
+        quantidade=Decimal("100"),
+        valor_unitario_estimado=Decimal("1000"),
+        valor_total_estimado=Decimal("100000"),
+        orcamento_sigiloso=False,
+        situacao="homologado",
+        fornecedor_ni="1",
+        fornecedor_nome="A",
+        quantidade_homologada=Decimal("50"),
+        valor_total_homologado=Decimal("45000"),
+    )
+    r = resumir([item])
+    assert r.desconto == Decimal("0.1000")
+    assert r.estimado_considerado == 50000 and r.homologado_considerado == 45000
