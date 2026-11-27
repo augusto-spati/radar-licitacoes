@@ -693,6 +693,212 @@
         "title": "ListaOut",
         "type": "object"
       },
+      "PrecosOut": {
+        "properties": {
+          "referencias": {
+            "items": {
+              "$ref": "#/components/schemas/ReferenciaOut"
+            },
+            "title": "Referencias",
+            "type": "array"
+          },
+          "uf": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uf"
+          }
+        },
+        "required": [
+          "uf",
+          "referencias"
+        ],
+        "title": "PrecosOut",
+        "type": "object"
+      },
+      "ReferenciaOut": {
+        "properties": {
+          "abrangencia": {
+            "enum": [
+              "uf",
+              "outras_ufs"
+            ],
+            "title": "Abrangencia",
+            "type": "string"
+          },
+          "data_base_fim": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Base Fim"
+          },
+          "data_base_inicio": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Base Inicio"
+          },
+          "dn": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dn"
+          },
+          "escopo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Escopo"
+          },
+          "faixa": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Faixa"
+          },
+          "itens_contratado": {
+            "title": "Itens Contratado",
+            "type": "integer"
+          },
+          "itens_estimado": {
+            "title": "Itens Estimado",
+            "type": "integer"
+          },
+          "linha": {
+            "title": "Linha",
+            "type": "string"
+          },
+          "material": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material"
+          },
+          "mediana_contratado": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mediana Contratado"
+          },
+          "mediana_estimado": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mediana Estimado"
+          },
+          "mediana_estimado_contratados": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mediana Estimado Contratados"
+          },
+          "poucos_casos": {
+            "title": "Poucos Casos",
+            "type": "boolean"
+          },
+          "processos_contratado": {
+            "title": "Processos Contratado",
+            "type": "integer"
+          },
+          "processos_estimado": {
+            "title": "Processos Estimado",
+            "type": "integer"
+          },
+          "rotulo": {
+            "title": "Rotulo",
+            "type": "string"
+          },
+          "servico": {
+            "title": "Servico",
+            "type": "string"
+          },
+          "ufs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ufs",
+            "type": "array"
+          },
+          "unidade": {
+            "title": "Unidade",
+            "type": "string"
+          }
+        },
+        "required": [
+          "servico",
+          "rotulo",
+          "linha",
+          "material",
+          "dn",
+          "escopo",
+          "faixa",
+          "unidade",
+          "abrangencia",
+          "ufs",
+          "processos_estimado",
+          "itens_estimado",
+          "mediana_estimado",
+          "processos_contratado",
+          "itens_contratado",
+          "mediana_contratado",
+          "mediana_estimado_contratados",
+          "poucos_casos",
+          "data_base_inicio",
+          "data_base_fim"
+        ],
+        "title": "ReferenciaOut",
+        "type": "object"
+      },
       "ReguaOut": {
         "properties": {
           "casos": {
@@ -1108,6 +1314,46 @@
           }
         },
         "summary": "Historico"
+      }
+    },
+    "/api/precos/{id_publico}": {
+      "get": {
+        "description": "Preços de referência dos serviços das linhas do edital; vazio (não 404) sem dados.",
+        "operationId": "precos_api_precos__id_publico__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id_publico",
+            "required": true,
+            "schema": {
+              "title": "Id Publico",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrecosOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Precos"
       }
     },
     "/api/status": {

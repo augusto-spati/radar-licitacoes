@@ -155,6 +155,26 @@ describe('fonteApi', () => {
     const erro = await fonteApi.historico('pncp~1-1-1/2025').catch((e: unknown) => e);
     expect((erro as ErroFonte).status).toBe(500);
   });
+  it('precos lê /api/precos com a barra do id preservada', async () => {
+    const mock = simular(resposta({uf: 'PE', referencias: []}));
+    expect(await fonteApi.precos('pncp~13127340000120-1-000036/2025')).toEqual({
+      uf: 'PE',
+      referencias: [],
+    });
+    expect(mock).toHaveBeenCalledWith('/api/precos/pncp~13127340000120-1-000036/2025');
+  });
+  it('precos com 404 (edital não encontrado) devolve null', async () => {
+    simular(resposta({detail: 'edital não encontrado'}, 404));
+    expect(await fonteApi.precos('pncp~1-1-1/2025')).toBeNull();
+  });
+  it('precos com 500 vira ErroFonte', async () => {
+    simular(resposta({detail: 'x'}, 500));
+    const erro = await fonteApi.precos('pncp~1-1-1/2025').catch((e: unknown) => e);
+    expect((erro as ErroFonte).status).toBe(500);
+  });
+  it('fonteExemplo não traz preços', async () => {
+    expect(await fonteExemplo.precos('pncp~1-1-1/2025')).toBeNull();
+  });
   it('fonteExemplo não traz histórico', async () => {
     expect(await fonteExemplo.historico('pncp~1-1-1/2025')).toBeNull();
   });

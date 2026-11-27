@@ -17,3 +17,6 @@ export type Historico = components['schemas']['HistoricoOut'];
 export type ContratacaoPassada = components['schemas']['ContratacaoPassadaOut'];
 export type Vencedor = components['schemas']['VencedorOut'];
 export type Regua = components['schemas']['ReguaOut'];
+// Preços de referência por serviço-padrão (etapa 7b): estimado do órgão e contratado (TCE-PE).
+export type Precos = components['schemas']['PrecosOut'];
+export type ReferenciaPreco = components['schemas']['ReferenciaOut'];

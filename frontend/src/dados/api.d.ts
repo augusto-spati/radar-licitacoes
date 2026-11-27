@@ -81,6 +81,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/precos/{id_publico}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Precos
+         * @description Preços de referência dos serviços das linhas do edital; vazio (não 404) sem dados.
+         */
+        get: operations["precos_api_precos__id_publico__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/status": {
         parameters: {
             query?: never;
@@ -294,6 +314,59 @@ export interface components {
             /** Editais */
             editais: components["schemas"]["EditalResumoOut"][];
         };
+        /** PrecosOut */
+        PrecosOut: {
+            /** Referencias */
+            referencias: components["schemas"]["ReferenciaOut"][];
+            /** Uf */
+            uf: string | null;
+        };
+        /** ReferenciaOut */
+        ReferenciaOut: {
+            /**
+             * Abrangencia
+             * @enum {string}
+             */
+            abrangencia: "uf" | "outras_ufs";
+            /** Data Base Fim */
+            data_base_fim: string | null;
+            /** Data Base Inicio */
+            data_base_inicio: string | null;
+            /** Dn */
+            dn: number | null;
+            /** Escopo */
+            escopo: string | null;
+            /** Faixa */
+            faixa: string | null;
+            /** Itens Contratado */
+            itens_contratado: number;
+            /** Itens Estimado */
+            itens_estimado: number;
+            /** Linha */
+            linha: string;
+            /** Material */
+            material: string | null;
+            /** Mediana Contratado */
+            mediana_contratado: string | null;
+            /** Mediana Estimado */
+            mediana_estimado: string | null;
+            /** Mediana Estimado Contratados */
+            mediana_estimado_contratados: string | null;
+            /** Poucos Casos */
+            poucos_casos: boolean;
+            /** Processos Contratado */
+            processos_contratado: number;
+            /** Processos Estimado */
+            processos_estimado: number;
+            /** Rotulo */
+            rotulo: string;
+            /** Servico */
+            servico: string;
+            /** Ufs */
+            ufs: string[];
+            /** Unidade */
+            unidade: string;
+        };
         /** ReguaOut */
         ReguaOut: {
             /** Casos */
@@ -470,6 +543,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HistoricoOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    precos_api_precos__id_publico__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id_publico: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrecosOut"];
                 };
             };
             /** @description Validation Error */

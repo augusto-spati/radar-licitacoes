@@ -219,3 +219,43 @@ def test_migracao_0010_cria_e_remove_tabelas_do_historico(
 
     command.downgrade(config, "0009")
     assert existentes() == set()
+
+
+def test_migracao_0011_cria_e_remove_preco_item(
+    banco_migracao: tuple[AlembicConfig, Engine],
+) -> None:
+    config, alvo = banco_migracao
+
+    def existentes() -> set[str]:
+        with alvo.connect() as conexao:
+            nomes = conexao.scalars(
+                text("SELECT tablename FROM pg_tables WHERE schemaname = current_schema()")
+            ).all()
+            idx = conexao.scalars(
+                text("SELECT indexname FROM pg_indexes WHERE schemaname = current_schema()")
+            ).all()
+        return {n for n in nomes if n == "preco_item"} | {
+            i for i in idx if i == "ix_preco_item_servico_uf"
+        }
+
+    command.upgrade(config, "head")
+    assert existentes() == {"preco_item", "ix_preco_item_servico_uf"}
+    with alvo.begin() as conexao:
+        conexao.execute(
+            text(
+                "INSERT INTO preco_item (origem, chave_origem, uf, orgao_nome, processo, descricao,"
+                " unidade, servico, unidade_canonica, fator_unidade)"
+                " VALUES ('tce_pe', 'k', 'PE', 'Compesa', '1/2026', 'x', 'm', 'rede_agua', 'm', 1)"
+            )
+        )
+        linha = conexao.execute(
+            text("SELECT bdi_desconhecido, suspeito, gravado_em FROM preco_item")
+        ).one()
+    assert linha.bdi_desconhecido is False
+    assert linha.suspeito is False
+    assert linha.gravado_em is not None
+
+    command.downgrade(config, "0010")
+    assert existentes() == set()
+    with alvo.connect() as conexao:
+        assert conexao.scalar(text("SELECT to_regclass('resultado_item')")) is not None

@@ -1,0 +1,74 @@
+[
+ {
+  "ValorUnitario": "336550.0500",
+  "itemContratoId": "62635797",
+  "itemDescricao": "ADMINISTRAÇÃO LOCAL",
+  "IndiceAtualizacao": "INCC",
+  "MaterialServico": "S",
+  "BDI": "0.2467",
+  "UnidadeMedida": "UN",
+  "ValorTotal": "336550.0500",
+  "instrumentoJuridicoId": "60314628",
+  "Quantidade": "1.0000"
+ },
+ {
+  "ValorUnitario": "3.3100",
+  "itemContratoId": "62635798",
+  "itemDescricao": "LOCAÇÃO E NIVELAMENTO DE VALAS PARA COLETOR COM USO DE EQUIPAMENTOS TOPÓGRÁFICOS.",
+  "IndiceAtualizacao": "INCC",
+  "MaterialServico": "S",
+  "BDI": "0.2467",
+  "UnidadeMedida": "M",
+  "ValorTotal": "39720.0000",
+  "instrumentoJuridicoId": "60314628",
+  "Quantidade": "12000.0000"
+ },
+ {
+  "ValorUnitario": "50.3500",
+  "itemContratoId": "62635799",
+  "itemDescricao": "ESCAVAÇÃO MANUAL DE VALAS EM MATERIAL DE 1ª E/OU 2ª CATEGORIAS ATÉ 1,50 M DE PROFUNDIDADE",
+  "IndiceAtualizacao": "INCC",
+  "MaterialServico": "S",
+  "BDI": "0.2467",
+  "UnidadeMedida": "M3",
+  "ValorTotal": "29001.6000",
+  "instrumentoJuridicoId": "60314628",
+  "Quantidade": "576.0000"
+ },
+ {
+  "ValorUnitario": "92.7100",
+  "itemContratoId": "62635800",
+  "itemDescricao": "ESCAVAÇÃO EM MATERIAL DE 3ª CATEGORIA (ROCHA), COM ROMPEDOR ACOPLADO EM ESCAVADEIRA HIDRÁULICA, INCLUSIVE REMOÇÃO DE MATERIAL DA VALA COM ESCAVADEIRA HIDRÁULICA",
+  "IndiceAtualizacao": "INCC",
+  "MaterialServico": "S",
+  "BDI": "0.2467",
+  "UnidadeMedida": "M3",
+  "ValorTotal": "53400.9600",
+  "instrumentoJuridicoId": "60314628",
+  "Quantidade": "576.0000"
+ },
+ {
+  "ValorUnitario": "8.3500",
+  "itemContratoId": "62635801",
+  "itemDescricao": "ESCAVAÇÃO MECANIZADA DE VALA COM PROF. ATÉ 1,5 M (MÉDIA MONTANTE E JUSANTE/UMA COMPOSIÇÃO POR TRECHO), ESCAVADEIRA (0,8 M3),LARG. MENOR QUE 1,5 M, EM SOLO DE 1A CATEGORIA, LOCAIS COM BAIXO NÍVEL DE INTERFERÊNCIA. AF_09/2024",
+  "IndiceAtualizacao": "INCC",
+  "MaterialServico": "M",
+  "BDI": "0.2467",
+  "UnidadeMedida": "M3",
+  "ValorTotal": "76953.6000",
+  "instrumentoJuridicoId": "60314628",
+  "Quantidade": "9216.0000"
+ },
+ {
+  "ValorUnitario": "12.6500",
+  "itemContratoId": "62635802",
+  "itemDescricao": "ESCAVAÇÃO MECANIZADA DE VALA COM PROF. ATÉ 1,5 M (MÉDIA MONTANTE E JUSANTE/UMA COMPOSIÇÃO POR TRECHO), RETROESCAV. (0,26 M3), LARG. DE 0,8 M A 1,5 M, EM SOLO DE 2A CATEGORIA, EM LOCAIS COM BAIXO NÍVEL DE INTERFERÊNCIA. AF_09/2024",
+  "IndiceAtualizacao": "INCC",
+  "MaterialServico": "S",
+  "BDI": "0.2467",
+  "UnidadeMedida": "M3",
+  "ValorTotal": "14572.8000",
+  "instrumentoJuridicoId": "60314628",
+  "Quantidade": "1152.0000"
+ }
+]

@@ -80,11 +80,34 @@ export function formatarValor(v: string | null): string {
   if (!Number.isFinite(n)) return '—';
   if (n >= LIMIAR_MILHAO) return `R$ ${numero(n / 1_000_000, 2)} mi`;
   if (n >= 1_000) return `R$ ${numero(n / 1_000, 0)} mil`;
-  // O Intl do pt-BR separa "R$" do número com espaço sem quebra (U+00A0);
-  // trocamos por espaço comum para o texto ser comparável e copiável.
-  return new Intl.NumberFormat('pt-BR', {style: 'currency', currency: 'BRL'})
+  return reais(n);
+}
+
+// O Intl do pt-BR separa "R$" do número com espaço sem quebra (U+00A0);
+// trocamos por espaço comum para o texto ser comparável e copiável.
+const reais = (n: number) =>
+  new Intl.NumberFormat('pt-BR', {style: 'currency', currency: 'BRL'})
     .format(n)
     .replace(/\u00a0/g, ' ');
+
+// Unidades canônicas dos serviços-padrão (config/servicos.toml); outra aparece como veio.
+const UNIDADES: Record<string, string> = {m2: 'm²', m3: 'm³'};
+
+export const nomeUnidade = (unidade: string): string => UNIDADES[unidade] ?? unidade;
+
+/**
+ * Preço unitário por extenso, sem "mil"/"mi" (o centavo importa): "R$ 1.234,50/m³";
+ * nulo ou inválido vira travessão.
+ */
+export function formatarPrecoUnitario(v: string | null, unidade: string): string {
+  const n = v === null || v.trim() === '' ? NaN : Number(v);
+  return Number.isFinite(n) ? `${reais(n)}/${nomeUnidade(unidade)}` : '—';
+}
+
+/** "05/2025" de uma data ISO ("2025-05-01"): só mês e ano, sem fuso. */
+export function formatarMesAno(iso: string): string {
+  const m = /^(\d{4})-(\d{2})/.exec(iso);
+  return m === null ? iso : `${m[2]}/${m[1]}`;
 }
 
 const LIMITE_DESATUALIZADO_MS = 36 * 60 * 60 * 1000;

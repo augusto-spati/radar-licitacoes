@@ -25,13 +25,17 @@ from radar.coleta import (
     ClienteEducado,
     ClientePNCP,
     ClienteResultadosPNCP,
+    ClienteTcepe,
     ErroResultados,
+    ErroTcepe,
     FonteRetrato,
+    NumeroSemBusca,
     carregar_historico,
     coletar_pendentes,
     criar_http,
     criar_http_educado,
     criar_http_resultados,
+    criar_http_tcepe,
     executar_retrato,
     frescor_por_fonte,
     janelas_com_lease_vivo,
@@ -76,6 +80,15 @@ from radar.editais import (
     separar_id_publico,
 )
 from radar.editais import filtrar as filtrar_editais
+from radar.precos import (
+    apagar_processos,
+    contratados_gravados,
+    gravar_precos,
+    itens_de_processo,
+    processo_de_saneamento,
+    processo_homologado,
+    processos_gravados,
+)
 from radar.processador import (
     FilaLocal,
     criar_fila,
@@ -1111,6 +1124,160 @@ def resultados_atualizar(
         f"{falhas} falhas"
         + (
             f" (interrompida após {FALHAS_SEGUIDAS_PNCP} falhas seguidas do PNCP)"
+            if interrompida
+            else ""
+        )
+    )
+    _sair_sem_resultado(falhas)
+
+
+FALHAS_SEGUIDAS_TCEPE = 5
+
+
+def _criar_cliente_tcepe() -> ClienteTcepe:
+    return ClienteTcepe(criar_http_tcepe())
+
+
+def _anos_tcepe(anos: str | None) -> list[int]:
+    if anos is None:
+        ano = _agora().year
+        return [ano, ano - 1]
+    try:
+        return [int(parte) for parte in anos.split(",") if parte.strip()]
+    except ValueError as erro:
+        raise typer.BadParameter("use anos separados por vírgula, ex.: 2026,2025") from erro
+
+
+def _alvo_tcepe(processo: dict[str, Any]) -> bool:
+    return (
+        processo_de_saneamento(processo)
+        and processo_homologado(processo)
+        and str(processo.get("orcamentoSigiloso") or "0") != "1"
+    )
+
+
+def _contratos_tcepe(
+    cliente: ClienteTcepe, processo: dict[str, Any]
+) -> list[tuple[dict[str, Any], list[dict[str, Any]]]]:
+    """Contratos do processo com os itens; sem número para buscar, nenhum (só o estimado)."""
+    try:
+        instrumentos = cliente.instrumentos(
+            str(processo["unidadeJurisdicionadaId"]),
+            str(processo.get("numeroContratacao") or ""),
+            int(processo["anoContratacao"]),
+        )
+    except NumeroSemBusca:
+        logger.warning(
+            "tcepe_sem_busca_de_contrato",
+            extra={
+                "processo": processo.get("processoContratacaoId"),
+                "numero": processo.get("numeroContratacao"),
+            },
+        )
+        return []
+    return [
+        (instrumento, cliente.itens_instrumento(str(instrumento["instrumentoJuridicoId"])))
+        for instrumento in instrumentos
+    ]
+
+
+def _precos_de_um_processo(sessao: Session, cliente: ClienteTcepe, processo: dict[str, Any]) -> int:
+    """Busca orçamento e contratos de um processo, grava os preços e faz o commit dele.
+
+    Processo já casado com o mesmo `valorHomologado` não tem os contratos buscados de novo
+    (`contratados_gravados`). Processo que ficou sem nenhum item com serviço tem as linhas
+    antigas apagadas; orçamento vazio (instabilidade) não apaga nada.
+    """
+    processo_id = str(processo["processoContratacaoId"]).strip()
+    orcamento = cliente.orcamento(processo_id)
+    if not orcamento:
+        # Orçamento vazio de um processo homologado é instabilidade da fonte: não apaga nada.
+        logger.warning("tcepe_orcamento_vazio", extra={"processo_id": processo_id})
+        return 0
+    anteriores = contratados_gravados(sessao, processo_id, processo.get("valorHomologado"))
+    contratos = [] if anteriores is not None else _contratos_tcepe(cliente, processo)
+    novos = itens_de_processo(processo, orcamento, contratos, contratados=anteriores)
+    if novos:
+        gravados = gravar_precos(sessao, novos)
+    else:
+        apagar_processos(sessao, [processo_id])
+        gravados = 0
+    sessao.commit()
+    return gravados
+
+
+def _limpar_fora_do_alvo(sessao: Session, brutos: list[dict[str, Any]], alvos: set[str]) -> int:
+    """Apaga as linhas dos processos da listagem que saíram do alvo (anulado, revogado, não mais
+    homologado, sigiloso, fora do saneamento). Devolve quantos processos foram limpos."""
+    na_listagem = {str(p.get("processoContratacaoId") or "").strip() for p in brutos}
+    saiu = (na_listagem - alvos) & processos_gravados(sessao)
+    if not saiu:
+        return 0
+    apagar_processos(sessao, saiu)
+    sessao.commit()
+    logger.info("tcepe_processos_removidos", extra={"processos": len(saiu)})
+    return len(saiu)
+
+
+@app_tcepe.command("atualizar")
+def tcepe_atualizar(
+    anos: Annotated[
+        str | None,
+        typer.Option(help="Anos de contratação, separados por vírgula (padrão: atual e anterior)."),
+    ] = None,
+) -> None:
+    """Grava preços unitários (estimado e contratado) dos processos de saneamento do TCE-PE."""
+    configurar_logs()
+    lista_anos = _anos_tcepe(anos)
+    processos_total = itens_total = falhas = seguidas = removidos = 0
+    interrompida = False
+    with telemetria_do_processo("radar-tcepe"), _criar_sessao() as sessao:
+        cliente = _criar_cliente_tcepe()
+        try:
+            for ano in lista_anos:
+                try:
+                    brutos = cliente.processos(ano)
+                except Exception as erro:
+                    logger.exception("tcepe_falhou", extra={"ano": ano})
+                    falhas += 1
+                    seguidas = seguidas + 1 if isinstance(erro, ErroTcepe) else 0
+                    if seguidas >= FALHAS_SEGUIDAS_TCEPE:
+                        interrompida = True
+                        break
+                    continue
+                alvos = [p for p in brutos if _alvo_tcepe(p)]
+                removidos += _limpar_fora_do_alvo(
+                    sessao,
+                    brutos,
+                    {str(p.get("processoContratacaoId") or "").strip() for p in alvos} - {""},
+                )
+                for processo in alvos:
+                    try:
+                        gravados = _precos_de_um_processo(sessao, cliente, processo)
+                    except Exception as erro:  # um processo ruim não para a rodada
+                        sessao.rollback()
+                        logger.exception(
+                            "tcepe_falhou",
+                            extra={"processo": processo.get("processoContratacaoId")},
+                        )
+                        falhas += 1
+                        seguidas = seguidas + 1 if isinstance(erro, ErroTcepe) else 0
+                        if seguidas >= FALHAS_SEGUIDAS_TCEPE:
+                            interrompida = True
+                            break
+                        continue
+                    seguidas = 0
+                    processos_total += 1
+                    itens_total += gravados
+                if interrompida:
+                    break
+        finally:
+            cliente.fechar()
+    typer.echo(
+        f"tcepe: {processos_total} processos de saneamento, {itens_total} itens gravados, "
+        f"{falhas} falhas, {removidos} processos removidos"
+        + (
+            f" (interrompida após {FALHAS_SEGUIDAS_TCEPE} falhas seguidas do TCE-PE)"
             if interrompida
             else ""
         )

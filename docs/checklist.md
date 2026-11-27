@@ -58,7 +58,8 @@ Filas ficam como futuro, no tema 2: outbox + SQS (etapa 4a; o pgmq não existe n
 - [x] Resultados por item do PNCP (vencedor, valores homologados), desconto calculado e resposta instável que não apaga dado bom. `src/radar/coleta/resultados_pncp.py`, `src/radar/editais/resultados.py`, agenda às 05:00. Vídeo: a gravar.
 - [x] Histórico do órgão, vencedores e régua de desconto por linha, UF e faixa de valor na ficha do edital. `src/radar/editais/historico.py`, `GET /api/historicos/{id}`, `frontend/src/componentes/HistoricoOrgao.tsx`, `ReguaDesconto.tsx`. Vídeo: a gravar.
 - [ ] Carga histórica rodada em produção e números reais na doc da etapa.
-- [ ] Preço unitário (7b): planilha estimada do edital com IA e preço contratado do TCE-PE.
+- [x] Preço unitário pelo TCE-PE (7b.1): estimado e contratado por item, serviços-padrão, referências na ficha do edital. `src/radar/precos/`, `src/radar/coleta/tcepe.py`, `docs/etapas/07b-precos.md`.
+- [ ] Preço unitário estimado das planilhas dos editais do PNCP com IA (7b.2).
 - [ ] Resultados da Compesa pelo TCE-PE.
 
 ## Front com IA

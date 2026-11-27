@@ -2,7 +2,7 @@
 import {cleanup, fireEvent, screen} from '@testing-library/react';
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import type {Fonte} from '../dados/fonte';
-import type {Analise, Historico} from '../dados/tipos';
+import type {Analise, Historico, ReferenciaPreco} from '../dados/tipos';
 import {edital, fonteFalsa, renderizar} from '../testes/apoio';
 import {Detalhe} from './Detalhe';
 
@@ -42,7 +42,9 @@ describe('Detalhe', () => {
     expect(valorDe('Encerramento das propostas')).toBe('10/12/2026 08:00');
     expect(screen.getByText('Redes')).toBeTruthy();
 
-    const origem = screen.getByRole('link', {name: /Abrir no sistema de origem/});
+    const origem = screen.getByRole('link', {
+      name: /Abrir no sistema de origem/,
+    });
     expect(origem.getAttribute('href')).toBe('https://compras.exemplo.gov.br/edital/36');
     expect(origem.getAttribute('target')).toBe('_blank');
     expect(origem.getAttribute('rel')).toContain('noopener');
@@ -130,7 +132,11 @@ describe('Detalhe', () => {
     expect(obter).toHaveBeenCalledTimes(2);
     expect(obter).toHaveBeenLastCalledWith(ID);
     // O título visível some (a região viva do Astryx pode guardar o anúncio).
-    expect(screen.queryByRole('heading', {name: 'Não foi possível carregar o edital'})).toBeNull();
+    expect(
+      screen.queryByRole('heading', {
+        name: 'Não foi possível carregar o edital',
+      }),
+    ).toBeNull();
   });
 
   it('mostra o esqueleto enquanto carrega', () => {
@@ -252,7 +258,13 @@ describe('Detalhe: aderência (análise por IA)', () => {
 const historico = (parcial: Partial<Historico> = {}): Historico => ({
   orgao_cnpj: '13127340000120',
   orgao_nome: 'SERVIÇO AUTÔNOMO DE ÁGUA E ESGOTO',
-  contagens: {homologada: 7, parcial: 1, fracassada: 2, deserta: 1, em_andamento: 1},
+  contagens: {
+    homologada: 7,
+    parcial: 1,
+    fracassada: 2,
+    deserta: 1,
+    em_andamento: 1,
+  },
   total: 12,
   ultimas: [
     {
@@ -281,7 +293,12 @@ const historico = (parcial: Partial<Historico> = {}): Historico => ({
     },
   ],
   vencedores: [
-    {nome: 'Construtora X', porte: 'ME', vitorias: 3, desconto_mediano: '0.2415'},
+    {
+      nome: 'Construtora X',
+      porte: 'ME',
+      vitorias: 3,
+      desconto_mediano: '0.2415',
+    },
     {nome: 'Y Engenharia', porte: null, vitorias: 1, desconto_mediano: null},
   ],
   reguas: [
@@ -315,7 +332,10 @@ const regua = (parcial: Partial<Historico['reguas'][number]>) => ({
 describe('Detalhe: histórico do órgão', () => {
   const abrirCom = (historicoFn: Fonte['historico']) =>
     renderizar(<Detalhe />, {
-      fonte: fonteFalsa({obter: async () => edital(), historico: historicoFn}),
+      fonte: fonteFalsa({
+        obter: async () => edital(),
+        historico: historicoFn,
+      }),
       endereco: `/edital/${encodeURIComponent(ID)}`,
       padrao: '/edital/:id',
     });
@@ -363,7 +383,14 @@ describe('Detalhe: histórico do órgão', () => {
     abrirCom(async () =>
       historico({
         reguas: [
-          regua({uf: 'PR', faixa: 'acima_5m', casos: 3, p25: '0.1', mediana: '0.12', p75: '0.2'}),
+          regua({
+            uf: 'PR',
+            faixa: 'acima_5m',
+            casos: 3,
+            p25: '0.1',
+            mediana: '0.12',
+            p75: '0.2',
+          }),
           regua({}),
         ],
         limite_inexequivel: '0.70',
@@ -434,8 +461,18 @@ describe('Detalhe: histórico do órgão', () => {
     abrirCom(async () =>
       historico({
         vencedores: [
-          {nome: 'Pessoa física', porte: null, vitorias: 1, desconto_mediano: '0.10'},
-          {nome: 'Pessoa física', porte: null, vitorias: 1, desconto_mediano: '0.20'},
+          {
+            nome: 'Pessoa física',
+            porte: null,
+            vitorias: 1,
+            desconto_mediano: '0.10',
+          },
+          {
+            nome: 'Pessoa física',
+            porte: null,
+            vitorias: 1,
+            desconto_mediano: '0.20',
+          },
         ],
       }),
     );
@@ -449,7 +486,13 @@ describe('Detalhe: histórico do órgão', () => {
 
   it('órgão sem contratações mostra a frase de vazio', async () => {
     abrirCom(async () =>
-      historico({contagens: {}, total: 0, ultimas: [], vencedores: [], reguas: []}),
+      historico({
+        contagens: {},
+        total: 0,
+        ultimas: [],
+        vencedores: [],
+        reguas: [],
+      }),
     );
     expect(await screen.findByText('Sem histórico deste órgão no recorte.')).toBeTruthy();
     expect(screen.queryByText('Quem vence')).toBeNull();
@@ -466,6 +509,139 @@ describe('Detalhe: histórico do órgão', () => {
     expect(screen.getByRole('heading', {level: 2, name: 'Aderência à FR'})).toBeTruthy();
     fireEvent.click(screen.getByRole('button', {name: 'Tentar de novo'}));
     expect(await screen.findByText(/^12 licitações/)).toBeTruthy();
+    expect(pedir).toHaveBeenCalledTimes(2);
+  });
+});
+
+const referencia = (parcial: Partial<ReferenciaPreco> = {}): ReferenciaPreco => ({
+  servico: 'rede_agua',
+  rotulo: 'Rede de água',
+  linha: 'redes',
+  material: 'pvc',
+  dn: 150,
+  escopo: 'completo',
+  faixa: null,
+  unidade: 'm',
+  abrangencia: 'uf',
+  ufs: ['PE'],
+  processos_estimado: 14,
+  itens_estimado: 37,
+  mediana_estimado: '182.40',
+  processos_contratado: 9,
+  itens_contratado: 9,
+  mediana_contratado: '151.10',
+  mediana_estimado_contratados: '190.00',
+  poucos_casos: false,
+  data_base_inicio: '2025-05-01',
+  data_base_fim: '2025-06-01',
+  ...parcial,
+});
+
+describe('Detalhe: preços de referência', () => {
+  const abrirCom = (precos: Fonte['precos']) =>
+    renderizar(<Detalhe />, {
+      fonte: fonteFalsa({obter: async () => edital({uf: 'PE'}), precos}),
+      endereco: `/edital/${encodeURIComponent(ID)}`,
+      padrao: '/edital/:id',
+    });
+
+  it('mostra estimado e contratado em linhas separadas, com origem, período e rodapé', async () => {
+    const pedir = vi.fn(async () => ({
+      uf: 'PE',
+      referencias: [referencia()],
+    }));
+    abrirCom(pedir);
+    expect(
+      await screen.findByText('Rede de água · PVC DN 150 · fornecimento e assentamento (m)'),
+    ).toBeTruthy();
+    expect(pedir).toHaveBeenCalledWith(ID);
+    expect(screen.getByRole('heading', {level: 2, name: 'Preços de referência'})).toBeTruthy();
+    expect(
+      screen.getByText('Estimado pelo órgão: R$ 182,40/m · 14 processos (37 itens), PE'),
+    ).toBeTruthy();
+    expect(
+      screen.getByText('Contratado: R$ 151,10/m · 9 processos, PE; estimado desses: R$ 190,00/m'),
+    ).toBeTruthy();
+    expect(screen.getByText('preços de 05/2025 a 06/2025')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Estimado é o preço do órgão, com BDI. Contratado: só Pernambuco (TCE-PE). ' +
+          'Datas-base diferentes, sem correção monetária.',
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText('poucos casos')).toBeNull();
+    expect(screen.queryByText(/Brasil/)).toBeNull();
+  });
+
+  it('fora da UF do edital diz de onde vêm; poucos casos; sem contratado; faixa e unidade', async () => {
+    abrirCom(async () => ({
+      uf: 'SP',
+      referencias: [
+        referencia({
+          servico: 'escavacao_vala',
+          rotulo: 'Escavação mecânica de vala',
+          linha: 'redes',
+          material: null,
+          dn: null,
+          escopo: null,
+          faixa: '1_5_a_3m',
+          unidade: 'm3',
+          abrangencia: 'outras_ufs',
+          ufs: ['PE'],
+          processos_estimado: 1,
+          itens_estimado: 1,
+          mediana_estimado: '1234.5',
+          processos_contratado: 0,
+          itens_contratado: 0,
+          mediana_contratado: null,
+          mediana_estimado_contratados: null,
+          poucos_casos: true,
+          data_base_inicio: null,
+          data_base_fim: null,
+        }),
+        referencia({
+          material: 'ceramico',
+          escopo: 'material',
+          data_base_inicio: '2025-03-01',
+          data_base_fim: '2025-03-20',
+        }),
+      ],
+    }));
+    expect(await screen.findByText('Escavação mecânica de vala · 1,5 a 3 m (m³)')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Estimado pelo órgão: R$ 1.234,50/m³ · 1 processo, PE — sem dados na UF do edital',
+      ),
+    ).toBeTruthy();
+    expect(screen.getAllByText('poucos casos')).toHaveLength(1);
+    expect(screen.queryByText(/Brasil/)).toBeNull();
+    expect(screen.getAllByText(/^Contratado:/)).toHaveLength(1);
+    expect(screen.getByText('Rede de água · cerâmico DN 150 · só o tubo (m)')).toBeTruthy();
+    expect(screen.getByText('preços de 03/2025')).toBeTruthy();
+    expect(screen.getAllByText(/^preços de/)).toHaveLength(1);
+  });
+
+  it.each([
+    ['lista vazia', async () => ({uf: 'PE', referencias: []})],
+    ['edital sem preços (null)', async () => null],
+  ])('%s mostra a frase de vazio, sem rodapé', async (_, precos) => {
+    abrirCom(precos);
+    expect(
+      await screen.findByText('Sem preços de referência para as linhas deste edital.'),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Estimado é o preço do órgão/)).toBeNull();
+  });
+
+  it('erro nos preços não derruba o edital e oferece tentar de novo', async () => {
+    const pedir = vi
+      .fn<Fonte['precos']>()
+      .mockRejectedValueOnce(new Error('A API respondeu 500'))
+      .mockResolvedValueOnce({uf: 'PE', referencias: [referencia()]});
+    abrirCom(pedir);
+    expect(await screen.findByText('Não foi possível carregar os preços')).toBeTruthy();
+    expect(screen.getByText('Execução de rede de esgoto no bairro Centro')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', {name: 'Tentar de novo'}));
+    expect(await screen.findByText(/^Estimado pelo órgão: R\$ 182,40\/m/)).toBeTruthy();
     expect(pedir).toHaveBeenCalledTimes(2);
   });
 });

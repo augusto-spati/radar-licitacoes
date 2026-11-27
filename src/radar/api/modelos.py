@@ -22,6 +22,7 @@ from radar.editais import (
     Situacao,
     id_publico,
 )
+from radar.precos import Abrangencia, Referencia
 
 FUSO = ZoneInfo("America/Sao_Paulo")
 
@@ -285,4 +286,69 @@ def historico_out(historico: HistoricoOrgao) -> HistoricoOut:
             for r in historico.reguas
         ],
         limite_inexequivel=str(historico.limite_inexequivel),
+    )
+
+
+class ReferenciaOut(BaseModel):
+    servico: str
+    rotulo: str
+    linha: str
+    material: str | None
+    dn: int | None
+    escopo: str | None
+    faixa: str | None
+    unidade: str
+    # `uf`: todos os números da UF do edital; `outras_ufs`: não. Os de onde, em `ufs`.
+    abrangencia: Abrangencia
+    ufs: list[str]
+    # Casos contam processos (mediana das medianas por processo); itens, só informação.
+    processos_estimado: int
+    itens_estimado: int
+    mediana_estimado: str | None
+    processos_contratado: int
+    itens_contratado: int
+    mediana_contratado: str | None
+    # Estimado dos mesmos itens que têm contratado.
+    mediana_estimado_contratados: str | None
+    # Menos de 3 processos do estimado.
+    poucos_casos: bool
+    data_base_inicio: str | None
+    data_base_fim: str | None
+
+
+class PrecosOut(BaseModel):
+    uf: str | None
+    referencias: list[ReferenciaOut]
+
+
+def precos_out(uf: str | None, referencias: list[Referencia]) -> PrecosOut:
+    return PrecosOut(
+        uf=uf,
+        referencias=[
+            ReferenciaOut(
+                servico=r.servico,
+                rotulo=r.rotulo,
+                linha=r.linha,
+                material=r.material,
+                dn=r.dn,
+                escopo=r.escopo,
+                faixa=r.faixa,
+                unidade=r.unidade,
+                abrangencia=r.abrangencia,
+                ufs=list(r.ufs),
+                processos_estimado=r.processos_estimado,
+                itens_estimado=r.itens_estimado,
+                mediana_estimado=_decimal(r.mediana_estimado),
+                processos_contratado=r.processos_contratado,
+                itens_contratado=r.itens_contratado,
+                mediana_contratado=_decimal(r.mediana_contratado),
+                mediana_estimado_contratados=_decimal(r.mediana_estimado_contratados),
+                poucos_casos=r.poucos_casos,
+                data_base_inicio=None
+                if r.data_base_inicio is None
+                else r.data_base_inicio.isoformat(),
+                data_base_fim=None if r.data_base_fim is None else r.data_base_fim.isoformat(),
+            )
+            for r in referencias
+        ],
     )

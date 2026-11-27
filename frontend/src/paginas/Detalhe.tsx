@@ -13,6 +13,7 @@ import {rtlStyles} from '@astryxdesign/core/utils';
 import {Aderencia} from '../componentes/Aderencia';
 import {Carregando, ErroAoCarregar} from '../componentes/EstadoCarga';
 import {HistoricoOrgao} from '../componentes/HistoricoOrgao';
+import {PrecosReferencia} from '../componentes/PrecosReferencia';
 import {TokensLinhas} from '../componentes/TokensLinhas';
 import {useFonte} from '../dados/FonteContext';
 import {
@@ -101,6 +102,13 @@ function HistoricoDoEdital({id}: {id: string}) {
   return <HistoricoOrgao carga={carga} onTentarDeNovo={tentarDeNovo} />;
 }
 
+// E os preços de referência, idem.
+function PrecosDoEdital({id}: {id: string}) {
+  const fonte = useFonte();
+  const {carga, tentarDeNovo} = useCarga(() => fonte.precos(id), id);
+  return <PrecosReferencia carga={carga} onTentarDeNovo={tentarDeNovo} />;
+}
+
 function Conteudo({edital}: {edital: EditalDetalhe}) {
   return (
     <VStack gap={4}>
@@ -142,6 +150,9 @@ function Conteudo({edital}: {edital: EditalDetalhe}) {
       </Section>
       <Section>
         <HistoricoDoEdital id={edital.id_publico} />
+      </Section>
+      <Section>
+        <PrecosDoEdital id={edital.id_publico} />
       </Section>
     </VStack>
   );

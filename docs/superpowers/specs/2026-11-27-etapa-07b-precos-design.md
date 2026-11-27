@@ -52,7 +52,7 @@ Lista inicial em `config/servicos.toml`, cada um com nome, unidade canônica, li
 | Hidrômetro, fornecimento e instalação | un | perdas | "hidrometro" + ("fornecimento"/"instalacao"/"substituicao") |
 | Pesquisa de vazamento não visível | km | perdas | "pesquisa"/"deteccao" + "vazamento" |
 
-Item que não casa com nenhum fica guardado sem serviço (para revisar a lista depois). Unidades convertidas (km → m quando a canônica é m, etc.).
+Item que não casa com nenhum serviço não é gravado (decisão da revisão: o processo de 1.412 itens não entra inteiro); o log da rodada conta os descartados. Unidades convertidas (km → m quando a canônica é m, etc.).
 
 ### 7b.1 TCE-PE
 
@@ -82,8 +82,8 @@ Item que não casa com nenhum fica guardado sem serviço (para revisar a lista d
 ## Respostas à revisão do construtor **[decisões do Claude]**
 
 1. **TCE-PE e a AWS: testar antes de construir.** A primeira tarefa é uma sonda (`radar tcepe sondar`, uma chamada pequena a `Remessa_ProcessoContratacao` filtrada pela UJ da Compesa) rodada numa task avulsa do Fargate. Se a AWS for recusada, a 7b.1 fica fora (registrado, sem contornar) e o plano segue só com a 7b.2.
-2. **BDI: compara-se sempre o preço COM BDI** (o que o órgão paga). `preco_item` guarda `preco_sem_bdi`, `bdi` e `preco_com_bdi`; quando a fonte traz só o sem BDI e o percentual, `com = sem × (1 + bdi)`; quando traz só o unitário e não diz, assume-se com BDI e marca `bdi_desconhecido` (fora das medianas se o serviço tiver casos suficientes sem essa marca). A sonda confere no TCE-PE se `ValorUnitario × Quantidade ≈ ValorTotal` e se a soma bate com o `valorGlobal` (com ou sem BDI).
-3. **Chave do serviço de rede = (serviço, material, DN, com fornecimento?).** PVC, PEAD e FoFo separados; "assentamento" (sem fornecimento do tubo) separado de "fornecimento e assentamento". Item de rede sem DN ou material reconhecível fica sem serviço.
+2. **BDI: compara-se sempre o preço COM BDI** (o que o órgão paga). `preco_item` guarda `preco_sem_bdi`, `bdi` e `preco_com_bdi`; quando a fonte traz só o sem BDI e o percentual, `com = sem × (1 + bdi_fração)` (BDI vem em fração na Compesa e em percentual em Pedra); no TCE-PE o `ValorUnitario` já inclui o BDI (Σ itens = valor global); quando traz só o unitário e não diz, assume-se com BDI e marca `bdi_desconhecido` (fora das medianas se o serviço tiver casos suficientes sem essa marca). A sonda confere no TCE-PE se `ValorUnitario × Quantidade ≈ ValorTotal` e se a soma bate com o `valorGlobal` (com ou sem BDI).
+3. **Chave do serviço de rede = (serviço, material, DN, escopo).** PVC, PEAD e FoFo separados; escopo `material` (só o tubo), `assentamento` (só a instalação) ou `completo` (fornecimento e assentamento), para não misturar preço de material com preço de serviço. Item de rede sem DN ou material reconhecível fica sem serviço.
 4. **Tela:** serviços sem DN agregados; para rede, só os (material, DN, fornecimento) com 3+ casos na UF ou no fallback nacional, ordenados por casos. Sem extrair a planilha do edital aberto na v1.
 5. **Filtro do TCE-PE:** processos pelo pré-filtro amplo da 7a (≈ 85 por ano em PE), mas **só os itens que casam com algum serviço-padrão** vão para `preco_item` (o processo de 1.412 itens não entra inteiro). O número de itens gravados entra no log da rodada.
 6. **Compesa no histórico da 7a: fora desta etapa.** O histórico do órgão olha só editais `pncp~`; ligar os processos da Compesa a ele pede mudança no recorte da 7a. Fica registrado como próxima etapa. A 7b.1 guarda os itens da Compesa em `preco_item` normalmente.

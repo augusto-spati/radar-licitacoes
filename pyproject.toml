@@ -69,12 +69,12 @@ root_package = "radar"
 [[tool.importlinter.contracts]]
 name = "Módulos de domínio são independentes entre si"
 type = "independence"
-modules = ["radar.coleta", "radar.editais", "radar.analise"]
+modules = ["radar.coleta", "radar.editais", "radar.analise", "radar.precos"]
 
 [[tool.importlinter.contracts]]
 name = "Nenhum módulo importa a porta de entrada"
 type = "forbidden"
-source_modules = ["radar.coleta", "radar.editais", "radar.analise", "radar.comum"]
+source_modules = ["radar.coleta", "radar.editais", "radar.analise", "radar.precos", "radar.comum"]
 forbidden_modules = ["radar.cli", "radar.api", "radar.processador"]
 allow_indirect_imports = true
 
@@ -91,6 +91,7 @@ forbidden_modules = [
     "radar.coleta.modelos",
     "radar.coleta.historico",
     "radar.coleta.resultados_pncp",
+    "radar.coleta.tcepe",
     "radar.editais.filtro",
     "radar.editais.historico",
     "radar.editais.registro",
@@ -111,6 +112,10 @@ forbidden_modules = [
     "radar.analise.extrator",
     "radar.analise.pipeline",
     "radar.analise.evals",
+    "radar.precos.modelos",
+    "radar.precos.servicos",
+    "radar.precos.consulta",
+    "radar.precos.tcepe",
 ]
 allow_indirect_imports = true
 
@@ -118,4 +123,4 @@ allow_indirect_imports = true
 name = "comum não importa nenhum módulo"
 type = "forbidden"
 source_modules = ["radar.comum"]
-forbidden_modules = ["radar.coleta", "radar.editais", "radar.analise"]
+forbidden_modules = ["radar.coleta", "radar.editais", "radar.analise", "radar.precos"]
