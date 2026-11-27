@@ -36,6 +36,19 @@ A acompanhar: se o 429 levar janelas à DLQ, a saída é uma pausa entre página
 2. **`maximum_concurrency` tem custo de polling.** Com ele no event source mapping, o Lambda não reduz os pollers de uma fila ociosa; com duas filas, o polling passaria de 1 milhão de requisições por mês. Ficou só na `radar-janelas`, onde a cortesia com o PNCP exige. A `radar-editais` voltou a não ter limite. A medir: `NumberOfEmptyReceives` em 24 h.
 3. **Lease por janela no lugar do lock global do PNCP.** A trava de chave `pncp` do PR #9 seria redundante e não excluiria a Lambda, que não a pega. Cada janela tem o próprio lease, renovado a cada página, no `coletar_pendentes` local e na Lambda.
 
+## Deriva da lista de atualização
+
+**Fato (produção, 2026-11-27).** Todas as janelas que falharam eram de pregão (modalidade 6, mais de 4.000 registros) no endpoint `atualizacao`, com erros como "incompleta: 4435 de 4440 registros" ou "pagina 62 inconsistente: total_paginas=88, esperado 89". A leitura de uma janela leva dezenas de minutos (fatias, pausas, HTTP 429) e a lista muda nesse meio-tempo. Recoletar desde a página 1 voltava a falhar até a desistência (5 falhas).
+
+**Decisão.** Só no endpoint `atualizacao` (`coleta/fatias.py`):
+
+- na conferência final, se faltarem no máximo max(10, 0,5% do total) registros, a janela conclui e loga `janela_concluida_com_deriva` (warning, com esperado, obtido e diferença), além do `janela_concluida` de sempre;
+- se o total de páginas mudar no meio em ±1 página (e o de registros dentro do mesmo limite), o total novo é adotado e gravado no checkpoint, com log `janela_total_mudou`.
+
+Fora disso, o comportamento é o de antes: falha e recoleta. A `publicacao` (carga inicial) continua estrita.
+
+**Por que não se perde registro.** Um registro some da lista de atualização porque foi atualizado durante a leitura. A `dataAtualizacao` dele muda, e ele entra na janela de um dia posterior, que será coletada.
+
 ## Perguntas de entrevista
 
 Responda com suas palavras, citando o arquivo ou o comportamento. A etapa só fecha quando estiverem respondidas.

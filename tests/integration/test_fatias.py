@@ -616,3 +616,198 @@ def test_janela_sem_lote_nao_seta_atributo_nulo(
     span = _span(spans, "coleta.janela")
     assert span.attributes is not None and "radar.janela.lote" not in span.attributes
     assert not [r for r in caplog.records if r.name.startswith("opentelemetry")]
+
+
+# --- Deriva da lista de atualização (só `atualizacao`; `publicacao` continua estrito) ---
+
+
+def _ids(prefixo: str, n: int) -> list[str]:
+    return [f"{prefixo}-{i}" for i in range(n)]
+
+
+def _uma_pagina(
+    sessao: Session, endpoint: str, obtidos: int, esperados: int, caplog: pytest.LogCaptureFixture
+) -> tuple[ColetaJanela, ResultadoFatia]:
+    """Janela de uma página com `obtidos` distintos e `totalRegistros = esperados`."""
+    j = janela(sessao, endpoint=endpoint)
+    roteiro: dict[Chave, Pagina | BaseException] = {
+        (endpoint, D1, D1, 6, 1): _pagina_com(1, 1, _ids("x", obtidos), esperados)
+    }
+    with caplog.at_level(logging.INFO):
+        r = fatia(sessao, ClienteFalso(roteiro), j.id, lote=None)
+    return recarregar(sessao, j), r
+
+
+def test_atualizacao_com_deriva_pequena_conclui(
+    sessao: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    j, r = _uma_pagina(sessao, "atualizacao", obtidos=4435, esperados=4440, caplog=caplog)
+
+    assert r.desfecho == "concluida"
+    assert (j.status, j.erro, j.falhas) == ("concluida", None, 0)
+    deriva = next(x for x in caplog.records if x.getMessage() == "janela_concluida_com_deriva")
+    assert deriva.levelno == logging.WARNING
+    assert (deriva.esperados, deriva.obtidos, deriva.diferenca) == (4440, 4435, 5)  # type: ignore[attr-defined]
+    assert "janela_concluida" in [x.getMessage() for x in caplog.records]
+
+
+def test_atualizacao_deriva_no_limite_de_meio_por_cento(
+    sessao: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    # 0,5% de 6000 = 30 (maior que o piso de 10)
+    j, r = _uma_pagina(sessao, "atualizacao", obtidos=5970, esperados=6000, caplog=caplog)
+    assert (r.desfecho, j.status) == ("concluida", "concluida")
+
+
+def test_atualizacao_deriva_acima_do_limite_falha(
+    sessao: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    j, r = _uma_pagina(sessao, "atualizacao", obtidos=5969, esperados=6000, caplog=caplog)
+    assert r.desfecho == "falha"
+    assert (j.status, j.erro) == ("falha", "incompleta: 5969 de 6000 registros")
+    assert (j.proxima_pagina, j.total_paginas, j.esperados) == (1, None, None)
+
+
+def test_atualizacao_deriva_piso_de_dez(sessao: Session, caplog: pytest.LogCaptureFixture) -> None:
+    j, r = _uma_pagina(sessao, "atualizacao", obtidos=90, esperados=100, caplog=caplog)
+    assert r.desfecho == "concluida"
+
+
+def test_atualizacao_deriva_acima_do_piso_falha(
+    sessao: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    j, r = _uma_pagina(sessao, "atualizacao", obtidos=89, esperados=100, caplog=caplog)
+    assert (r.desfecho, j.erro) == ("falha", "incompleta: 89 de 100 registros")
+
+
+def test_publicacao_continua_estrita_na_completude(
+    sessao: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    j, r = _uma_pagina(sessao, "publicacao", obtidos=4435, esperados=4440, caplog=caplog)
+    assert r.desfecho == "falha"
+    assert j.erro == "incompleta: 4435 de 4440 registros"
+    assert "janela_concluida_com_deriva" not in [x.getMessage() for x in caplog.records]
+
+
+def _roteiro_com_total_mudando(
+    endpoint: str, total_novo: int, registros_novo: int
+) -> dict[Chave, Pagina | BaseException]:
+    """5 páginas de 2 registros (10 esperados); da página 3 em diante o PNCP informa outro total."""
+
+    def ch(n: int) -> Chave:
+        return (endpoint, D1, D1, 6, n)
+
+    roteiro: dict[Chave, Pagina | BaseException] = {}
+    for n in range(1, 7):
+        total, regs = (5, 10) if n < 3 else (total_novo, registros_novo)
+        roteiro[ch(n)] = _pagina_com(n, total, _ids(f"p{n}", 2), regs)
+    return roteiro
+
+
+def test_atualizacao_total_de_paginas_mais_um_e_adotado(
+    sessao: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    j = janela(sessao, endpoint="atualizacao")
+    falso = ClienteFalso(_roteiro_com_total_mudando("atualizacao", 6, 12))
+
+    with caplog.at_level(logging.INFO):
+        r = fatia(sessao, falso, j.id, lote=None)
+
+    recarregar(sessao, j)
+    assert r.desfecho == "concluida"
+    assert [c[4] for c in falso.chamadas] == [1, 2, 3, 4, 5, 6]
+    assert (j.status, j.total_paginas, j.esperados, j.paginas) == ("concluida", 6, 12, 6)
+    mudou = next(x for x in caplog.records if x.getMessage() == "janela_total_mudou")
+    assert mudou.levelno == logging.WARNING
+    assert (mudou.pagina, mudou.total_anterior, mudou.total_novo) == (3, 5, 6)  # type: ignore[attr-defined]
+
+
+def test_atualizacao_total_de_paginas_menos_um_e_adotado(
+    sessao: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    j = janela(sessao, endpoint="atualizacao")
+    falso = ClienteFalso(_roteiro_com_total_mudando("atualizacao", 4, 8))
+
+    r = fatia(sessao, falso, j.id, lote=None)
+
+    recarregar(sessao, j)
+    assert r.desfecho == "concluida"
+    assert [c[4] for c in falso.chamadas] == [1, 2, 3, 4]
+    assert (j.status, j.total_paginas, j.esperados, j.paginas) == ("concluida", 4, 8, 4)
+
+
+def test_atualizacao_total_adotado_vale_na_fatia_seguinte(sessao: Session) -> None:
+    j = janela(sessao, endpoint="atualizacao")
+    falso = ClienteFalso(_roteiro_com_total_mudando("atualizacao", 6, 12))
+    cronometro = Cronometro(200)
+    falso.ao_buscar = cronometro.avancar
+    assert fatia(sessao, falso, j.id, 0, "a", 540, cronometro).desfecho == "continua"
+    recarregar(sessao, j)
+    assert (j.proxima_pagina, j.total_paginas, j.esperados) == (4, 6, 12)
+
+    falso.chamadas.clear()
+    cronometro = Cronometro(200)
+    falso.ao_buscar = cronometro.avancar
+    assert fatia(sessao, falso, j.id, 1, "b", 540, cronometro).desfecho == "concluida"
+    assert [c[4] for c in falso.chamadas] == [4, 5, 6]
+
+
+def test_atualizacao_total_de_paginas_mais_dois_falha(sessao: Session) -> None:
+    j = janela(sessao, endpoint="atualizacao")
+    falso = ClienteFalso(_roteiro_com_total_mudando("atualizacao", 7, 14))
+
+    r = fatia(sessao, falso, j.id, lote=None)
+
+    recarregar(sessao, j)
+    assert r.desfecho == "falha"
+    assert j.erro == "pagina 3 inconsistente: total_paginas=7, esperado 5"
+    assert (j.proxima_pagina, j.total_paginas, j.esperados) == (1, None, None)
+
+
+def test_atualizacao_total_de_paginas_menos_dois_falha(sessao: Session) -> None:
+    j = janela(sessao, endpoint="atualizacao")
+    falso = ClienteFalso(_roteiro_com_total_mudando("atualizacao", 3, 6))
+    r = fatia(sessao, falso, j.id, lote=None)
+    assert (r.desfecho, recarregar(sessao, j).erro) == (
+        "falha",
+        "pagina 3 inconsistente: total_paginas=3, esperado 5",
+    )
+
+
+def test_atualizacao_total_de_registros_fora_do_limite_falha(sessao: Session) -> None:
+    j = janela(sessao, endpoint="atualizacao")
+    # uma página a mais, mas 11 registros a mais que os 10 da página 1 (piso de 10)
+    falso = ClienteFalso(_roteiro_com_total_mudando("atualizacao", 6, 21))
+    r = fatia(sessao, falso, j.id, lote=None)
+    assert r.desfecho == "falha"
+    assert "total_paginas=6, esperado 5" in (recarregar(sessao, j).erro or "")
+
+
+def test_publicacao_total_de_paginas_mais_um_falha(sessao: Session) -> None:
+    j = janela(sessao, endpoint="publicacao")
+    falso = ClienteFalso(_roteiro_com_total_mudando("publicacao", 6, 12))
+    r = fatia(sessao, falso, j.id, lote=None)
+    assert (r.desfecho, recarregar(sessao, j).erro) == (
+        "falha",
+        "pagina 3 inconsistente: total_paginas=6, esperado 5",
+    )
+
+
+def test_atualizacao_lista_encolhe_na_ultima_pagina_conclui_sem_ela(
+    sessao: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    j = janela(sessao, endpoint="atualizacao")
+    roteiro: dict[Chave, Pagina | BaseException] = {
+        ("atualizacao", D1, D1, 6, n): _pagina_com(n, 5, _ids(f"p{n}", 2), 10) for n in range(1, 5)
+    }
+    roteiro[("atualizacao", D1, D1, 6, 5)] = _pagina_com(5, 4, [], 8)
+
+    with caplog.at_level(logging.INFO):
+        r = fatia(sessao, ClienteFalso(roteiro), j.id, lote=None)
+
+    recarregar(sessao, j)
+    assert r.desfecho == "concluida"
+    assert (j.status, j.paginas, j.registros) == ("concluida", 4, 8)
+    nomes = [x.getMessage() for x in caplog.records]
+    assert "janela_total_mudou" in nomes
+    assert "janela_concluida_com_deriva" not in nomes  # 8 de 8: o total novo vale

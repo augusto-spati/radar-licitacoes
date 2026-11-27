@@ -42,6 +42,18 @@ LEASE_S = 960  # timeout da Lambda coletora (900 s) + 60 s de folga
 ORCAMENTO_LAMBDA_S = 540  # depois disto a fatia não começa página nova
 LIMITE_ERRO = 500
 
+# Deriva tolerada na lista de `atualizacao` (a de `publicacao` continua estrita). Um registro
+# some da lista porque foi atualizado durante a leitura (que leva dezenas de minutos): sua
+# dataAtualizacao muda e ele entra na janela de um dia posterior, então não se perde.
+DERIVA_MIN_REGISTROS = 10
+DERIVA_FRACAO = 0.005
+DERIVA_PAGINAS = 1
+
+
+def _deriva_tolerada(esperados: int) -> int:
+    return max(DERIVA_MIN_REGISTROS, int(esperados * DERIVA_FRACAO))
+
+
 DesfechoFatia = Literal[
     "concluida",
     "continua",
@@ -302,6 +314,7 @@ def _coletar(
     total = janela.total_paginas if numero > 1 else None
     if total is None:  # checkpoint sem o total da página 1 não vale: recomeça
         numero = 1
+    esperados = janela.esperados if total is not None else None
     paginas = 0
     registros = 0
     while total is None or numero <= total:
@@ -323,8 +336,26 @@ def _coletar(
                 paginas=paginas,
                 registros=registros,
             )
+        mudou: tuple[int, int | None] | None = None
         if total is None:
             total = pagina.total_paginas
+            esperados = _total_registros(pagina)
+        elif pagina.total_paginas != total and _deriva_aceita(janela, total, esperados, pagina):
+            mudou = (pagina.total_paginas, _total_registros(pagina))
+            logger.warning(
+                "janela_total_mudou",
+                extra={
+                    **_dados_log(janela),
+                    "pagina": numero,
+                    "total_anterior": total,
+                    "total_novo": mudou[0],
+                    "esperados_anterior": esperados,
+                    "esperados_novo": mudou[1],
+                },
+            )
+            total, esperados = mudou
+            if numero > total:  # a lista encolheu e esta página passou do fim
+                break
         elif pagina.total_paginas != total:
             erro_texto = (
                 f"pagina {numero} inconsistente: total_paginas={pagina.total_paginas}, "
@@ -339,12 +370,14 @@ def _coletar(
                 paginas=paginas,
                 registros=registros,
             )
-        _gravar_pagina(sessao, janela, token, numero, pagina, relogio)
+        _gravar_pagina(sessao, janela, token, numero, pagina, relogio, mudou)
         if total > 0:  # total_paginas == 0 é dia sem registros: nada a guardar
             paginas += 1
             registros += len(pagina.registros)
         numero += 1
-    return _concluir(sessao, janela, token, total, paginas, registros, relogio, inicio, cronometro)
+    return _concluir(
+        sessao, janela, token, total, esperados, paginas, registros, relogio, inicio, cronometro
+    )
 
 
 def _gravar_pagina(
@@ -354,8 +387,12 @@ def _gravar_pagina(
     numero: int,
     pagina: Pagina,
     relogio: Callable[[], datetime] | None,
+    total_novo: tuple[int, int | None] | None = None,
 ) -> None:
-    """Página + mensagem + checkpoint (com fencing) num commit só."""
+    """Página + mensagem + checkpoint (com fencing) num commit só.
+
+    Na página 1 (ou quando o total mudou dentro da deriva tolerada) grava também os totais.
+    """
     if pagina.total_paginas > 0:
         agora = _carimbo(relogio)
         comando = pg_insert(PaginaBruta).values(
@@ -379,20 +416,34 @@ def _gravar_pagina(
         # de 960 s; na Lambda o lease vence no máximo 960 s depois da última página.
         "travada_ate": func.now() + timedelta(seconds=LEASE_S),
     }
-    if numero == 1:
-        bruto_total = pagina.bruto.get("totalRegistros")
+    if numero == 1 or total_novo is not None:
         valores["total_paginas"] = pagina.total_paginas
-        valores["esperados"] = (
-            bruto_total
-            if isinstance(bruto_total, int) and not isinstance(bruto_total, bool)
-            else None
-        )
+        valores["esperados"] = _total_registros(pagina)
     resultado = sessao.execute(
         update(ColetaJanela).where(*_fencing(janela, token)).values(**valores)
     )
     if not resultado.rowcount:  # type: ignore[attr-defined]
         raise _LeasePerdida()
     sessao.commit()  # checkpoint: a página (e a mensagem) sobrevive a uma falha posterior
+
+
+def _total_registros(pagina: Pagina) -> int | None:
+    bruto_total = pagina.bruto.get("totalRegistros")
+    if isinstance(bruto_total, int) and not isinstance(bruto_total, bool):
+        return bruto_total
+    return None
+
+
+def _deriva_aceita(janela: _Janela, total: int, esperados: int | None, pagina: Pagina) -> bool:
+    """O total de páginas mudou no meio: só `atualizacao`, ±1 página e registros na tolerância."""
+    if janela.endpoint != "atualizacao" or pagina.total_paginas < 1:
+        return False
+    if abs(pagina.total_paginas - total) > DERIVA_PAGINAS:
+        return False
+    novos = _total_registros(pagina)
+    if esperados is None or novos is None:
+        return True  # sem contagem de registros, vale só a regra das páginas
+    return abs(novos - esperados) <= _deriva_tolerada(esperados)
 
 
 _CONTAGEM = text(
@@ -415,19 +466,34 @@ def _concluir(
     janela: _Janela,
     token: str,
     total: int,
+    esperados: int | None,
     paginas: int,
     registros: int,
     relogio: Callable[[], datetime] | None,
     inicio: float,
     cronometro: Callable[[], float],
 ) -> ResultadoFatia:
-    """Checagem de completude no banco (distintos de todas as fatias) e conclusão."""
+    """Checagem de completude no banco (distintos de todas as fatias) e conclusão.
+
+    `esperados` é o do checkpoint (página 1 ou o total adotado numa deriva), carregado entre
+    fatias pela linha da janela.
+    """
     contagem: Row[Any] = sessao.execute(_CONTAGEM, {"janela": janela.id, "total": total}).one()
-    esperados = sessao.scalar(select(ColetaJanela.esperados).where(ColetaJanela.id == janela.id))
     if esperados is not None and contagem.distintos < esperados:
-        erro = f"incompleta: {contagem.distintos} de {esperados} registros"
-        return _falhar(
-            sessao, janela, token, erro, recomecar=True, paginas=paginas, registros=registros
+        diferenca = esperados - contagem.distintos
+        if janela.endpoint != "atualizacao" or diferenca > _deriva_tolerada(esperados):
+            erro = f"incompleta: {contagem.distintos} de {esperados} registros"
+            return _falhar(
+                sessao, janela, token, erro, recomecar=True, paginas=paginas, registros=registros
+            )
+        logger.warning(
+            "janela_concluida_com_deriva",
+            extra={
+                **_dados_log(janela),
+                "esperados": esperados,
+                "obtidos": contagem.distintos,
+                "diferenca": diferenca,
+            },
         )
     resultado = sessao.execute(
         update(ColetaJanela)
