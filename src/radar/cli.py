@@ -78,7 +78,13 @@ from radar.processador import (
 # A análise (e a API, que a importa) só carrega nos comandos que a usam: o coletor e o relay
 # não pagam o import nem quebram se algo da análise (prompt, config) estiver ruim.
 if TYPE_CHECKING:
-    from radar.analise import AlvoAnalise, ClienteArquivosPNCP, ConfigIA, Provedor
+    from radar.analise import (
+        AlvoAnalise,
+        ClienteArquivosPNCP,
+        ConfigIA,
+        DocumentosCompesa,
+        Provedor,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -615,6 +621,12 @@ def _criar_provedor_ia(config: "ConfigIA") -> "Provedor":
     return ProvedorBedrock(config)
 
 
+def _criar_documentos_compesa() -> "DocumentosCompesa":
+    from radar.analise import criar_documentos_compesa
+
+    return criar_documentos_compesa()
+
+
 def _criar_cliente_sanepar() -> "ClienteArquivosPNCP":
     from radar.analise import criar_cliente_sanepar
 
@@ -644,11 +656,11 @@ _relogio_rodada = time.monotonic
 RESERVA_SANEPAR = 3
 
 
-def _candidatos_por_fonte(abertos: list[EditalResumo]) -> list[EditalResumo]:
-    """Até RESERVA_SANEPAR da Sanepar primeiro, depois o resto (PNCP e Sanepar) por encerramento."""
-    from radar.analise import FONTES_ANALISADAS
-
-    analisaveis = [e for e in abertos if e.fonte in FONTES_ANALISADAS]
+def _candidatos_por_fonte(
+    abertos: list[EditalResumo], fontes: tuple[str, ...]
+) -> list[EditalResumo]:
+    """Até RESERVA_SANEPAR da Sanepar primeiro, depois o resto das `fontes` por encerramento."""
+    analisaveis = [e for e in abertos if e.fonte in fontes]
     reservados = [e for e in analisaveis if e.fonte == "sanepar"][:RESERVA_SANEPAR]
     ja = {(e.fonte, e.id_na_fonte) for e in reservados}
     return reservados + [e for e in analisaveis if (e.fonte, e.id_na_fonte) not in ja]
@@ -661,6 +673,7 @@ def _alvos_analise(
     modelo: str,
     refazer: bool,
     limite: int,
+    fontes: tuple[str, ...],
 ) -> tuple[list["AlvoAnalise"], int]:
     """Os editais a analisar e quantos foram pulados por já terem análise."""
     from radar.analise import AlvoAnalise, ja_analisado, versao_prompt_atual
@@ -677,7 +690,7 @@ def _alvos_analise(
         abertos = filtrar_editais(
             sessao, criterios, _agora(), somente_abertos=True, limite=CANDIDATOS_ANALISE
         )
-        candidatos = _candidatos_por_fonte(abertos)
+        candidatos = _candidatos_por_fonte(abertos, fontes)
     alvos: list[AlvoAnalise] = []
     pulados = 0
     for candidato in candidatos:
@@ -687,8 +700,9 @@ def _alvos_analise(
         if not refazer and ja_analisado(sessao, alvo, modelo, versao):
             pulados += 1
             continue
-        if alvo.fonte == "sanepar":
-            # Os documentos da Sanepar saem dos anexos que a coleta guardou no bruto.
+        if alvo.fonte in ("sanepar", "compesa"):
+            # Os documentos saem do bruto que a coleta guardou: anexos (Sanepar), número e
+            # ZIP_ANEXOS (Compesa).
             bruto = bruto_do_edital(sessao, alvo.fonte, alvo.id_na_fonte)
             alvo = replace(alvo, bruto=bruto)
         alvos.append(alvo)
@@ -707,13 +721,22 @@ def analisar(
         str | None, typer.Option(help="Analisa só este id_publico, mesmo encerrado.")
     ] = None,
     refazer: Annotated[bool, typer.Option("--refazer", help="Ignora a análise existente.")] = False,
+    fontes: Annotated[
+        str,
+        typer.Option(
+            help="Fontes separadas por vírgula. A Compesa só responde fora da AWS: "
+            "rode `--fontes compesa` no notebook."
+        ),
+    ] = "pncp,sanepar",
     config: OpcaoConfig = ARQUIVO_CONFIG,
 ) -> None:
-    """Extrai as exigências dos editais abertos (PNCP e Sanepar) com IA e compara com o perfil."""
+    """Extrai as exigências dos editais abertos com IA e compara com o perfil."""
     from radar.analise import (
+        FONTES_ANALISADAS,
         CacheBanco,
         Dependencias,
         ProvedorComCache,
+        SemDocumentos,
         TetoAtingido,
         analisar_edital,
         carregar_config_ia,
@@ -723,6 +746,11 @@ def analisar(
     )
 
     configurar_logs()
+    fontes_pedidas = tuple(f.strip() for f in fontes.split(",") if f.strip())
+    desconhecidas = sorted(set(fontes_pedidas) - set(FONTES_ANALISADAS))
+    if not fontes_pedidas or desconhecidas:
+        typer.echo(f"fontes sem análise: {', '.join(desconhecidas) or '(nenhuma)'}", err=True)
+        raise typer.Exit(code=2)
     ambiente = obter_config()
     if ambiente.ia_provedor == "desligado":
         typer.echo("IA desligada: defina RADAR_IA_PROVEDOR=bedrock", err=True)
@@ -734,7 +762,7 @@ def analisar(
         raise typer.Exit(code=2)
     perfil = carregar_perfil(ambiente.config_perfil)
     criterios = carregar_criterios(config)
-    analisados = falhas = adiados = 0
+    analisados = falhas = adiados = sem_documentos = 0
     teto = False
     dono = uuid4()
     # Span raiz da rodada e um filho por edital. Atributos só com contagens, ids e desfechos:
@@ -765,6 +793,7 @@ def analisar(
                         modelo,
                         refazer,
                         limite or config_ia.max_editais_por_rodada,
+                        fontes_pedidas,
                     )
                     sessao.rollback()  # só leitura: nada aberto durante rede e Bedrock
                     # O cache no banco commita cada resposta paga na hora, em conexão própria:
@@ -778,9 +807,13 @@ def analisar(
                     )
                     cliente = _criar_cliente_arquivos()
                     cliente_sanepar = _criar_cliente_sanepar()
+                    documentos_compesa = (
+                        _criar_documentos_compesa() if "compesa" in fontes_pedidas else None
+                    )
                     dep = Dependencias(
                         cliente_arquivos=cliente,
                         cliente_sanepar=cliente_sanepar,
+                        documentos_compesa=documentos_compesa,
                         armazem=criar_armazem(ambiente.documentos),
                         provedor=provedor,
                         config=config_ia,
@@ -814,6 +847,18 @@ def analisar(
                             ) as span:
                                 try:
                                     analisar_edital(sessao, alvo, dep, _agora())
+                                except SemDocumentos:
+                                    # Nada gravado: o edital volta na próxima rodada.
+                                    span.set_attribute("radar.desfecho", "sem_documentos")
+                                    logger.info(
+                                        "analise_sem_documentos",
+                                        extra={
+                                            "fonte": alvo.fonte,
+                                            "id_na_fonte": alvo.id_na_fonte,
+                                        },
+                                    )
+                                    sem_documentos += 1
+                                    continue
                                 except TetoAtingido:
                                     span.set_attribute("radar.desfecho", "teto")
                                     teto = True
@@ -838,6 +883,8 @@ def analisar(
                     finally:
                         cliente.fechar()
                         cliente_sanepar.fechar()
+                        if documentos_compesa is not None:
+                            documentos_compesa.fechar()
                 finally:
                     liberar_trava(sessao, TRAVA_ANALISE, dono)
             rodada.set_attributes(
@@ -847,6 +894,7 @@ def analisar(
                     "radar.analise.pulados": pulados,
                     "radar.analise.falhas": falhas,
                     "radar.analise.adiados": adiados,
+                    "radar.analise.sem_documentos": sem_documentos,
                     "radar.analise.teto": teto,
                     "radar.analise.custo_usd": float(provedor.custo_usd),
                 }
@@ -863,7 +911,7 @@ def analisar(
     # cala o alarme "não rodou".
     typer.echo(
         f"analise: {analisados} analisados, {pulados} pulados, {falhas} falhas, "
-        f"US$ {provedor.custo_usd:.4f}"
+        f"US$ {provedor.custo_usd:.4f}, {sem_documentos} sem documentos"
     )
     _sair_sem_resultado(falhas + int(teto))
 

@@ -436,6 +436,7 @@ ATRIBUTOS_RODADA = {
     "radar.analise.pulados",
     "radar.analise.falhas",
     "radar.analise.adiados",
+    "radar.analise.sem_documentos",
     "radar.analise.teto",
     "radar.analise.custo_usd",
 }
@@ -516,3 +517,102 @@ def test_rodada_concorrente_conta_como_execucao_ok(
     assert _analisar(config_filtro).exit_code == 0
     assert metricas.valores("ExecucaoOk") == [1.0]
     assert [s.name for s in spans.get_finished_spans()] == ["analise.rodada"]
+
+
+def _compesa() -> dict[str, Any]:
+    return {
+        "fonte": "compesa",
+        "id_na_fonte": "2026LC168CPL",
+        "objeto": "Obras de rede e redução de vazamento em Petrolina",
+        "orgao_nome": "COMPESA",
+        "uf": "SP",  # o filtro do teste só aceita SP e PR
+        "modalidade_nome": "Licitação",
+        "situacao_original": "Abertura",
+        "situacao_normalizada": "aberta",
+        "data_encerramento_proposta": "2026-12-12T10:00:00",
+        "bruto": {
+            "numero": "LC 168/2026 CPL",
+            "campos": {"ZIP_ANEXOS": "LC168-2026CPL.ZIP"},
+        },
+    }
+
+
+def _docx(texto: str) -> bytes:
+    import io
+    import zipfile
+
+    corpo = "".join(f"<w:p><w:r><w:t>{texto} {i}</w:t></w:r></w:p>" for i in range(3))
+    saida = io.BytesIO()
+    with zipfile.ZipFile(saida, "w") as pacote:
+        pacote.writestr("word/document.xml", f"<w:document><w:body>{corpo}</w:body></w:document>")
+    return saida.getvalue()
+
+
+class DocumentosCompesaFalsos:
+    def __init__(self) -> None:
+        self.brutos: list[Any] = []
+        self.fechado = False
+
+    def listar(self, bruto: Any) -> list[Any]:
+        from radar.analise import ArquivoPNCP
+
+        self.brutos.append(bruto)
+        return [ArquivoPNCP(1, "EDITAL LC 168.docx", "Edital", "https://nuvem.compesa.com.br/x#E")]
+
+    def baixar(self, url: str) -> bytes:
+        return _docx("Capital social mínimo exigido e atestado de execução de rede. " * 5)
+
+    def fechar(self) -> None:
+        self.fechado = True
+
+
+def test_fontes_desconhecidas_saem_com_2(
+    rede: tuple[sessionmaker[Session], Rede], config_filtro: Path
+) -> None:
+    resultado = _analisar(config_filtro, "--fontes", "pncp,tce")
+    assert resultado.exit_code == 2
+    assert "fontes sem análise: tce" in resultado.output
+
+
+def test_compesa_so_com_fontes_compesa_e_le_o_word(
+    rede: tuple[sessionmaker[Session], Rede],
+    config_filtro: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fabrica, _ = rede
+    with fabrica() as sessao:
+        registrar_normalizados(sessao, [_compesa()])
+        sessao.commit()
+    falsos = DocumentosCompesaFalsos()
+    monkeypatch.setattr(cli, "_criar_documentos_compesa", lambda: falsos)
+
+    padrao = _analisar(config_filtro)
+    assert padrao.exit_code == 0, padrao.output
+    assert _analisados(fabrica) == set()  # a rodada da nuvem não toca a Compesa
+    assert falsos.brutos == []
+
+    resultado = _analisar(config_filtro, "--fontes", "compesa")
+    assert resultado.exit_code == 0, resultado.output
+    assert _analisados(fabrica) == {"2026LC168CPL"}
+    assert falsos.brutos[0]["numero"] == "LC 168/2026 CPL"
+    assert falsos.fechado
+    with fabrica() as sessao:
+        [documento] = sessao.scalars(select(radar.analise.DocumentoEdital)).all()
+        assert documento.status == "extraido"
+        assert documento.titulo == "EDITAL LC 168.docx"
+
+
+def test_edital_sem_documento_nao_grava_e_volta_depois(
+    rede: tuple[sessionmaker[Session], Rede], config_filtro: Path
+) -> None:
+    fabrica, _ = rede
+    sem_anexos = {**_sanepar(), "bruto": {"detalhe": {"anexos": []}}}
+    with fabrica() as sessao:
+        registrar_normalizados(sessao, [sem_anexos])
+        sessao.commit()
+    for _ in range(2):  # nas duas rodadas ele é tentado de novo
+        resultado = _analisar(config_filtro, "--fontes", "sanepar")
+        assert resultado.exit_code == 0, resultado.output
+        assert "0 analisados, 0 pulados, 0 falhas" in resultado.output
+        assert resultado.output.rstrip().endswith(", 1 sem documentos")
+    assert _analisados(fabrica) == set()

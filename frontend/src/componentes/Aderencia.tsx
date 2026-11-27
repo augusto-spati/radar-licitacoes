@@ -44,7 +44,7 @@ const CAMPOS: Record<string, string> = {
 const STATUS_DOCUMENTO: Record<DocumentoAnalise['status'], string | null> = {
   extraido: null,
   sem_texto: 'sem texto (PDF escaneado)',
-  nao_pdf: 'não é PDF',
+  nao_pdf: 'formato não lido (nem PDF nem Word)',
   grande_demais: 'grande demais para ler',
   falha: 'falhou ao baixar',
 };
@@ -155,7 +155,7 @@ export function Aderencia({carga, onTentarDeNovo}: Props) {
         (carga.dados === null ? (
           <Text type="body" color="secondary">
             Este edital ainda não foi analisado. A análise por IA roda uma vez por dia, em parte dos
-            editais abertos do PNCP.
+            editais abertos, assim que o órgão publica o edital.
           </Text>
         ) : (
           <Resultado analise={carga.dados} />

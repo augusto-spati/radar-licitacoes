@@ -3,16 +3,18 @@
 import hashlib
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Protocol
 
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from radar.analise.armazem import Armazem
+from radar.analise.arquivos_compesa import DocumentosCompesa
 from radar.analise.arquivos_pncp import (
     ArquivoPNCP,
     ClienteArquivosPNCP,
@@ -26,13 +28,30 @@ from radar.analise.cache import versao_prompt
 from radar.analise.comparacao import comparar
 from radar.analise.custos import custo
 from radar.analise.exigencias import Exigencias, esquema_resposta
-from radar.analise.extracao import ErroExtracao, eh_pdf, extrair_paginas, status_do_texto
+from radar.analise.extracao import (
+    ErroExtracao,
+    TextoExtraido,
+    eh_docx,
+    eh_pdf,
+    extrair_paginas,
+    extrair_paginas_docx,
+    status_do_texto,
+)
 from radar.analise.extrator import SISTEMA, extrair_exigencias
 from radar.analise.modelos import AnaliseEdital, DocumentoEdital, StatusDocumento
 from radar.analise.perfil import Perfil
 from radar.analise.provedor import ConfigIA, Provedor, Resposta
 
 logger = logging.getLogger(__name__)
+
+
+class Baixador(Protocol):
+    def baixar(self, url: str) -> bytes: ...
+
+
+class SemDocumentos(Exception):
+    """A fonte ainda não tem edital nem termo de referência: nada é gravado, fica para a
+    próxima rodada (a Compesa sobe a pasta da obra dias depois do aviso, por exemplo)."""
 
 
 @dataclass(frozen=True)
@@ -56,9 +75,13 @@ class Dependencias:
     # Documentos da Sanepar: outro cliente, preso a www.sanepar.com.br. Sem ele, edital da
     # Sanepar falha com ValueError (a CLI sempre passa; testes do PNCP não precisam).
     cliente_sanepar: ClienteArquivosPNCP | None = None
+    # Compesa: portal SCL e nuvem; só responde fora da AWS (roda no notebook).
+    documentos_compesa: DocumentosCompesa | None = None
 
 
-FONTES_ANALISADAS = ("pncp", "sanepar")
+FONTES_ANALISADAS = ("pncp", "sanepar", "compesa")
+# A rodada agendada na AWS: o portal da Compesa não responde de lá.
+FONTES_NA_NUVEM = ("pncp", "sanepar")
 
 
 @dataclass(frozen=True)
@@ -158,7 +181,7 @@ def _processar_documento(
     dep: Dependencias,
     agora: datetime,
     pagina: int,
-    cliente: ClienteArquivosPNCP,
+    cliente: Baixador,
 ) -> tuple[_Documento, list[str]]:
     """Baixa, extrai e grava um documento. `pagina` = onde ele começaria no texto juntado."""
     guardado = _texto_guardado(sessao, alvo, arquivo, dep.armazem, pagina)
@@ -190,11 +213,12 @@ def _processar_documento(
     else:
         sha = hashlib.sha256(dados).hexdigest()
         valores.update(sha256=sha, tamanho=len(dados))
-        if not eh_pdf(dados):
+        extrator = _extrator(dados)
+        if extrator is None:
             status = "nao_pdf"
         else:
             try:
-                texto = extrair_paginas(dados)
+                texto = extrator(dados)
             except ErroExtracao as erro:
                 status, valores["erro"] = "falha", str(erro)
             else:
@@ -223,10 +247,17 @@ def _processar_documento(
     return _Documento(arquivo.sequencial, valores["sha256"], status), paginas
 
 
-def _arquivos_da_fonte(
-    alvo: AlvoAnalise, dep: Dependencias
-) -> tuple[ClienteArquivosPNCP, list[ArquivoPNCP]]:
-    """Quem baixa e o quê: API de arquivos do PNCP, ou os anexos que a coleta da Sanepar guardou."""
+def _extrator(dados: bytes) -> Callable[[bytes], TextoExtraido] | None:
+    """PDF ou Word (.docx, edital de obra da Compesa); o resto fica como `nao_pdf`."""
+    if eh_pdf(dados):
+        return extrair_paginas
+    if eh_docx(dados):
+        return extrair_paginas_docx
+    return None
+
+
+def _arquivos_da_fonte(alvo: AlvoAnalise, dep: Dependencias) -> tuple[Baixador, list[ArquivoPNCP]]:
+    """Quem baixa e o quê: API do PNCP, anexos guardados da Sanepar, portal/nuvem da Compesa."""
     if alvo.fonte == "pncp":
         chave = chave_pncp(alvo.id_na_fonte)
         if chave is None:
@@ -236,6 +267,10 @@ def _arquivos_da_fonte(
         if dep.cliente_sanepar is None:
             raise ValueError("sem cliente de documentos da Sanepar")
         return dep.cliente_sanepar, arquivos_sanepar(alvo.bruto)
+    if alvo.fonte == "compesa":
+        if dep.documentos_compesa is None:
+            raise ValueError("sem cliente de documentos da Compesa")
+        return dep.documentos_compesa, dep.documentos_compesa.listar(alvo.bruto)
     raise ValueError(f"fonte sem análise: {alvo.fonte}~{alvo.id_na_fonte}")
 
 
@@ -243,6 +278,8 @@ def _documentos(
     sessao: Session, alvo: AlvoAnalise, dep: Dependencias, agora: datetime
 ) -> _Documentos:
     cliente, escolhidos = _arquivos_da_fonte(alvo, dep)
+    if not escolhidos:
+        raise SemDocumentos(f"{alvo.fonte}~{alvo.id_na_fonte}")
     resultado = _Documentos()
     for arquivo in escolhidos:
         inicio = len(resultado.paginas) + 1

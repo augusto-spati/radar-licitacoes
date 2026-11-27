@@ -14,9 +14,11 @@ volta de cada objeto e seguiria lendo. Só `com_prazo` a captura e a converte em
 
 import io
 import logging
+import re
 import signal
 import sys
 import threading
+import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from types import FrameType
@@ -105,3 +107,91 @@ def status_do_texto(texto: TextoExtraido) -> Literal["extraido", "sem_texto"]:
     if not texto.paginas or texto.paginas_sem_texto * 2 > len(texto.paginas):
         return "sem_texto"
     return "extraido"
+
+
+# --- Word (.docx) -------------------------------------------------------------------------
+# A Compesa publica o edital das obras em .docx. Um .docx é um ZIP com `word/document.xml`;
+# o texto sai por expressão regular (sem parser de XML, sem expansão de entidade). Página não
+# existe no .docx: a quebra usa `w:lastRenderedPageBreak` (onde o Word paginou da última vez
+# que salvou) e a quebra manual `<w:br w:type="page"/>`, então a página é aproximada. Sem
+# nenhuma marca, o texto é cortado em blocos de parágrafos de ~CARACTERES_POR_BLOCO.
+
+LIMITE_XML_DOCX = 50_000_000  # bytes descompactados do document.xml (contra ZIP bomba)
+CARACTERES_POR_BLOCO = 4000
+_QUEBRA = "\f"
+_TOKEN_DOCX = re.compile(
+    r"<w:lastRenderedPageBreak/>|<w:br\b[^>]*w:type=\"page\"[^>]*/>|</w:p>|<w:tab/>"
+    r"|<w:t(?:\s[^>]*)?>([^<]*)</w:t>"
+)
+_ENTIDADES = {"&lt;": "<", "&gt;": ">", "&amp;": "&", "&quot;": '"', "&apos;": "'"}
+
+
+def eh_docx(dados: bytes) -> bool:
+    if dados[:4] != b"PK\x03\x04":
+        return False
+    try:
+        with zipfile.ZipFile(io.BytesIO(dados)) as arquivo:
+            return "word/document.xml" in arquivo.namelist()
+    except zipfile.BadZipFile:
+        return False
+
+
+def _desescapar(texto: str) -> str:
+    def trocar(m: re.Match[str]) -> str:
+        ent = m.group(0)
+        if ent in _ENTIDADES:
+            return _ENTIDADES[ent]
+        try:
+            codigo = int(ent[3:-1], 16) if ent[2] in "xX" else int(ent[2:-1])
+            return chr(codigo)
+        except (ValueError, OverflowError):
+            return ent
+
+    return re.sub(r"&(?:#[xX]?[0-9A-Fa-f]+|lt|gt|amp|quot|apos);", trocar, texto)
+
+
+def _blocos(texto: str) -> list[str]:
+    blocos: list[str] = []
+    atual = ""
+    for paragrafo in texto.split("\n"):
+        if atual and len(atual) + len(paragrafo) > CARACTERES_POR_BLOCO:
+            blocos.append(atual)
+            atual = ""
+        atual += paragrafo + "\n"
+    if atual.strip():
+        blocos.append(atual)
+    return blocos
+
+
+def extrair_paginas_docx(dados: bytes) -> TextoExtraido:
+    """Uma string por página aproximada do .docx (ver nota acima)."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(dados)) as arquivo:
+            info = arquivo.getinfo("word/document.xml")
+            if info.file_size > LIMITE_XML_DOCX:
+                raise ErroExtracao(f"document.xml com {info.file_size} bytes")
+            xml = arquivo.read(info).decode("utf-8", errors="replace")
+    except (zipfile.BadZipFile, KeyError) as erro:
+        raise ErroExtracao(f"{type(erro).__name__}: {erro}") from erro
+    partes: list[str] = []
+    quebras = 0
+    for m in _TOKEN_DOCX.finditer(xml):
+        token = m.group(0)
+        if m.group(1) is not None:
+            partes.append(_desescapar(m.group(1)))
+        elif token == "</w:p>":
+            partes.append("\n")
+        elif token == "<w:tab/>":
+            partes.append("\t")
+        else:
+            partes.append(_QUEBRA)
+            quebras += 1
+    texto = "".join(partes)
+    if quebras:
+        paginas = texto.split(_QUEBRA)
+        # Quebra no começo do documento ou duas seguidas: página vazia que não existe.
+        paginas = [p for p in paginas if p.strip()] or [""]
+    else:
+        paginas = _blocos(texto) or [""]
+    sem_texto = sum(1 for p in paginas if len(p.strip()) < MINIMO_CARACTERES)
+    return TextoExtraido(paginas=paginas, paginas_sem_texto=sem_texto)
