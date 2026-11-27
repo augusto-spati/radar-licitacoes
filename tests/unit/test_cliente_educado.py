@@ -93,3 +93,29 @@ def test_nenhum_traceparent_nas_fontes(spans: InMemorySpanExporter) -> None:
     for requisicao in chamadas:
         nomes = {k.lower() for k in requisicao.headers}
         assert not nomes & {"traceparent", "tracestate", "x-amzn-trace-id"}
+
+
+def test_postback_leitura_e_post_de_formulario_com_a_mesma_cortesia(
+    spans: InMemorySpanExporter, metricas: EmissorEmMemoria
+) -> None:
+    chamadas: list[httpx.Request] = []
+    relogio = Relogio()
+    cliente = _cliente([httpx.Response(200), httpx.Response(200)], chamadas, relogio)
+    cliente.get("https://sanepar.test/lista")
+    antes = relogio.t
+    cliente.postback_leitura("https://sanepar.test/lista", {"__EVENTARGUMENT": "Page$2"})
+    assert relogio.t - antes == 3.25  # pausa de 3 s e a resposta
+    post = chamadas[1]
+    assert post.method == "POST"
+    assert post.headers["content-type"] == "application/x-www-form-urlencoded"
+    assert post.content == b"__EVENTARGUMENT=Page%242"
+    assert post.headers["User-Agent"].startswith("radar-licitacoes-estudo")
+    assert [s.name for s in spans.get_finished_spans()] == ["GET", "POST"]
+    assert metricas.valores("PaginaComErro") == [0.0, 0.0]
+
+
+def test_postback_com_erro_vira_erro_fonte() -> None:
+    cliente = _cliente([httpx.Response(429)], [])
+    with pytest.raises(ErroFonte) as erro:
+        cliente.postback_leitura("https://sanepar.test/lista", {})
+    assert erro.value.status == 429
