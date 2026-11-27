@@ -452,6 +452,41 @@ def test_retrato_ocupado_por_outro_processo_nao_roda(sessao: Session) -> None:
     assert _retratos(sessao, "sanepar") == []
 
 
+class FonteQuePerdeATrava(FonteFalsa):
+    """Antes de entregar a página 1, o lease da fonte passa para outro processo."""
+
+    def __init__(self, engine: Engine) -> None:
+        super().__init__("sanepar", paginas=2)
+        self.engine = engine
+
+    def coletar(self, cliente: ClienteEducado) -> Iterator[PaginaColetada]:
+        for numero, pagina in enumerate(super().coletar(cliente), start=1):
+            if numero == 1:
+                with self.engine.begin() as conexao:
+                    conexao.execute(
+                        text(
+                            "UPDATE trava_fonte SET dono = gen_random_uuid()"
+                            " WHERE fonte = 'sanepar'"
+                        )
+                    )
+            yield pagina
+
+
+def test_retrato_que_perde_a_trava_falha(sessao: Session, engine: Engine) -> None:
+    chamadas: list[str] = []
+    rotas = _rotas("sanepar", _lista("OE-1/26"), _lista("OE-2/26"))
+
+    resumo = executar_retrato(sessao, FonteQuePerdeATrava(engine), _cliente(rotas, chamadas), AGORA)
+
+    assert resumo.status == "falha"
+    assert resumo.erro == "perdeu a trava da fonte"
+    assert chamadas == ["https://sanepar.test/p1"]  # renovou depois da página 1 e parou
+    assert [r.status for r in _retratos(sessao, "sanepar")] == ["falha"]
+    assert sessao.scalars(select(Outbox)).all() == []
+    with engine.connect() as conexao:  # o lease do outro continua lá
+        assert conexao.scalar(text("SELECT count(*) FROM trava_fonte")) == 1
+
+
 def test_retrato_em_andamento_que_sobrou_vira_falha(sessao: Session) -> None:
     sessao.add(
         ColetaRetrato(fonte="sanepar", status="em_andamento", iniciado_em=AGORA, paginas=0,

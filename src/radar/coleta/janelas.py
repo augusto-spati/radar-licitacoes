@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 FUSO = "America/Sao_Paulo"  # as datas do PNCP são em horário de Brasília
 TRAVA_COLETOR = "pncp"  # lease em trava_fonte que garante um único coletor por vez
-DURACAO_TRAVA = timedelta(hours=1)  # renovada a cada janela
+DURACAO_TRAVA = timedelta(minutes=30)  # renovada a cada página
 LIMITE_ERRO = 500
 
 
@@ -100,7 +100,7 @@ def coletar_pendentes(
     """
     relogio = relogio or _agora_real
     # Lease em tabela (coleta.trava), sem conexão presa: a coleta pode levar horas, então o
-    # lease é renovado a cada janela.
+    # lease é renovado a cada página. Perder o lease conta como falha no resumo.
     dono = uuid.uuid4()
     if not obter_trava(sessao, TRAVA_COLETOR, dono, DURACAO_TRAVA):
         logger.warning("coleta_em_andamento_noutro_processo")
@@ -133,6 +133,7 @@ def _coletar_todas(
     while True:
         if not renovar():  # o lease venceu e outro coletor o tomou: para aqui
             logger.warning("coleta_trava_perdida")
+            resumo.falhas += 1
             return resumo
         janela = _proxima_janela(sessao, tentadas)
         if janela is None:
@@ -141,7 +142,10 @@ def _coletar_todas(
         janela_id = janela.id
         dados = _dados_log(janela, time.monotonic())
         try:
-            _coletar_janela(sessao, cliente, janela, relogio, resumo)
+            _coletar_janela(sessao, cliente, janela, relogio, resumo, renovar)
+        except _TravaPerdida:  # a janela já foi marcada como falha e contada
+            logger.warning("coleta_trava_perdida", extra=dados)
+            return resumo
         except Exception as erro:  # Ctrl+C (BaseException) continua parando o processo
             sessao.rollback()
             logger.exception("janela_erro_inesperado", extra=dados)
@@ -311,12 +315,17 @@ def _falhar(
     logger.warning("janela_falhou", extra={**_dados_log(janela, inicio), "erro": erro})
 
 
+class _TravaPerdida(Exception):
+    """O lease do coletor passou para outro processo no meio de uma janela."""
+
+
 def _coletar_janela(
     sessao: Session,
     cliente: ClientePNCP,
     janela: ColetaJanela,
     relogio: Callable[[], datetime],
     resumo: ResumoColeta,
+    renovar: Callable[[], bool],
 ) -> None:
     inicio = time.monotonic()
     janela.status = "em_andamento"
@@ -348,7 +357,10 @@ def _coletar_janela(
             total = pagina.total_paginas
             bruto_total = pagina.bruto.get("totalRegistros")
             esperados = bruto_total if isinstance(bruto_total, int) else None
-        elif pagina.total_paginas != total:
+        if not renovar():
+            _falhar(sessao, janela, "perdeu a trava do coletor", inicio, resumo)
+            raise _TravaPerdida
+        if numero > 1 and pagina.total_paginas != total:
             _falhar(
                 sessao,
                 janela,

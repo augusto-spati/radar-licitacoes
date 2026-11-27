@@ -9,10 +9,10 @@ curtas, cada uma commitada na hora, numa conexão do engine separada da sessão 
 (não mistura com a transação dele). Entre a obtenção e a liberação nenhuma conexão fica
 presa.
 
-Limite: o lease vale `duracao` (30 min por padrão). Se o trabalho passar disso sem
-renovar (`obter_trava` com o mesmo dono), outro processo pode tomar a fonte. A Sanepar leva
-uns 14 min por retrato, então 30 min sobram; o coletor do PNCP, que pode levar horas,
-renova a cada janela. Um processo morto deixa a fonte presa até o prazo vencer.
+Limite: o lease vale `duracao` (30 min por padrão) desde a última renovação
+(`obter_trava` com o mesmo dono). O retrato e o coletor do PNCP renovam a cada página e
+param se o perderem (outro processo o tomou depois de vencer), então o prazo só precisa
+cobrir uma página. Um processo morto deixa a fonte presa até o prazo vencer.
 """
 
 import logging
@@ -21,7 +21,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import timedelta
 
-from sqlalchemy import Engine, delete, func, or_
+from sqlalchemy import Engine, case, delete, func, or_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -49,7 +49,11 @@ def obter_trava(sessao: Session, fonte: str, dono: uuid.UUID, duracao: timedelta
         set_={
             "dono": novo.excluded.dono,
             "expira_em": novo.excluded.expira_em,
-            "obtida_em": novo.excluded.obtida_em,
+            # Renovar (mesmo dono) mantém quando foi obtida; tomar de outro reinicia.
+            "obtida_em": case(
+                (TravaFonte.dono == novo.excluded.dono, TravaFonte.obtida_em),
+                else_=novo.excluded.obtida_em,
+            ),
         },
         where=or_(TravaFonte.expira_em < agora, TravaFonte.dono == novo.excluded.dono),
     ).returning(TravaFonte.dono)

@@ -1,23 +1,14 @@
 """Trava da fonte por lease em tabela: funciona através do pooler e sem transação aberta."""
 
+import threading
 import uuid
-from collections.abc import Iterator
 from datetime import timedelta
 
-import pytest
 from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 
 from radar.coleta import trava_fonte
 from radar.coleta.trava import obter_trava
-
-
-@pytest.fixture(autouse=True)
-def _sem_leases(engine: Engine) -> Iterator[None]:
-    # A trava commita na própria conexão: o rollback da sessão de teste não a desfaz.
-    yield
-    with engine.begin() as conexao:
-        conexao.execute(text("DELETE FROM trava_fonte"))
 
 
 def _dono(engine: Engine, fonte: str) -> uuid.UUID | None:
@@ -97,10 +88,19 @@ def test_duracao_define_o_prazo(sessao: Session, engine: Engine) -> None:
     assert prazo == timedelta(minutes=5)
 
 
+def _obtida_em(engine: Engine, fonte: str) -> object:
+    with engine.connect() as conexao:
+        return conexao.scalar(
+            text("SELECT obtida_em FROM trava_fonte WHERE fonte = :f"), {"f": fonte}
+        )
+
+
 def test_renovar_estende_so_para_o_dono(sessao: Session, engine: Engine) -> None:
     dono = uuid.uuid4()
     assert obter_trava(sessao, "pncp", dono, timedelta(minutes=1))
+    obtida_em = _obtida_em(engine, "pncp")
     assert obter_trava(sessao, "pncp", dono, timedelta(hours=1))  # renovação
+    assert _obtida_em(engine, "pncp") == obtida_em  # renovar não muda quando foi obtida
     assert not obter_trava(sessao, "pncp", uuid.uuid4(), timedelta(hours=1))
     with engine.connect() as conexao:
         restante = conexao.scalar(
@@ -129,3 +129,51 @@ def test_nenhuma_transacao_fica_aberta_durante_a_trava(sessao: Session, engine: 
         assert obtida
         assert _em_transacao(engine) == antes
         assert engine.pool.checkedout() == em_uso  # type: ignore[attr-defined]
+
+
+def _disputar(engine: Engine, fonte: str, competidores: int) -> list[bool]:
+    """Várias threads, cada uma com sua sessão, tentam obter o lease no mesmo instante."""
+    barreira = threading.Barrier(competidores)
+    resultados: list[bool] = []
+    erros: list[BaseException] = []
+    guarda = threading.Lock()
+
+    def competir() -> None:
+        try:
+            with Session(engine) as sessao:
+                barreira.wait(timeout=10)
+                obtida = obter_trava(sessao, fonte, uuid.uuid4(), timedelta(minutes=30))
+            with guarda:
+                resultados.append(obtida)
+        except BaseException as erro:  # repassado ao teste
+            erros.append(erro)
+
+    threads = [threading.Thread(target=competir) for _ in range(competidores)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+    assert not erros, erros
+    return resultados
+
+
+def test_concorrencia_linha_inexistente_so_um_obtem(engine: Engine) -> None:
+    for rodada in range(10):
+        resultados = _disputar(engine, f"disputa-nova-{rodada}", competidores=4)
+        assert sorted(resultados) == [False, False, False, True]
+
+
+def test_concorrencia_linha_expirada_so_um_obtem(engine: Engine) -> None:
+    for rodada in range(10):
+        fonte = f"disputa-expirada-{rodada}"
+        with engine.begin() as conexao:
+            conexao.execute(
+                text(
+                    "INSERT INTO trava_fonte (fonte, dono, expira_em, obtida_em)"
+                    " VALUES (:f, gen_random_uuid(), now() - interval '1 minute',"
+                    " now() - interval '31 minutes')"
+                ),
+                {"f": fonte},
+            )
+        resultados = _disputar(engine, fonte, competidores=4)
+        assert sorted(resultados) == [False, False, False, True]

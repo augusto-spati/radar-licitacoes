@@ -295,7 +295,7 @@ def test_coletor_ja_ativo_noutro_processo_nao_coleta(sessao: Session) -> None:
 
 
 class ClienteQueTomaATrava(ClienteFalso):
-    """Na primeira busca o lease do coletor vence e outro processo o toma."""
+    """Na primeira busca o lease do coletor passa para outro processo."""
 
     def __init__(self, roteiro: dict[Chave, Pagina | Exception], engine: Engine) -> None:
         super().__init__(roteiro)
@@ -313,20 +313,27 @@ class ClienteQueTomaATrava(ClienteFalso):
         return super().buscar(endpoint, data_ini, data_fim, modalidade, pagina)
 
 
-def test_coletor_para_quando_perde_o_lease(sessao: Session, engine: Engine) -> None:
+def test_coletor_perde_o_lease_no_meio_da_janela(sessao: Session, engine: Engine) -> None:
     d2 = date(2026, 11, 2)
     planejar_janelas(sessao, "publicacao", D1, d2, [6])
-    falso = ClienteQueTomaATrava({_chave(1): pagina(1, 1), _chave(1, d2): pagina(1, 1)}, engine)
-    try:
-        resumo = coletar_pendentes(sessao, como_cliente(falso), AGORA)
-        janelas = sessao.scalars(select(ColetaJanela).order_by(ColetaJanela.data_ini)).all()
-        assert [j.status for j in janelas] == ["concluida", "pendente"]
-        assert resumo.concluidas == 1
-        with engine.connect() as conexao:  # o lease do outro continua lá
-            assert conexao.scalar(text("SELECT count(*) FROM trava_fonte")) == 1
-    finally:
-        with engine.begin() as conexao:
-            conexao.execute(text("DELETE FROM trava_fonte"))
+    roteiro: dict[Chave, Pagina | Exception] = {
+        _chave(1): pagina(1, 2),
+        _chave(2): pagina(2, 2),
+        _chave(1, d2): pagina(1, 1),
+    }
+    falso = ClienteQueTomaATrava(roteiro, engine)
+
+    resumo = coletar_pendentes(sessao, como_cliente(falso), AGORA)
+
+    assert falso.chamadas == [_chave(1)]  # renovou depois da página 1 e parou
+    janelas = sessao.scalars(select(ColetaJanela).order_by(ColetaJanela.data_ini)).all()
+    assert [(j.status, j.erro) for j in janelas] == [
+        ("falha", "perdeu a trava do coletor"),
+        ("pendente", None),
+    ]
+    assert (resumo.concluidas, resumo.falhas) == (0, 1)  # a perda conta como falha
+    with engine.connect() as conexao:  # o lease do outro continua lá
+        assert conexao.scalar(text("SELECT count(*) FROM trava_fonte")) == 1
 
 
 def test_excluir_pula_paginas_na_leitura(sessao: Session) -> None:

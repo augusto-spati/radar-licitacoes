@@ -16,6 +16,7 @@ import json
 import logging
 import re
 import time
+import uuid
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -26,7 +27,7 @@ from sqlalchemy import delete, desc, func, literal, select, tuple_, update
 from sqlalchemy.orm import Session
 
 from radar.coleta.modelos import ColetaRetrato, PaginaBruta
-from radar.coleta.trava import trava_fonte
+from radar.coleta.trava import DURACAO_PADRAO, liberar_trava, obter_trava
 from radar.comum import enfileirar
 
 logger = logging.getLogger(__name__)
@@ -197,18 +198,27 @@ def executar_retrato(
 ) -> ResumoRetrato:
     """Lê a lista inteira da fonte e devolve o resumo. Não grava editais (é do consumidor).
 
-    Com `trava_mantida=True` quem chama já segura `trava_fonte`.
+    Com `trava_mantida=True` quem chama já segura `trava_fonte` (e cuida de renová-la).
+    Sem isso, o lease da fonte é renovado a cada página; se outro processo o tomou, o
+    retrato termina em falha ("perdeu a trava da fonte").
     `agora` é o carimbo `iniciado_em` (o que a auditoria compara); `concluido_em` e
     `coletada_em` usam o relógio real (`relogio`, injetável nos testes).
     """
     relogio = relogio or _agora_real
     if trava_mantida:
-        return _executar(sessao, fonte, cliente, agora, relogio)
-    with trava_fonte(sessao, fonte.nome) as obtida:
-        if not obtida:
-            logger.warning("retrato_em_andamento_noutro_processo", extra={"fonte": fonte.nome})
-            return ResumoRetrato(retrato_id=None, status="ocupado")
-        return _executar(sessao, fonte, cliente, agora, relogio)
+        return _executar(sessao, fonte, cliente, agora, relogio, lambda: True)
+    dono = uuid.uuid4()
+    if not obter_trava(sessao, fonte.nome, dono, DURACAO_PADRAO):
+        logger.warning("retrato_em_andamento_noutro_processo", extra={"fonte": fonte.nome})
+        return ResumoRetrato(retrato_id=None, status="ocupado")
+
+    def renovar() -> bool:
+        return obter_trava(sessao, fonte.nome, dono, DURACAO_PADRAO)
+
+    try:
+        return _executar(sessao, fonte, cliente, agora, relogio, renovar)
+    finally:
+        liberar_trava(sessao, fonte.nome, dono)
 
 
 def _executar(
@@ -217,6 +227,7 @@ def _executar(
     cliente: ClienteEducado,
     agora: datetime,
     relogio: Callable[[], datetime],
+    renovar: Callable[[], bool],
 ) -> ResumoRetrato:
     # Com a trava da fonte, um retrato em_andamento só pode ser sobra de execução interrompida.
     sessao.execute(
@@ -243,6 +254,9 @@ def _executar(
     try:
         paginas: list[PaginaColetada] = []
         for numero, pagina in enumerate(fonte.coletar(cliente), start=1):
+            if not renovar():
+                logger.warning("retrato_trava_perdida", extra=dados)
+                raise ErroFonte("perdeu a trava da fonte")
             _gravar_pagina(sessao, retrato, numero, pagina, relogio())
             paginas.append(pagina)
         normalizados = fonte.extrair(paginas)
