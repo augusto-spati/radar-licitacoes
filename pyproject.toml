@@ -90,6 +90,7 @@ forbidden_modules = [
     "radar.editais.modelos",
     "radar.analise.exigencias",
     "radar.analise.modelos",
+    "radar.analise.normalizacao",
 ]
 allow_indirect_imports = true
 
