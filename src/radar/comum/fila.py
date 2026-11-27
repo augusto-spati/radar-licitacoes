@@ -1,7 +1,8 @@
-"""Fila de mensagens: formato do corpo, interface e implementação SQS."""
+"""Fila de mensagens: formato do corpo, interface, implementação SQS e roteamento por tipo."""
 
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol, cast, get_args
 
@@ -39,7 +40,15 @@ def de_corpo(corpo: str) -> Mensagem:
         raise ValueError(f"tipo de mensagem desconhecido: {tipo!r}")
     if not isinstance(carga, dict) or not isinstance(outbox_id, int):
         raise ValueError(f"corpo de mensagem inválido: {corpo!r}")
+    if tipo == "coletar_janela" and not all(
+        _inteiro(carga.get(campo)) for campo in ("janela_id", "lote")
+    ):
+        raise ValueError(f"coletar_janela exige janela_id e lote inteiros: {corpo!r}")
     return Mensagem(outbox_id=outbox_id, tipo=tipo, carga=carga)
+
+
+def _inteiro(valor: object) -> bool:
+    return isinstance(valor, int) and not isinstance(valor, bool)
 
 
 def regiao_da_url(url: str) -> str:
@@ -63,6 +72,10 @@ class FilaSQS:
         self._url = url
         self._cliente: Any = cliente
 
+    @property
+    def url(self) -> str:
+        return self._url
+
     def enviar_lote(self, mensagens: list[Mensagem]) -> ResultadoEnvio:
         resultado = ResultadoEnvio(aceitas=set(), recusadas={})
         for inicio in range(0, len(mensagens), TAMANHO_MAXIMO_LOTE):
@@ -79,3 +92,27 @@ class FilaSQS:
             SourceArn=origem_arn, DestinationArn=destino_arn
         )
         return cast(str, resposta["TaskHandle"])
+
+
+class FilaRoteada:
+    """Implementa `Fila` mandando cada tipo para a sua fila (`coletar_janela` → radar-janelas).
+
+    Os tipos sem rota vão para `padrao`. Recusa num destino não afeta o outro: os resultados
+    são somados por `outbox_id`.
+    """
+
+    def __init__(self, rotas: Mapping[TipoMensagem, Fila], padrao: Fila) -> None:
+        self.rotas = dict(rotas)
+        self.padrao = padrao
+
+    def enviar_lote(self, mensagens: list[Mensagem]) -> ResultadoEnvio:
+        por_destino: dict[int, tuple[Fila, list[Mensagem]]] = {}
+        for m in mensagens:
+            destino = self.rotas.get(m.tipo, self.padrao)
+            por_destino.setdefault(id(destino), (destino, []))[1].append(m)
+        resultado = ResultadoEnvio(aceitas=set(), recusadas={})
+        for destino, lote in por_destino.values():
+            parcial = destino.enviar_lote(lote)
+            resultado.aceitas |= parcial.aceitas
+            resultado.recusadas |= parcial.recusadas
+        return resultado

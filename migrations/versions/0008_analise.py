@@ -1,7 +1,7 @@
 """documento_edital, analise_edital e resposta_llm
 
-Revision ID: 0007
-Revises: 0006
+Revision ID: 0008
+Revises: 0007
 Create Date: 2026-11-27 09:00:00.000000
 
 Tabelas da análise dos editais com IA (etapa 6). Sem chave estrangeira para `edital`.
@@ -13,8 +13,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0007"
-down_revision: str | None = "0006"
+revision: str = "0008"
+down_revision: str | None = "0007"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

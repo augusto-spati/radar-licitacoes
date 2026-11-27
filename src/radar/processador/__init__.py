@@ -1,5 +1,6 @@
-"""Porta de entrada das mensagens da outbox: o consumidor, a fila local e o handler da Lambda."""
+"""Porta de entrada das mensagens: o consumidor, a coletora do PNCP, a fila local e as Lambdas."""
 
+from radar.processador.coletora import planejar_e_enfileirar, processar_janela
 from radar.processador.consumidor import (
     FRACAO_INVALIDOS,
     Desfecho,
@@ -16,5 +17,7 @@ __all__ = [
     "MensagemAdiada",
     "criar_fila",
     "fontes_retrato",
+    "planejar_e_enfileirar",
+    "processar_janela",
     "processar_mensagem",
 ]

@@ -27,6 +27,8 @@ O banco local é o Postgres 17, na porta 5432, com usuário, senha e banco `rada
 
 Rode a carga longa com o notebook sem entrar em suspensão. Rode `radar processar` de novo até `radar auditar` sair com 0.
 
+`carga-inicial`, `atualizar` com o PNCP e `processar` coletam o PNCP no próprio processo. Não rode esses comandos contra o banco de produção: lá quem coleta o PNCP é a Lambda coletora, pelas mensagens do planejador (`radar planejar`). Se alguma janela tiver lease vivo (alguém coletando agora), eles saem com 2 sem coletar nada; `radar atualizar --fontes sanepar` continua valendo. Com `RADAR_FILA=local`, o relay desses comandos só publica as mensagens que a fila local consome: uma `coletar_janela` pendente fica para a Lambda, sem contar falha.
+
 ## Checagens
 
 ```

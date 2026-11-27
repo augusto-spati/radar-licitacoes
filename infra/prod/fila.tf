@@ -112,10 +112,10 @@ resource "aws_lambda_event_source_mapping" "processador" {
   batch_size              = 10
   function_response_types = ["ReportBatchItemFailures"]
 
-  # Protege o Neon: no maximo 2 invocacoes simultaneas.
-  scaling_config {
-    maximum_concurrency = 2
-  }
+  # Sem scaling_config: com maximum concurrency o SQS nao otimiza os pollers ociosos e as
+  # chamadas ReceiveMessage (custo do SQS) sobem. A pagina e pequena e o lote e de 10, entao
+  # o Neon aguenta o paralelismo padrao. O limite fica so na radar-janelas (cortesia com o
+  # PNCP, janelas.tf).
 }
 
 # ---------- Coletor envia para a fila ----------
@@ -123,7 +123,7 @@ resource "aws_lambda_event_source_mapping" "processador" {
 data "aws_iam_policy_document" "coletor_fila" {
   statement {
     actions   = ["sqs:SendMessage"]
-    resources = [aws_sqs_queue.editais.arn]
+    resources = [aws_sqs_queue.editais.arn, aws_sqs_queue.janelas.arn]
   }
 }
 

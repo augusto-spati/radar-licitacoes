@@ -1,22 +1,26 @@
-from datetime import date, datetime, timedelta
+import logging
+from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import pytest
 from fakes import VAZIA, Chave, ClienteFalso, como_cliente, pagina
-from sqlalchemy import Engine, func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from radar.coleta import (
     ErroPNCP,
+    JanelaParada,
     auditar,
     coletar_pendentes,
+    enfileirar_elegiveis,
+    janelas_com_lease_vivo,
+    janelas_paradas,
     ler_paginas_nao_processadas,
     marcar_processada,
     planejar_janelas,
-    trava_fonte,
 )
-from radar.coleta.janelas import TRAVA_COLETOR, ResumoColeta
+from radar.coleta.janelas import ResumoColeta
 from radar.coleta.modelos import ColetaJanela, PaginaBruta
-from radar.coleta.pncp import Pagina
 from radar.comum import Outbox
 
 BRT = ZoneInfo("America/Sao_Paulo")
@@ -214,7 +218,7 @@ def test_auditoria_lista_faltando(sessao: Session) -> None:
     assert aud.esperadas == 4
     assert aud.concluidas == 2
     assert aud.faltando == [(d2, 8)]
-    assert aud.falhas == [(d2, 6, "HTTP 500")]
+    assert aud.falhas == [(d2, 6, "HTTP 500", 1, None)]
 
 
 def test_auditoria_considera_janela_multidia(sessao: Session) -> None:
@@ -281,59 +285,20 @@ def test_excecao_inesperada_marca_so_aquela_janela(sessao: Session) -> None:
     assert (resumo.concluidas, resumo.falhas) == (1, 1)
 
 
-def test_coletor_ja_ativo_noutro_processo_nao_coleta(sessao: Session) -> None:
-    planejar_janelas(sessao, "publicacao", D1, D1, [6])
+def test_janela_com_lease_vivo_noutro_processo_nao_coleta(sessao: Session) -> None:
+    # Antes era o advisory lock global; agora o lease de cada janela (Lambda viva ou outro
+    # processo local) faz o laço pular a janela.
+    viva = datetime.now(UTC) + timedelta(hours=1)
+    j = janela(sessao, status="em_andamento", travada_por="lambda", travada_ate=viva)
     falso = ClienteFalso({_chave(1): pagina(1, 1)})
-    with trava_fonte(sessao, TRAVA_COLETOR) as obtida:  # outro coletor com o lease vivo
-        assert obtida
-        resumo = coletar_pendentes(sessao, como_cliente(falso), AGORA)
+    resumo = coletar_pendentes(sessao, como_cliente(falso), AGORA)
     assert falso.chamadas == []
     assert resumo == ResumoColeta()
-    assert _unica(sessao).status == "pendente"
-    coletar_pendentes(sessao, como_cliente(falso), AGORA)  # lease liberado: coleta normal
+    assert _unica(sessao).status == "em_andamento"
+    j.travada_ate = datetime.now(UTC) - timedelta(hours=1)  # lease vencido: sobra retomada
+    sessao.commit()
+    coletar_pendentes(sessao, como_cliente(falso), AGORA)
     assert _unica(sessao).status == "concluida"
-
-
-class ClienteQueTomaATrava(ClienteFalso):
-    """Na primeira busca o lease do coletor passa para outro processo."""
-
-    def __init__(self, roteiro: dict[Chave, Pagina | Exception], engine: Engine) -> None:
-        super().__init__(roteiro)
-        self.engine = engine
-
-    def buscar(
-        self, endpoint: str, data_ini: date, data_fim: date, modalidade: int, pagina: int
-    ) -> Pagina:
-        if not self.chamadas:
-            with self.engine.begin() as conexao:
-                conexao.execute(
-                    text("UPDATE trava_fonte SET dono = gen_random_uuid() WHERE fonte = :f"),
-                    {"f": TRAVA_COLETOR},
-                )
-        return super().buscar(endpoint, data_ini, data_fim, modalidade, pagina)
-
-
-def test_coletor_perde_o_lease_no_meio_da_janela(sessao: Session, engine: Engine) -> None:
-    d2 = date(2026, 11, 2)
-    planejar_janelas(sessao, "publicacao", D1, d2, [6])
-    roteiro: dict[Chave, Pagina | Exception] = {
-        _chave(1): pagina(1, 2),
-        _chave(2): pagina(2, 2),
-        _chave(1, d2): pagina(1, 1),
-    }
-    falso = ClienteQueTomaATrava(roteiro, engine)
-
-    resumo = coletar_pendentes(sessao, como_cliente(falso), AGORA)
-
-    assert falso.chamadas == [_chave(1)]  # renovou depois da página 1 e parou
-    janelas = sessao.scalars(select(ColetaJanela).order_by(ColetaJanela.data_ini)).all()
-    assert [(j.status, j.erro) for j in janelas] == [
-        ("falha", "perdeu a trava do coletor"),
-        ("pendente", None),
-    ]
-    assert (resumo.concluidas, resumo.falhas) == (0, 1)  # a perda conta como falha
-    with engine.connect() as conexao:  # o lease do outro continua lá
-        assert conexao.scalar(text("SELECT count(*) FROM trava_fonte")) == 1
 
 
 def test_excluir_pula_paginas_na_leitura(sessao: Session) -> None:
@@ -342,3 +307,249 @@ def test_excluir_pula_paginas_na_leitura(sessao: Session) -> None:
     coletar_pendentes(sessao, como_cliente(falso), AGORA)
     ids = [p for p, _ in ler_paginas_nao_processadas(sessao)]
     assert [p for p, _ in ler_paginas_nao_processadas(sessao, excluir=[ids[0]])] == [ids[1]]
+
+
+# --- planejador: reabrir e enfileirar; janelas paradas -----------------------------------
+
+HOJE = date(2026, 11, 10)
+
+
+def _coletar_janela(sessao: Session) -> list[dict[str, int]]:
+    return list(
+        sessao.scalars(
+            select(Outbox.carga).where(Outbox.tipo == "coletar_janela").order_by(Outbox.id)
+        )
+    )
+
+
+def test_enfileirar_reabre_concluida_cedo(sessao: Session) -> None:
+    cedo = datetime(2026, 11, 10, 10, 0, tzinfo=BRT)  # antes de o dia 10 acabar em Brasília
+    j = janela(
+        sessao,
+        endpoint="atualizacao",
+        data_ini=HOJE,
+        data_fim=HOJE,
+        status="concluida",
+        concluida_em=cedo,
+        lote=2,
+        proxima_pagina=4,
+        total_paginas=3,
+        esperados=6,
+    )
+
+    assert enfileirar_elegiveis(sessao, "atualizacao") == 1
+
+    sessao.refresh(j)
+    assert (j.status, j.proxima_pagina, j.total_paginas, j.esperados, j.lote) == (
+        "pendente",
+        1,
+        None,
+        None,
+        3,
+    )
+    assert _coletar_janela(sessao) == [{"janela_id": j.id, "lote": 3}]
+
+
+def test_enfileirar_nao_reabre_concluida_depois_do_dia(sessao: Session) -> None:
+    depois = datetime(2026, 11, 11, 0, 30, tzinfo=BRT)
+    j = janela(
+        sessao,
+        endpoint="atualizacao",
+        data_ini=HOJE,
+        data_fim=HOJE,
+        status="concluida",
+        concluida_em=depois,
+    )
+
+    assert enfileirar_elegiveis(sessao, "atualizacao") == 0
+
+    sessao.refresh(j)
+    assert (j.status, j.lote) == ("concluida", 0)
+    assert _coletar_janela(sessao) == []
+
+
+def test_enfileirar_pula_lease_vivo(sessao: Session) -> None:
+    viva = datetime.now(UTC) + timedelta(hours=1)
+    cedo = datetime(2026, 11, 10, 10, 0, tzinfo=BRT)
+    andando = janela(
+        sessao,
+        endpoint="atualizacao",
+        data_ini=HOJE,
+        data_fim=HOJE,
+        status="em_andamento",
+        travada_por="lambda",
+        travada_ate=viva,
+    )
+    # Concluída cedo, mas com lease vivo (estado estranho): reabrir atropelaria quem coleta.
+    concluida = janela(
+        sessao,
+        endpoint="atualizacao",
+        data_ini=HOJE - timedelta(days=1),
+        data_fim=HOJE - timedelta(days=1),
+        status="concluida",
+        concluida_em=cedo,
+        travada_por="x",
+        travada_ate=viva,
+    )
+
+    assert enfileirar_elegiveis(sessao, "atualizacao") == 0
+
+    sessao.refresh(andando)
+    sessao.refresh(concluida)
+    assert (andando.status, andando.lote, concluida.status, concluida.lote) == (
+        "em_andamento",
+        0,
+        "concluida",
+        0,
+    )
+    assert _coletar_janela(sessao) == []
+
+
+def test_enfileirar_cobre_pendente_falha_e_em_andamento_livre(sessao: Session) -> None:
+    vencida = datetime.now(UTC) - timedelta(hours=1)
+    ids = [
+        janela(
+            sessao,
+            endpoint="atualizacao",
+            data_ini=HOJE - timedelta(days=n),
+            data_fim=HOJE - timedelta(days=n),
+            **campos,
+        ).id
+        for n, campos in enumerate(
+            [
+                {"status": "pendente"},
+                {"status": "falha", "lote": 1},
+                {"status": "em_andamento", "lote": 4},
+                {"status": "em_andamento", "lote": 2, "travada_por": "x", "travada_ate": vencida},
+            ]
+        )
+    ]
+    janela(sessao, endpoint="publicacao", data_ini=HOJE, data_fim=HOJE)  # outro endpoint
+
+    assert enfileirar_elegiveis(sessao, "atualizacao") == 4
+
+    assert sorted(_coletar_janela(sessao), key=lambda c: c["janela_id"]) == sorted(
+        [
+            {"janela_id": ids[0], "lote": 0},
+            {"janela_id": ids[1], "lote": 1},
+            {"janela_id": ids[2], "lote": 4},
+            {"janela_id": ids[3], "lote": 2},
+        ],
+        key=lambda c: c["janela_id"],
+    )
+
+
+def test_janelas_paradas_so_em_andamento_antes_do_corte(sessao: Session) -> None:
+    corte = datetime(2026, 11, 10, 6, 0, tzinfo=BRT)
+    antes = corte - timedelta(hours=1)
+    janela(
+        sessao,
+        data_ini=D1,
+        data_fim=D1,
+        status="em_andamento",
+        iniciada_em=antes,
+        proxima_pagina=7,
+        total_paginas=80,
+    )
+    janela(
+        sessao,
+        data_ini=D1,
+        data_fim=D1,
+        modalidade=8,
+        status="em_andamento",
+        iniciada_em=corte + timedelta(minutes=5),
+    )
+    janela(
+        sessao,
+        data_ini=date(2026, 11, 2),
+        data_fim=date(2026, 11, 2),
+        status="falha",
+        iniciada_em=antes,
+    )
+
+    assert janelas_paradas(sessao, corte) == [JanelaParada(D1, 6, 7, 80)]
+
+
+def test_auditar_mostra_onde_a_falha_parou(sessao: Session) -> None:
+    janela(sessao, status="falha", erro="HTTP 500", proxima_pagina=3, total_paginas=5)
+
+    aud = auditar(sessao, "publicacao", D1, D1, [6])
+
+    assert aud.falhas == [(D1, 6, "HTTP 500", 3, 5)]
+
+
+def test_enfileirar_desiste_de_falha_com_falhas_demais(
+    sessao: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    desistida = janela(
+        sessao, endpoint="atualizacao", data_ini=HOJE, data_fim=HOJE, status="falha", falhas=5
+    )
+    tenta = janela(
+        sessao,
+        endpoint="atualizacao",
+        data_ini=HOJE - timedelta(days=1),
+        data_fim=HOJE - timedelta(days=1),
+        status="falha",
+        tentativas=9,  # reivindicações não contam: só fatias que falharam
+        falhas=4,
+    )
+
+    with caplog.at_level(logging.INFO, logger="radar.coleta.janelas"):
+        assert enfileirar_elegiveis(sessao, "atualizacao") == 1
+
+    assert _coletar_janela(sessao) == [{"janela_id": tenta.id, "lote": 0}]
+    desistencias = [r for r in caplog.records if r.getMessage() == "janela_desistida"]
+    assert [getattr(r, "janela_id", None) for r in desistencias] == [desistida.id]
+
+
+def test_janelas_paradas_conta_o_checkpoint_e_o_lease(sessao: Session) -> None:
+    corte = datetime(2026, 11, 10, 6, 0, tzinfo=BRT)
+    antes = corte - timedelta(hours=10)
+    # Retentativa saudável: começou há muito, mas a última página é recente.
+    andando = janela(sessao, status="em_andamento", iniciada_em=antes, tentativas=3)
+    sessao.add(
+        PaginaBruta(
+            janela_id=andando.id,
+            numero_pagina=1,
+            conteudo={"data": []},
+            coletada_em=corte + timedelta(minutes=10),
+        )
+    )
+    # Com o lease vivo alguém está coletando agora.
+    janela(
+        sessao,
+        modalidade=8,
+        status="em_andamento",
+        iniciada_em=antes,
+        travada_por="lambda",
+        travada_ate=datetime.now(UTC) + timedelta(minutes=10),
+    )
+    # Parada de verdade: a última página é velha.
+    parada = janela(sessao, modalidade=9, status="em_andamento", iniciada_em=antes)
+    sessao.add(
+        PaginaBruta(
+            janela_id=parada.id,
+            numero_pagina=1,
+            conteudo={"data": []},
+            coletada_em=corte - timedelta(hours=1),
+        )
+    )
+    sessao.flush()
+
+    assert janelas_paradas(sessao, corte) == [JanelaParada(D1, 9, 1, None)]
+
+
+def test_janelas_com_lease_vivo(sessao: Session) -> None:
+    janela(sessao, travada_por="x", travada_ate=datetime.now(UTC) - timedelta(minutes=1))
+    janela(sessao, modalidade=8)
+    assert janelas_com_lease_vivo(sessao) == 0
+
+    janela(
+        sessao,
+        modalidade=9,
+        status="em_andamento",
+        travada_por="lambda",
+        travada_ate=datetime.now(UTC) + timedelta(minutes=10),
+    )
+
+    assert janelas_com_lease_vivo(sessao) == 1

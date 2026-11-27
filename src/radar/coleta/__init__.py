@@ -1,12 +1,23 @@
 """Módulo coleta."""
 
 from radar.coleta.compesa import FonteCompesa
+from radar.coleta.fatias import (
+    LEASE_S,
+    ORCAMENTO_LAMBDA_S,
+    DesfechoFatia,
+    ResultadoFatia,
+    coletar_fatia,
+)
 from radar.coleta.janelas import (
     Auditoria,
+    JanelaParada,
     PaginaPNCP,
     ResumoColeta,
     auditar,
     coletar_pendentes,
+    enfileirar_elegiveis,
+    janelas_com_lease_vivo,
+    janelas_paradas,
     ler_pagina_para_processar,
     ler_paginas_nao_processadas,
     marcar_processada,
@@ -38,9 +49,12 @@ from radar.coleta.sanepar import FonteSanepar
 from radar.coleta.trava import liberar_trava, obter_trava, trava_fonte
 
 __all__ = [
+    "LEASE_S",
+    "ORCAMENTO_LAMBDA_S",
     "Auditoria",
     "ClienteEducado",
     "ClientePNCP",
+    "DesfechoFatia",
     "ErroFonte",
     "ErroPNCP",
     "EstadoRetrato",
@@ -48,17 +62,23 @@ __all__ = [
     "FonteRetrato",
     "FonteSanepar",
     "InfoRetrato",
+    "JanelaParada",
     "PaginaColetada",
     "PaginaPNCP",
+    "ResultadoFatia",
     "ResumoColeta",
     "ResumoRetrato",
     "auditar",
+    "coletar_fatia",
     "coletar_pendentes",
     "criar_http",
     "criar_http_educado",
+    "enfileirar_elegiveis",
     "estado_retrato",
     "executar_retrato",
     "ha_retrato_mais_novo_processado",
+    "janelas_com_lease_vivo",
+    "janelas_paradas",
     "ler_pagina_para_processar",
     "ler_paginas_nao_processadas",
     "liberar_trava",

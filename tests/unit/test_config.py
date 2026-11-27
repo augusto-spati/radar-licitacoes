@@ -75,3 +75,16 @@ def test_config_ia_provedor_le_env(monkeypatch: pytest.MonkeyPatch) -> None:
     config = obter_config()
     assert config.ia_provedor == "bedrock"
     assert config.documentos == "s3://bucket/"
+
+
+_URL_JANELAS = "https://sqs.us-east-2.amazonaws.com/1/radar-janelas"
+
+
+def test_config_le_urls_da_fila_de_janelas(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RADAR_FILA_JANELAS_URL", _URL_JANELAS)
+    monkeypatch.setenv("RADAR_FILA_JANELAS_FALHAS_URL", _URL_JANELAS + "-falhas")
+
+    config = obter_config()
+
+    assert config.fila_janelas_url == _URL_JANELAS
+    assert config.fila_janelas_falhas_url == _URL_JANELAS + "-falhas"

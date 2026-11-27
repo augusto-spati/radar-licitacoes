@@ -27,6 +27,9 @@ class Config(BaseSettings):
     ia_provedor: Literal["desligado", "bedrock"] = "desligado"
     # Pasta local ou s3://<bucket>/<prefixo>: PDFs e textos extraídos (fora do banco).
     documentos: str = str(Path.home() / ".radar" / "documentos")
+    # Fila das janelas do PNCP (coletar_janela) e a DLQ dela.
+    fila_janelas_url: str | None = None
+    fila_janelas_falhas_url: str | None = None
 
 
 def obter_config() -> Config:

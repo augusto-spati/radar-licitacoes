@@ -109,8 +109,13 @@ data "aws_iam_policy_document" "deploy" {
   }
 
   statement {
-    actions   = ["lambda:UpdateFunctionCode", "lambda:GetFunction"]
-    resources = [aws_lambda_function.api.arn, aws_lambda_function.processador.arn]
+    actions = ["lambda:UpdateFunctionCode", "lambda:GetFunction"]
+    resources = [
+      aws_lambda_function.api.arn,
+      aws_lambda_function.processador.arn,
+      aws_lambda_function.coletora.arn,
+      aws_lambda_function.planejador.arn,
+    ]
   }
 
   # DescribeTaskDefinition e RegisterTaskDefinition nao aceitam permissao por recurso:

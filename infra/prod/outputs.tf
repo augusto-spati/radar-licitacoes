@@ -77,3 +77,13 @@ output "agenda_analise" {
   description = "Nome do schedule diario da analise com IA."
   value       = aws_scheduler_schedule.analisar_diario.name
 }
+
+output "url_fila_janelas" {
+  description = "URL da fila SQS radar-janelas (RADAR_FILA_JANELAS_URL)."
+  value       = aws_sqs_queue.janelas.url
+}
+
+output "url_fila_janelas_falhas" {
+  description = "URL da DLQ radar-janelas-falhas (RADAR_FILA_JANELAS_FALHAS_URL)."
+  value       = aws_sqs_queue.janelas_falhas.url
+}

@@ -17,7 +17,7 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from radar.comum.db import Base
 
-TipoMensagem = Literal["pagina_coletada", "retrato_coletado"]
+TipoMensagem = Literal["pagina_coletada", "retrato_coletado", "coletar_janela"]
 
 
 class Outbox(Base):
@@ -25,7 +25,10 @@ class Outbox(Base):
 
     __tablename__ = "outbox"
     __table_args__ = (
-        CheckConstraint("tipo IN ('pagina_coletada', 'retrato_coletado')", name="ck_outbox_tipo"),
+        CheckConstraint(
+            "tipo IN ('pagina_coletada', 'retrato_coletado', 'coletar_janela')",
+            name="ck_outbox_tipo",
+        ),
         Index("ix_outbox_pendente", "id", postgresql_where=text("publicada_em IS NULL")),
     )
 
@@ -38,9 +41,11 @@ class Outbox(Base):
     erro: Mapped[str | None] = mapped_column(Text)
 
 
-def enfileirar(sessao: Session, tipo: TipoMensagem, carga: dict[str, int]) -> None:
-    """Adiciona a mensagem à sessão. Não faz commit: quem coleta decide quando."""
-    sessao.add(Outbox(tipo=tipo, carga=carga))
+def enfileirar(sessao: Session, tipo: TipoMensagem, carga: dict[str, int]) -> Outbox:
+    """Adiciona a mensagem à sessão e a devolve. Não faz commit: quem coleta decide quando."""
+    linha = Outbox(tipo=tipo, carga=carga)
+    sessao.add(linha)
+    return linha
 
 
 def pendencias_outbox(sessao: Session) -> tuple[int, datetime | None]:

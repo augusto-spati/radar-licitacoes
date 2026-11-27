@@ -1,5 +1,7 @@
 # Coleta agendada: EventBridge Scheduler -> ECS RunTask (Fargate, sem service, sem NAT).
-# A task sobe, roda `radar atualizar` e para; so cobra enquanto roda.
+# A task sobe, roda `radar atualizar --fontes sanepar` (so retratos) e para; so cobra
+# enquanto roda. O PNCP e coletado por janela nas Lambdas (janelas.tf); a Compesa fica
+# fora da nuvem (ver o schedule abaixo).
 
 locals {
   familia_coletor = "radar-coletor"
@@ -114,7 +116,7 @@ resource "aws_iam_role_policy" "coletor_segredo" {
 }
 
 # Task role: a URL do banco chega por `secrets` (execution role). Unica permissao do app:
-# enviar para a fila radar-editais (fila.tf).
+# enviar para as filas radar-editais e radar-janelas (fila.tf).
 resource "aws_iam_role" "coletor_task" {
   name               = "radar-coletor-task"
   assume_role_policy = data.aws_iam_policy_document.ecs_tasks_assume.json
@@ -141,7 +143,11 @@ resource "aws_ecs_task_definition" "coletor" {
     name      = "coletor"
     image     = "${aws_ecr_repository.coletor.repository_url}:${var.tag_coletor}"
     essential = true
-    # ENTRYPOINT ["radar"] e CMD ["atualizar"] vem da imagem.
+    # ENTRYPOINT ["radar"] vem da imagem; o deploy registra revisoes a partir da ultima,
+    # entao este command (so os retratos da nuvem) e preservado. O schedule repete o
+    # mesmo command no override; quem roda a task a mao sem override tambem nao pega a
+    # Compesa.
+    command     = ["atualizar", "--fontes", "sanepar"]
     stopTimeout = 30
 
     environment = [
@@ -149,6 +155,8 @@ resource "aws_ecs_task_definition" "coletor" {
       { name = "RADAR_CONFIG_FILTRO", value = "/app/config/filtro.toml" },
       { name = "RADAR_FILA", value = "sqs" },
       { name = "RADAR_FILA_URL", value = aws_sqs_queue.editais.url },
+      # O relay do coletor pode encontrar uma continuacao pendente na outbox.
+      { name = "RADAR_FILA_JANELAS_URL", value = aws_sqs_queue.janelas.url },
     ]
 
     secrets = [
@@ -242,13 +250,14 @@ resource "aws_scheduler_schedule" "atualizar_diario" {
     arn      = aws_ecs_cluster.radar.arn
     role_arn = aws_iam_role.scheduler_coletor.arn
 
+    # So retratos: o PNCP vai pelo planejador e pelas Lambdas coletoras (janelas.tf).
     # A Compesa fica fora da nuvem: o portal dela nao responde a partir da AWS
     # (ConnectTimeout em duas rodadas em us-east-2; responde em 0,6 s de uma conexao no
     # Brasil). Ela continua coletavel localmente com `radar atualizar --fontes compesa`.
     input = jsonencode({
       containerOverrides = [{
         name    = "coletor"
-        command = ["atualizar", "--fontes", "pncp,sanepar"]
+        command = ["atualizar", "--fontes", "sanepar"]
       }]
     })
 
@@ -334,6 +343,9 @@ data "aws_iam_policy_document" "alertas_publicar" {
         aws_cloudwatch_metric_alarm.dlq_com_mensagens.arn,
         aws_cloudwatch_metric_alarm.fila_parada.arn,
         aws_cloudwatch_metric_alarm.processamento_falhou.arn,
+        aws_cloudwatch_metric_alarm.janelas_dlq_com_mensagens.arn,
+        aws_cloudwatch_metric_alarm.janelas_fila_parada.arn,
+        aws_cloudwatch_metric_alarm.pncp_nao_concluiu.arn,
       ]
     }
   }
