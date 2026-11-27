@@ -33,6 +33,8 @@ def upgrade() -> None:
         sa.Column("processo", sa.Text(), nullable=False),
         sa.Column("data", sa.Date(), nullable=True),
         sa.Column("data_base", sa.Date(), nullable=True),
+        # Homologado do processo na última rodada: sem mudança, o contrato não é buscado de novo.
+        sa.Column("valor_homologado", sa.Numeric(), nullable=True),
         sa.Column("descricao", sa.Text(), nullable=False),
         sa.Column("unidade", sa.Text(), nullable=False),
         sa.Column("quantidade", sa.Numeric(), nullable=True),
