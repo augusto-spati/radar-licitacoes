@@ -816,6 +816,8 @@ def analisar(
     fontes: Annotated[
         str,
         typer.Option(
+            # dae_jundiai fica de fora de propósito (FONTES_ANALISADAS): analisar os PDFs
+            # dela, baixados por postback, é trabalho futuro.
             help="Fontes separadas por vírgula (pncp, sanepar, compesa). A agenda da AWS "
             "pede as três."
         ),

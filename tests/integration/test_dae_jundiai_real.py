@@ -29,6 +29,6 @@ def test_dae_jundiai_real_pagina_1_postback_da_2_e_um_detalhe() -> None:
         )
 
         ne = next(linha for linha in p1.linhas if linha.sistema == "NE")
-        detalhe = ler_detalhe(c.get(f"{BASE}{ne.caminho}").text)
+        detalhe = ler_detalhe(c.get(f"{BASE}{ne.caminho}").text, ne.cdcompra)
         assert ne.numero.split("/")[0] in detalhe.titulo
         assert detalhe.publicacao is not None

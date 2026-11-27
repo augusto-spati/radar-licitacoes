@@ -26,12 +26,19 @@ exercício, o retrato lê o exercício corrente e o anterior inteiros e `extrair
 anterior ao corte. Um edital que sai da janela ainda aberto no banco é fechado pela reconciliação
 com a situação original "fora da janela".
 
-Completude: cada página tem de trazer o formulário com o exercício pedido, a grade (ou a mensagem
-"Nenhum registro encontrado!", só aceita na página 1 de um exercício) e, depois da página 1, o
-número da página pedida como página corrente do paginador. Página que não traz nenhum id novo é
-erro (sessão perdida devolvendo a mesma página). A paginação segue enquanto o paginador tiver o
-link `Page$N+1` (inclusive o "..." do pager do ASP.NET), até `MAX_PAGINAS` por exercício.
+Completude (a reconciliação fecha o que o retrato não lista, então retrato incompleto é o pior
+erro): cada página tem de trazer o formulário com o exercício pedido, a grade com todos os números
+começando por `<exercício>/` (o `txtNrexer` sozinho não basta: o WebForms devolve o campo digitado
+mesmo quando a grade não foi atualizada) e, depois da página 1, o número da página pedida como
+página corrente do paginador. A mensagem "Nenhum registro encontrado!" só é aceita na página 1 do
+exercício corrente (o novo, em janeiro); no exercício anterior uma busca vazia ganha um `Page$1` e,
+vazia de novo, derruba o retrato (a grade herdada da página 9 pode responder vazia). Página que
+não traz nenhum id novo é erro (sessão perdida devolvendo a mesma página). A paginação segue
+enquanto o paginador tiver o link `Page$N+1` (inclusive o "..." do pager do ASP.NET), até
+`MAX_PAGINAS` por exercício.
 Detalhe com erro derruba o retrato: são poucos (uns 25) e sem eles a situação não é inferida.
+O detalhe tem de ser da compra pedida (o `cdcompra` do `action` do formulário e o número do título)
+e trazer a grade de anexos com ao menos um anexo (todo NE publica o edital).
 
 Situação:
 - pregões (`mural.aspx`, outra numeração): o ícone da coluna Situação é o estado do pregão
@@ -39,8 +46,10 @@ Situação:
 - sistema NE: o ícone e o `<select>` do detalhe ficam em "Em Configuracao" (ou presos num estado
   antigo, como o MDF 007/26 em negociação já homologado). A situação é inferida pelos anexos e
   pela data de publicação (`inferir_situacao_ne`): aviso de revogação, anulação ou cancelamento
-  encerra; com ata, a sessão já aconteceu (em julgamento até `DIAS_JULGAMENTO_COM_ATA`, depois
-  encerrada); sem ata, aberta até `DIAS_ABERTA_SEM_ATA` da publicação, depois "outra". A data de
+  encerra (não "revogação da suspensão" nem negação como "não revogada"); com ata, a sessão já
+  aconteceu (em julgamento até `DIAS_JULGAMENTO_COM_ATA`, depois encerrada); sem ata, aberta até
+  `DIAS_ABERTA_SEM_ATA` da publicação, depois encerrada também: "outra" a reconciliação nunca
+  fecha, e um NE de mais de seis meses sem ata publicada não é oportunidade. A data de
   abertura do NE só existe no PDF do edital: o prazo fica nulo, e por isso o filtro de abertos
   (que exige prazo futuro) ainda não mostra esses editais. Ler o PDF é trabalho da análise.
 
@@ -115,7 +124,10 @@ ICONES_PREGAO: dict[str, tuple[str, str]] = {
     "cp_suspensa": ("Suspensa", "outra"),
 }
 ICONE_CONFIGURACAO = "cp_configuracao"
-_AVISO_FIM = re.compile(r"revoga|anula|cancela", re.IGNORECASE)
+# Sobre o texto sem acento, em maiúsculas e só com letras e números separados por espaço.
+_AVISO_FIM = re.compile(r"\b(?:REVOG|ANUL|CANCEL)[A-Z]*")
+_AVISO_NEGADO = re.compile(r"\b(?:NAO|SEM)\s+$")
+_AVISO_DA_SUSPENSAO = re.compile(r"^\s+(?:DA|DE|DO)\s+SUSPENS")
 
 # Página de bloqueio genérica de WAF/proxy (o estudo não viu nenhuma); 403/429 já param.
 MARCADOR_BLOQUEIO = r"<title>\s*(?:Request Rejected|Access Denied|Acesso Negado)\s*</title>"
@@ -124,6 +136,8 @@ _DATA = re.compile(r"(\d{2})/(\d{2})/(\d{4})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?
 _CDCOMPRA = re.compile(r"(CompraNEWeb|mural)\.aspx\?cdcompra=(\d+)", re.IGNORECASE)
 _PAGINA = re.compile(r"Page\$(\d+)")
 _URL_LISTA = re.compile(r"#exercicio=(\d{4})&pagina=(\d+)$")
+_ACTION_CDCOMPRA = re.compile(r"cdcompra=(\d+)", re.IGNORECASE)
+_NUMERO_TITULO = re.compile(r"\b(\d{4})/(\d+)\b")
 # Campos do formulário que a busca zera (a página 1 do GET vem assim).
 _BUSCA_LIMPA = {
     "txtObjeto": "",
@@ -307,26 +321,39 @@ class Detalhe:
     anexos: list[dict[str, str]] = field(default_factory=list)  # nome, tipo, arquivo
 
 
-def ler_detalhe(html: str) -> Detalhe:
+def ler_detalhe(html: str, cdcompra: str) -> Detalhe:
+    """O detalhe da compra `cdcompra`; de outra compra, sem a grade de anexos ou sem anexo é erro.
+
+    A compra da página sai do `action` do formulário (`./CompraNEWeb.aspx?cdcompra=843`).
+    """
     arvore = LexborHTMLParser(html)
     titulo = arvore.css_first("span#CompraNEMod1_lblTitulo")
     if titulo is None:
         raise ErroFonte("layout: detalhe sem título")
+    form = arvore.css_first("form#form1")
+    achado = _ACTION_CDCOMPRA.search((form.attributes.get("action") or "") if form else "")
+    if achado is None:
+        raise ErroFonte(f"layout: detalhe de {cdcompra} sem o cdcompra no formulário")
+    if achado.group(1) != cdcompra:
+        raise ErroFonte(f"layout: pedi o detalhe de {cdcompra}, veio o de {achado.group(1)}")
     selecao = arvore.css_first("select#CompraNEMod1_ddlSituacao option[selected]")
-    anexos: list[dict[str, str]] = []
     tabela = arvore.css_first("table#grdArquivos")
-    if tabela is not None:
-        for tr in tabela.css("tr"):
-            celulas = tr.css("td")
-            if len(celulas) < 3:
-                continue  # cabeçalho
-            anexos.append(
-                {
-                    "nome": _texto(celulas[0]),
-                    "tipo": _texto(celulas[1]),
-                    "arquivo": _texto(celulas[2]),
-                }
-            )
+    if tabela is None:
+        raise ErroFonte(f"layout: detalhe de {cdcompra} sem a grade de anexos")
+    anexos: list[dict[str, str]] = []
+    for tr in tabela.css("tr"):
+        celulas = tr.css("td")
+        if len(celulas) < 3:
+            continue  # cabeçalho
+        anexos.append(
+            {
+                "nome": _texto(celulas[0]),
+                "tipo": _texto(celulas[1]),
+                "arquivo": _texto(celulas[2]),
+            }
+        )
+    if not anexos:
+        raise ErroFonte(f"layout: detalhe de {cdcompra} sem nenhum anexo (nem o edital)")
     return Detalhe(
         titulo=_texto(titulo),
         objeto=_texto(arvore.css_first("span#CompraNEMod1_lblDsobjeto")),
@@ -339,13 +366,37 @@ def ler_detalhe(html: str) -> Detalhe:
 # --- situação --------------------------------------------------------------------------------
 
 
+def conferir_titulo(linha: LinhaLista, detalhe: Detalhe) -> None:
+    """O número do título (`... - 2026/14 - PMJ`) tem de ser o da linha (`2026/00014`)."""
+    achado = _NUMERO_TITULO.search(detalhe.titulo)
+    ano, _, numero = linha.numero.partition("/")
+    no_titulo = (achado.group(1), int(achado.group(2))) if achado else None
+    if not numero.isdigit() or no_titulo != (ano, int(numero)):
+        raise ErroFonte(
+            f"layout: detalhe {detalhe.titulo!r} não é de {linha.numero}"
+            f" (cdcompra {linha.cdcompra})"
+        )
+
+
+def aviso_de_fim(texto: str) -> bool:
+    """Revogação, anulação ou cancelamento; não "revogação da suspensão" nem "não revogada"."""
+    normal = " ".join(re.sub(r"[^A-Z0-9]+", " ", _sem_acento(texto)).split())
+    for achado in _AVISO_FIM.finditer(normal):
+        if _AVISO_NEGADO.search(normal[: achado.start()]):
+            continue
+        if _AVISO_DA_SUSPENSAO.search(normal[achado.end() :]):
+            continue
+        return True
+    return False
+
+
 def inferir_situacao_ne(linha: LinhaLista, detalhe: Detalhe, hoje: date) -> tuple[str, str]:
     """(situação original, normalizada) de uma compra do sistema NE, pelos anexos e datas."""
     if linha.icone == "cp_cancelada":
         return "Cancelada", "encerrada"
     tipos = {anexo["tipo"].upper() for anexo in detalhe.anexos}
     avisos = [a for a in detalhe.anexos if a["tipo"].upper() == "AVISO"]
-    if any(_AVISO_FIM.search(f"{a['nome']} {a['arquivo']}") for a in avisos):
+    if any(aviso_de_fim(f"{a['nome']} {a['arquivo']}") for a in avisos):
         return "Revogada ou anulada (aviso publicado)", "encerrada"
     publicada = detalhe.publicacao or linha.inicio or datetime.combine(hoje, datetime.min.time())
     dias = (hoje - publicada.date()).days
@@ -354,7 +405,9 @@ def inferir_situacao_ne(linha: LinhaLista, detalhe: Detalhe, hoje: date) -> tupl
             return f"Com ata, publicada há mais de {DIAS_JULGAMENTO_COM_ATA} dias", "encerrada"
         return "Com ata (sessão realizada)", "em_julgamento"
     if dias > DIAS_ABERTA_SEM_ATA:
-        return f"Sem ata, publicada há mais de {DIAS_ABERTA_SEM_ATA} dias", "outra"
+        # Encerrada, não "outra": a reconciliação não fecha "outra", e o edital ficaria no banco
+        # para sempre. Seis meses sem ata publicada não é mais oportunidade.
+        return f"Sem ata, publicada há mais de {DIAS_ABERTA_SEM_ATA} dias", "encerrada"
     return "Sem ata (sessão por realizar)", "aberta"
 
 
@@ -435,16 +488,23 @@ class FonteDaeJundiai:
     def coletar(self, cliente: ClienteEducado) -> Iterator[PaginaColetada]:
         self._listas = {}
         corte = self.corte()
-        exercicios = list(range(self.hoje().year, corte.year - 1, -1))  # o corrente primeiro
+        corrente = self.hoje().year
+        exercicios = list(range(corrente, corte.year - 1, -1))  # o corrente primeiro
         html = cliente.get(URL_LISTA).text
         detalhes: dict[str, None] = {}
         for exercicio in exercicios:
             if self._ler_lista(URL_LISTA, html).exercicio != str(exercicio):
                 html = self._postar_busca(cliente, html, exercicio)
-                if self._ler_lista(URL_LISTA, html).pagina_atual not in (None, 1):
+                buscada = self._ler_lista(URL_LISTA, html)
+                if buscada.vazia or buscada.pagina_atual not in (None, 1):
                     # A busca guarda a página da grade anterior (viewstate): volta para a 1.
+                    # Vazia pode ser a mesma herança (página 9 de um exercício com menos
+                    # páginas): uma tentativa com `Page$1` antes de acreditar.
                     html = self._postar_pagina(cliente, html, 1)
-            for url, pagina in self._paginas_do_exercicio(cliente, html, str(exercicio)):
+            paginas = self._paginas_do_exercicio(
+                cliente, html, str(exercicio), aceita_vazio=exercicio == corrente
+            )
+            for url, pagina in paginas:
                 html = pagina  # a última página do exercício é o estado para a busca seguinte
                 yield PaginaColetada(url, "html", pagina)
                 for linha in self._ler_lista(url, pagina).linhas:
@@ -456,7 +516,7 @@ class FonteDaeJundiai:
             yield PaginaColetada(url, "html", cliente.get(url).text)
 
     def _paginas_do_exercicio(
-        self, cliente: ClienteEducado, html: str, exercicio: str
+        self, cliente: ClienteEducado, html: str, exercicio: str, *, aceita_vazio: bool
     ) -> Iterator[tuple[str, str]]:
         vistos: set[str] = set()
         for pagina in range(1, MAX_PAGINAS + 1):
@@ -464,13 +524,12 @@ class FonteDaeJundiai:
                 html = self._postar_pagina(cliente, html, pagina)
             url = _url_pagina(exercicio, pagina)
             lista = self._ler_lista(url, html)
-            if lista.exercicio != exercicio:
-                raise ErroFonte(
-                    f"layout: exercício {lista.exercicio!r} na página, esperado {exercicio}"
-                )
+            _conferir_exercicio(lista, exercicio)
             if lista.vazia:
                 if pagina > 1:
                     raise ErroFonte(f"layout: página {pagina} de {exercicio} sem registros")
+                if not aceita_vazio:
+                    raise ErroFonte(f"layout: exercício anterior {exercicio} sem registros")
                 logger.info("dae_jundiai_exercicio_vazio", extra={"exercicio": exercicio})
                 yield url, html
                 return
@@ -492,8 +551,11 @@ class FonteDaeJundiai:
         linhas: dict[str, LinhaLista] = {}
         detalhes: dict[str, Detalhe] = {}
         for pagina in paginas:
-            if _URL_LISTA.search(pagina.url):
-                for linha in self._ler_lista(pagina.url, pagina.texto).linhas:
+            na_lista = _URL_LISTA.search(pagina.url)
+            if na_lista:
+                lista = self._ler_lista(pagina.url, pagina.texto)
+                _conferir_exercicio(lista, na_lista.group(1))
+                for linha in lista.linhas:
                     if _antiga(linha, corte):
                         continue
                     id_na_fonte = f"{sigla(linha.modalidade)}-{linha.numero}"
@@ -505,15 +567,29 @@ class FonteDaeJundiai:
                 continue
             achado = _CDCOMPRA.search(pagina.url)
             if achado and achado.group(1).lower() == "compraneweb":
-                detalhes[achado.group(2)] = ler_detalhe(pagina.texto)  # ilegível: falha alto
+                # Ilegível, de outra compra ou sem anexos: falha alto.
+                detalhes[achado.group(2)] = ler_detalhe(pagina.texto, achado.group(2))
         self._listas = {}
         normalizados = []
         for id_na_fonte, linha in linhas.items():
             detalhe = detalhes.get(linha.cdcompra) if linha.sistema == "NE" else None
-            if linha.sistema == "NE" and detalhe is None:
-                raise ErroFonte(f"detalhe ausente de {id_na_fonte}")
+            if linha.sistema == "NE":
+                if detalhe is None:
+                    raise ErroFonte(f"detalhe ausente de {id_na_fonte}")
+                conferir_titulo(linha, detalhe)
             normalizados.append(_normalizar(id_na_fonte, linha, detalhe, hoje))
         return normalizados
+
+
+def _conferir_exercicio(lista: Lista, exercicio: str) -> None:
+    """O campo do exercício e o número de cada linha (`2026/00063`) têm de ser do pedido."""
+    if lista.exercicio != exercicio:
+        raise ErroFonte(f"layout: exercício {lista.exercicio!r} na página, esperado {exercicio}")
+    fora = [linha.numero for linha in lista.linhas if not linha.numero.startswith(f"{exercicio}/")]
+    if fora:
+        raise ErroFonte(
+            f"layout: grade de {exercicio} com números de outro exercício: {', '.join(fora[:3])}"
+        )
 
 
 def _antiga(linha: LinhaLista, corte: date) -> bool:

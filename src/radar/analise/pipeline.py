@@ -89,6 +89,8 @@ class Dependencias:
     documentos_compesa: DocumentosCompesa | None = None
 
 
+# dae_jundiai ainda não entra de propósito: os anexos dela se baixam por postback
+# (`grdArquivos`) e a análise dos PDFs é trabalho futuro; até lá os NE ficam sem prazo.
 FONTES_ANALISADAS = ("pncp", "sanepar", "compesa")
 # Padrão de `radar analisar` sem `--fontes`; a agenda da AWS pede as três explicitamente.
 FONTES_PADRAO = ("pncp", "sanepar")

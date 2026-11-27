@@ -150,7 +150,7 @@ def test_dados_postback_sem_viewstate_e_layout() -> None:
 
 
 def test_detalhe_843_com_atas() -> None:
-    detalhe = ler_detalhe(DETALHE_843)
+    detalhe = ler_detalhe(DETALHE_843, "843")
     assert detalhe.titulo == "MODO DE DISPUTA FECHADO - 2026/14 - PMJ"
     assert detalhe.objeto == "REMANEJ DE REDE NA RUA ELIAS JUVENAL POR METODO HDD"
     assert detalhe.situacao_sistema == "Em Configuracao"
@@ -167,7 +167,40 @@ def test_detalhe_843_com_atas() -> None:
 
 def test_detalhe_sem_titulo_e_layout() -> None:
     with pytest.raises(ErroFonte, match="sem título"):
-        ler_detalhe("<html><body><form id='form1'></form></body></html>")
+        ler_detalhe("<html><body><form id='form1'></form></body></html>", "1")
+
+
+def test_detalhe_de_outra_compra_e_layout() -> None:
+    with pytest.raises(ErroFonte, match="pedi o detalhe de 846, veio o de 843"):
+        ler_detalhe(DETALHE_843, "846")
+
+
+def test_detalhe_sem_cdcompra_no_formulario_e_layout() -> None:
+    sem_action = DETALHE_843.replace('action="./CompraNEWeb.aspx?cdcompra=843"', 'action=""')
+    with pytest.raises(ErroFonte, match="sem o cdcompra"):
+        ler_detalhe(sem_action, "843")
+
+
+def test_detalhe_sem_a_grade_de_anexos_e_layout() -> None:
+    sem_grade = DETALHE_846.replace('id="grdArquivos"', 'id="outraGrade"')
+    assert sem_grade != DETALHE_846
+    with pytest.raises(ErroFonte, match="sem a grade de anexos"):
+        ler_detalhe(sem_grade, "846")
+
+
+def test_detalhe_sem_nenhum_anexo_e_layout() -> None:
+    with pytest.raises(ErroFonte, match="sem nenhum anexo"):
+        ler_detalhe(
+            _detalhe("846", "MODO DE DISPUTA FECHADO - 2026/17 - PMJ", "01/10/2026", []), "846"
+        )
+
+
+def test_titulo_do_detalhe_tem_de_ser_o_numero_da_linha() -> None:
+    detalhe = ler_detalhe(DETALHE_846, "846")  # 2026/17
+    dae.conferir_titulo(_linha(numero="2026/00017"), detalhe)
+    for numero in ("2026/00014", "2025/00017"):
+        with pytest.raises(ErroFonte, match="não é de"):
+            dae.conferir_titulo(_linha(numero=numero), detalhe)
 
 
 # --- situação ---------------------------------------------------------------------------------
@@ -190,31 +223,67 @@ def _linha(**campos: object) -> LinhaLista:
 
 
 def test_ne_sem_ata_recente_e_aberta() -> None:
-    detalhe = ler_detalhe(DETALHE_846)  # MDF 17/26, publicado em 01/10/2026, sem ata
+    detalhe = ler_detalhe(DETALHE_846, "846")  # MDF 17/26, publicado em 01/10/2026, sem ata
     assert inferir_situacao_ne(_linha(), detalhe, HOJE) == (
         "Sem ata (sessão por realizar)",
         "aberta",
     )
 
 
-def test_ne_sem_ata_antiga_e_outra() -> None:
-    detalhe = ler_detalhe(DETALHE_846)
+def test_ne_sem_ata_antiga_e_encerrada() -> None:
+    # Não "outra": a reconciliação nunca fecha "outra" e o edital ficaria aberto para sempre.
+    detalhe = ler_detalhe(DETALHE_846, "846")
     _, situacao = inferir_situacao_ne(_linha(), detalhe, date(2027, 6, 1))
-    assert situacao == "outra"
+    assert situacao == "encerrada"
 
 
 def test_ne_com_ata_antiga_e_encerrada_e_recente_em_julgamento() -> None:
-    detalhe = ler_detalhe(DETALHE_843)  # publicado em 22/07/2026, com 4 atas
+    detalhe = ler_detalhe(DETALHE_843, "843")  # publicado em 22/07/2026, com 4 atas
     assert inferir_situacao_ne(_linha(), detalhe, HOJE)[1] == "encerrada"
     assert inferir_situacao_ne(_linha(), detalhe, date(2026, 8, 30))[1] == "em_julgamento"
 
 
 def test_ne_com_aviso_de_revogacao_e_encerrada() -> None:
-    detalhe = ler_detalhe(DETALHE_841)  # MDA 2/26: SUSP e Revogacao como AVISO
+    detalhe = ler_detalhe(DETALHE_841, "841")  # MDA 2/26: SUSP e Revogacao como AVISO
     assert inferir_situacao_ne(_linha(), detalhe, HOJE) == (
         "Revogada ou anulada (aviso publicado)",
         "encerrada",
     )
+
+
+@pytest.mark.parametrize(
+    ("texto", "fim"),
+    [
+        ("Revogacao _ MDA 02 26.pdf", True),
+        ("AVISO_DE_ANULAÇÃO.pdf", True),
+        ("Cancelamento do certame", True),
+        ("REVOGADA", True),
+        ("Revogação da suspensão.pdf", False),
+        ("REVOGACAO_DA_SUSPENSAO MDA 02 26.pdf", False),
+        ("Cancelamento de suspensão", False),
+        ("SUSP MDA 02 26.pdf", False),
+        ("Suspensão do certame", False),
+        ("Licitação não revogada", False),
+        ("NAO ANULADA - segue o certame", False),
+        ("Retificação do edital", False),
+    ],
+)
+def test_aviso_de_fim(texto: str, fim: bool) -> None:
+    assert dae.aviso_de_fim(texto) is fim
+
+
+def test_ne_com_aviso_so_de_suspensao_ou_revogacao_da_suspensao_nao_encerra() -> None:
+    detalhe = Detalhe(
+        titulo="x",
+        objeto="x",
+        situacao_sistema="",
+        publicacao=datetime(2026, 10, 1),
+        anexos=[
+            {"nome": "SUSP.pdf", "tipo": "AVISO", "arquivo": "SUSPENSAO.pdf"},
+            {"nome": "Revogação da suspensão", "tipo": "AVISO", "arquivo": "R.pdf"},
+        ],
+    )
+    assert inferir_situacao_ne(_linha(), detalhe, HOJE)[1] == "aberta"
 
 
 def test_ne_icone_cancelada_vale() -> None:
@@ -319,13 +388,14 @@ P2025_1 = _pagina(
 )
 
 
-def _detalhe(titulo: str, publicacao: str, anexos: list[tuple[str, str]]) -> str:
+def _detalhe(cd: str, titulo: str, publicacao: str, anexos: list[tuple[str, str]]) -> str:
     linhas = "".join(
         f"<tr class='rowtable'><td>{nome}</td><td>{tipo}</td><td><a>{nome}</a></td></tr>"
         for nome, tipo in anexos
     )
     return (
-        f"<html><body><form id='form1'><span id='CompraNEMod1_lblTitulo'>{titulo}</span>"
+        f"<html><body><form id='form1' action='./CompraNEWeb.aspx?cdcompra={cd}'>"
+        f"<span id='CompraNEMod1_lblTitulo'>{titulo}</span>"
         f"<span id='CompraNEMod1_lblDsobjeto'>OBJETO DO DETALHE</span>"
         f"<select id='CompraNEMod1_ddlSituacao'><option selected='selected' value='1'>"
         f"Em Configuracao</option></select><span id='CompraNEMod1_lblDtPubl'>{publicacao}</span>"
@@ -336,9 +406,14 @@ def _detalhe(titulo: str, publicacao: str, anexos: list[tuple[str, str]]) -> str
 
 DETALHES = {
     "846": _detalhe(
-        "MODO DE DISPUTA FECHADO - 2026/17 - PMJ", "01/10/2026", [("E.pdf", "EDITAL DA COMPRA")]
+        "846",
+        "MODO DE DISPUTA FECHADO - 2026/17 - PMJ",
+        "01/10/2026",
+        [("E.pdf", "EDITAL DA COMPRA")],
     ),
-    "826": _detalhe("MODO DE DISPUTA FECHADO - 2025/11 - PMJ", "17/12/2025", [("A.pdf", "ATA")]),
+    "826": _detalhe(
+        "826", "MODO DE DISPUTA FECHADO - 2025/11 - PMJ", "17/12/2025", [("A.pdf", "ATA")]
+    ),
 }
 
 Rota = Callable[[httpx.Request], str]
@@ -479,13 +554,83 @@ def test_busca_ignorada_falha() -> None:
         _coletar(_servidor({**PAGINAS_OK, ("2025", 1): P2026_1}))
 
 
-def test_exercicio_anterior_vazio_e_aceito_mas_pagina_2_vazia_nao() -> None:
-    _, paginas = _coletar(
-        _servidor({**PAGINAS_OK, ("2025", 1): LISTA_VAZIA.replace("2031", "2025")})
-    )
-    assert f"{URL_LISTA}#exercicio=2025&pagina=1" in [p.url for p in paginas]
+def test_exercicio_anterior_vazio_tenta_page_1_e_falha_se_continua_vazio() -> None:
+    # A busca feita da página 9 do exercício corrente pode herdar o índice e responder vazia:
+    # retrato que aceitasse isso fecharia na reconciliação todo o exercício anterior.
+    vazia = LISTA_VAZIA.replace("2031", "2025")
+    chamadas: list[httpx.Request] = []
+    with pytest.raises(ErroFonte, match="exercício anterior 2025 sem registros"):
+        _coletar(_servidor({**PAGINAS_OK, ("2025", 1): vazia}), chamadas)
+    eventos = [
+        parse_qs(c.content.decode(), keep_blank_values=True).get("__EVENTARGUMENT", [""])[0]
+        for c in chamadas
+        if c.method == "POST"
+    ]
+    assert eventos == ["Page$2", "", "Page$1"]  # uma nova tentativa, só uma
+
+
+def test_exercicio_anterior_vazio_na_busca_e_cheio_no_page_1_segue() -> None:
+    vazia = LISTA_VAZIA.replace("2031", "2025")
+    servidor = _servidor(PAGINAS_OK)
+
+    def busca_vazia(requisicao: httpx.Request) -> str:
+        if b"btnPesquisar" in requisicao.content:
+            return vazia
+        return servidor(requisicao)
+
+    fonte, paginas = _coletar(busca_vazia)
+    assert {e["id_na_fonte"] for e in fonte.extrair(paginas)} >= {"MDF-2025/00011"}
+
+
+def test_exercicio_corrente_vazio_e_aceito_mas_pagina_2_vazia_nao() -> None:
+    # Janeiro: o exercício novo ainda não tem nada; só o corrente pode vir vazio.
+    vazia_2026 = LISTA_VAZIA.replace("2031", "2026")
+    _, paginas = _coletar(_servidor(PAGINAS_OK, primeira=vazia_2026))
+    assert [p.url.rsplit("#", 1)[-1] for p in paginas[:2]] == [
+        "exercicio=2026&pagina=1",
+        "exercicio=2025&pagina=1",
+    ]
     with pytest.raises(ErroFonte, match="página 2 de 2026 sem registros"):
-        _coletar(_servidor({**PAGINAS_OK, ("2026", 2): LISTA_VAZIA.replace("2031", "2026")}))
+        _coletar(_servidor({**PAGINAS_OK, ("2026", 2): vazia_2026}))
+
+
+def test_grade_de_outro_exercicio_com_o_campo_certo_falha() -> None:
+    # O WebForms devolve o txtNrexer digitado mesmo sem atualizar a grade.
+    grade_2027 = _pagina(
+        "2026", 2, [1], [_pe("600", "2027/00001", "26/11/2026 16:30:00", "18/12/2026 09:00:00")]
+    )
+    with pytest.raises(ErroFonte, match="números de outro exercício: 2027/00001"):
+        _coletar(_servidor({**PAGINAS_OK, ("2026", 2): grade_2027}))
+    with pytest.raises(ErroFonte, match="números de outro exercício"):
+        _coletar(_servidor({**PAGINAS_OK, ("2025", 1): P2026_1.replace("'2026'", "'2025'")}))
+
+
+def test_extrair_confere_o_exercicio_das_paginas_gravadas() -> None:
+    fonte = FonteDaeJundiai(relogio=lambda: AGORA)
+    gravada = PaginaColetada(f"{URL_LISTA}#exercicio=2025&pagina=2", "html", P2026_2)
+    with pytest.raises(ErroFonte, match="exercício '2026'"):
+        fonte.extrair([gravada])
+
+
+def test_detalhe_de_outra_compra_no_retrato_falha() -> None:
+    trocados = {**DETALHES, "846": DETALHES["826"]}
+    fonte, paginas = _coletar(_servidor(PAGINAS_OK, detalhes=trocados))
+    with pytest.raises(ErroFonte, match="pedi o detalhe de 846"):
+        fonte.extrair(paginas)
+
+
+def test_detalhe_com_titulo_de_outra_compra_no_retrato_falha() -> None:
+    errado = _detalhe("846", "MODO DE DISPUTA FECHADO - 2026/18 - PMJ", "01/10/2026", [("E", "X")])
+    fonte, paginas = _coletar(_servidor(PAGINAS_OK, detalhes={**DETALHES, "846": errado}))
+    with pytest.raises(ErroFonte, match="não é de 2026/00017"):
+        fonte.extrair(paginas)
+
+
+def test_detalhe_sem_anexos_no_retrato_falha() -> None:
+    vazio = _detalhe("846", "MODO DE DISPUTA FECHADO - 2026/17 - PMJ", "01/10/2026", [])
+    fonte, paginas = _coletar(_servidor(PAGINAS_OK, detalhes={**DETALHES, "846": vazio}))
+    with pytest.raises(ErroFonte, match="sem nenhum anexo"):
+        fonte.extrair(paginas)
 
 
 def test_pagina_de_bloqueio_para_o_retrato() -> None:
