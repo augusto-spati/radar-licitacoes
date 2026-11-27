@@ -12,7 +12,7 @@ Cada item marcado aponta para o arquivo e o commit onde está implementado e par
 - [x] Lookback na atualização diária: `radar atualizar --lookback 10`, com janelas de atualização reabertas quando concluídas antes do fim do dia. `src/radar/cli.py`, `src/radar/coleta/janelas.py` (commits `5dca21a`, `b44e49f`). Vídeo: a gravar.
 - [x] Dado bruto separado do tratado: `pagina_bruta` (JSONB) e `edital` derivado. `migrations/versions/0001_esquema_inicial.py`, `src/radar/editais/registro.py` (commits `d895343`, `1246d23`). Vídeo: a gravar.
 - [x] Busca de texto em português: coluna gerada, `unaccent` com função `IMMUTABLE` e índice GIN. `migrations/versions/0002_busca_texto.py`, `src/radar/editais/filtro.py` (commit `09ab90b`). Vídeo: a gravar.
-- [ ] Índice medido por `EXPLAIN (ANALYZE, BUFFERS)`, com e sem o GIN. A medir; procedimento em `docs/etapas/01-carga-incremental.md`.
+- [x] Índice medido por `EXPLAIN (ANALYZE, BUFFERS)`, com e sem o GIN: 14 ms contra 81 ms e ~9 vezes menos blocos lidos, em 58.825 editais. `docs/etapas/01-carga-incremental.md`.
 - [x] Filtro validado olhando os resultados: termo solto trocado por frases específicas (36 para 24 abertos). `config/filtro.toml` (commit `a2d5723`). Vídeo: a gravar.
 - [x] Auditoria de cobertura, separada da coleta, com código de saída. `src/radar/coleta/janelas.py` (função `auditar`), `src/radar/cli.py` (commits `ef44208`, `5dca21a`, `24bc7a6`). Vídeo: a gravar.
 - [x] Logs JSON estruturados na coleta. `src/radar/comum/logs.py` (commit `b80006d`). Vídeo: a gravar.

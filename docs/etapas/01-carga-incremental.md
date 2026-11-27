@@ -1,6 +1,6 @@
 # Etapa 1: carga incremental do PNCP
 
-Tema da trilha: sistemas de dados. Fechada em 2026-11-26, exceto a medição do `EXPLAIN` (ver "a medir") e as respostas às perguntas de entrevista.
+Tema da trilha: sistemas de dados. Fechada em 2026-11-26; a medição do `EXPLAIN` foi feita em 2026-11-27 (abaixo). Faltam as respostas às perguntas de entrevista.
 
 Esta nota serve de estudo e de base para o vídeo. A ideia é que, depois de lê-la, você consiga explicar cada decisão sem consultar o código e defendê-la numa entrevista.
 
@@ -149,9 +149,22 @@ Leitura: as 11 retentativas mostram a fonte instável e o retry funcionando, e n
 
 **Cobertura de Pernambuco.** Em 30 dias o PNCP trouxe 948 editais de PE, quase nenhum de saneamento. A Compesa aparece como compradora em apenas 3. Conclusão: companhias estaduais de saneamento publicam em portal próprio, não no PNCP. Hoje o radar cobre bem prefeituras e consórcios e mal as companhias estaduais; os portais próprios estão nas não metas da v1.
 
-### EXPLAIN com e sem o índice GIN: a medir
+### EXPLAIN com e sem o índice GIN
 
-Esta medição ainda **não foi feita**. Não há plano nem tempo registrado; os números entram aqui depois de rodar o procedimento abaixo, com o banco da carga de 30 dias.
+**Medido em 2026-11-27, no banco de produção (Neon), com 58.825 editais do PNCP** (tabela `edital` com 73 MB e 18 MB de índices). A consulta medida é a que o `filtrar` realmente executa (todos os termos das quatro linhas de serviço, UFs, modalidades e só abertos), capturada com um listener do SQLAlchemy e rodada com `EXPLAIN (ANALYZE, BUFFERS)`:
+
+| | Tempo de execução | Blocos lidos (shared) | Plano |
+|---|---|---|---|
+| Com o GIN | 14 ms | 1.182 (hit) | `Bitmap Index Scan` em `ix_edital_busca` |
+| Sem o GIN | 81 ms | 3.248 hit + 7.147 read | varredura sequencial |
+
+O índice deixa a lista ~6 vezes mais rápida e lê ~9 vezes menos blocos. Com 38 mil linhas, na carga de 30 dias, o ganho seria menor; com o histórico crescendo, maior.
+
+**Como "sem o GIN" foi medido.** Em produção não rodei o `DROP INDEX` do procedimento abaixo: ele pega um lock exclusivo na tabela durante a transação, e o coletor grava nela o dia todo. O GIN só é usado por bitmap scan, então `SET LOCAL enable_bitmapscan = off` dentro de uma transação de leitura (desfeita depois) mostra o mesmo plano sem índice, sem travar nada. No banco local, o `DROP INDEX` em transação continua valendo.
+
+As consultas do histórico do órgão (etapa 7a) custaram menos de 0,1 ms cada nesta medição porque ainda não havia resultados gravados; elas entram de novo quando a carga histórica terminar.
+
+O procedimento original, para repetir no banco local:
 
 1. Capturar a consulta que o `filtrar` realmente executa:
 
@@ -188,7 +201,6 @@ ROLLBACK;
 
 Com 38 mil linhas o planejador pode escolher varredura sequencial mesmo com o índice, porque a tabela é pequena. Se isso acontecer, é um resultado legítimo: registre e explique em vez de "corrigir". Vale repetir com um termo raro e um comum, porque o índice pesa diferente em cada caso.
 
-Resultado: a medir.
 
 ## O que as revisões encontraram
 
