@@ -327,11 +327,7 @@ export interface components {
              * Abrangencia
              * @enum {string}
              */
-            abrangencia: "uf" | "nacional";
-            /** Casos Contratado */
-            casos_contratado: number;
-            /** Casos Estimado */
-            casos_estimado: number;
+            abrangencia: "uf" | "outras_ufs";
             /** Data Base Fim */
             data_base_fim: string | null;
             /** Data Base Inicio */
@@ -342,6 +338,10 @@ export interface components {
             escopo: string | null;
             /** Faixa */
             faixa: string | null;
+            /** Itens Contratado */
+            itens_contratado: number;
+            /** Itens Estimado */
+            itens_estimado: number;
             /** Linha */
             linha: string;
             /** Material */
@@ -350,12 +350,20 @@ export interface components {
             mediana_contratado: string | null;
             /** Mediana Estimado */
             mediana_estimado: string | null;
+            /** Mediana Estimado Contratados */
+            mediana_estimado_contratados: string | null;
+            /** Poucos Casos */
+            poucos_casos: boolean;
+            /** Processos Contratado */
+            processos_contratado: number;
+            /** Processos Estimado */
+            processos_estimado: number;
             /** Rotulo */
             rotulo: string;
             /** Servico */
             servico: string;
-            /** Uf */
-            uf: string | null;
+            /** Ufs */
+            ufs: string[];
             /** Unidade */
             unidade: string;
         };

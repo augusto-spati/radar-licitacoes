@@ -726,18 +726,10 @@
           "abrangencia": {
             "enum": [
               "uf",
-              "nacional"
+              "outras_ufs"
             ],
             "title": "Abrangencia",
             "type": "string"
-          },
-          "casos_contratado": {
-            "title": "Casos Contratado",
-            "type": "integer"
-          },
-          "casos_estimado": {
-            "title": "Casos Estimado",
-            "type": "integer"
           },
           "data_base_fim": {
             "anyOf": [
@@ -794,6 +786,14 @@
             ],
             "title": "Faixa"
           },
+          "itens_contratado": {
+            "title": "Itens Contratado",
+            "type": "integer"
+          },
+          "itens_estimado": {
+            "title": "Itens Estimado",
+            "type": "integer"
+          },
           "linha": {
             "title": "Linha",
             "type": "string"
@@ -831,15 +831,7 @@
             ],
             "title": "Mediana Estimado"
           },
-          "rotulo": {
-            "title": "Rotulo",
-            "type": "string"
-          },
-          "servico": {
-            "title": "Servico",
-            "type": "string"
-          },
-          "uf": {
+          "mediana_estimado_contratados": {
             "anyOf": [
               {
                 "type": "string"
@@ -848,7 +840,34 @@
                 "type": "null"
               }
             ],
-            "title": "Uf"
+            "title": "Mediana Estimado Contratados"
+          },
+          "poucos_casos": {
+            "title": "Poucos Casos",
+            "type": "boolean"
+          },
+          "processos_contratado": {
+            "title": "Processos Contratado",
+            "type": "integer"
+          },
+          "processos_estimado": {
+            "title": "Processos Estimado",
+            "type": "integer"
+          },
+          "rotulo": {
+            "title": "Rotulo",
+            "type": "string"
+          },
+          "servico": {
+            "title": "Servico",
+            "type": "string"
+          },
+          "ufs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ufs",
+            "type": "array"
           },
           "unidade": {
             "title": "Unidade",
@@ -865,11 +884,15 @@
           "faixa",
           "unidade",
           "abrangencia",
-          "uf",
-          "casos_estimado",
+          "ufs",
+          "processos_estimado",
+          "itens_estimado",
           "mediana_estimado",
-          "casos_contratado",
+          "processos_contratado",
+          "itens_contratado",
           "mediana_contratado",
+          "mediana_estimado_contratados",
+          "poucos_casos",
           "data_base_inicio",
           "data_base_fim"
         ],

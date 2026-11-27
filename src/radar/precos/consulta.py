@@ -2,8 +2,13 @@
 
 Preço comparado é sempre com BDI e na unidade canônica (preço ÷ `fator_unidade`). Chave:
 (serviço, material, DN, escopo, faixa); fora de rede e escavação ela é só o serviço. Os
-números vêm da UF do edital quando ela tem pelo menos `CASOS_UF` casos do estimado nessa chave;
-senão, do país inteiro (abrangência `nacional`). Item `suspeito` nunca entra.
+números vêm da UF do edital quando ela tem pelo menos `CASOS_UF` processos do estimado nessa
+chave; senão, de todas as UFs com dados. Item `suspeito` nunca entra.
+
+Caso é processo, não item: a mediana de cada chave é a mediana das medianas de cada processo
+(um orçamento grande com muitos itens iguais não domina), e todo corte conta processos. `ufs`
+diz de onde vieram os números (hoje só PE: a base é o TCE-PE); `abrangencia` é `uf` quando
+todos são da UF do edital e `outras_ufs` quando não.
 """
 
 import statistics
@@ -19,14 +24,18 @@ from sqlalchemy.orm import Session
 
 from radar.precos.modelos import PrecoItem
 from radar.precos.servicos import Servico, servicos_padrao
+from radar.precos.tcepe import ORIGEM as ORIGEM_TCEPE
+from radar.precos.tcepe import processo_da_chave
 
-Abrangencia = Literal["uf", "nacional"]
+Abrangencia = Literal["uf", "outras_ufs"]
 
-# Casos do estimado na UF para usar a UF; abaixo disso, nacional.
+# Processos do estimado na UF para usar só a UF; abaixo disso, todas as UFs com dados.
 CASOS_UF = 5
-# Rede (material, DN, escopo) só aparece com pelo menos tantos casos na abrangência escolhida.
+# Rede (material, DN, escopo) só aparece com pelo menos tantos processos na abrangência.
 CASOS_REDE = 3
-# Item com BDI desconhecido sai do estimado quando a chave tem tantos casos sem essa marca.
+# Abaixo de tantos processos do estimado, a referência vem marcada com `poucos_casos`.
+CASOS_MINIMOS = 3
+# Item com BDI desconhecido sai do estimado quando a chave tem tantos processos sem essa marca.
 CASOS_SEM_BDI_DESCONHECIDO = 5
 _CENTAVO = Decimal("0.01")
 
@@ -45,14 +54,22 @@ class Referencia:
     # Só em escavação: faixa de profundidade.
     faixa: str | None
     unidade: str
-    # De onde vêm os números: a UF do edital (`uf`) ou o país (`nacional`).
+    # `uf`: todos os números são da UF do edital; `outras_ufs`: não (ver `ufs`).
     abrangencia: Abrangencia
-    uf: str | None
-    casos_estimado: int
+    # UFs de onde vieram os números, em ordem.
+    ufs: tuple[str, ...]
+    processos_estimado: int
+    itens_estimado: int
+    # Mediana das medianas por processo.
     mediana_estimado: Decimal | None
     # Só TCE-PE (contratado casado com o estimado), sem suspeitos.
-    casos_contratado: int
+    processos_contratado: int
+    itens_contratado: int
     mediana_contratado: Decimal | None
+    # Estimado dos mesmos itens que têm contratado (mesma população, para comparar).
+    mediana_estimado_contratados: Decimal | None
+    # Menos de `CASOS_MINIMOS` processos do estimado.
+    poucos_casos: bool
     # Período da data-base dos preços do estimado usados (None quando a fonte não diz).
     data_base_inicio: date | None
     data_base_fim: date | None
@@ -60,6 +77,9 @@ class Referencia:
 
 @dataclass(frozen=True)
 class _Caso:
+    # (origem, id do processo): no TCE-PE o prefixo de `chave_origem`, porque o rótulo
+    # `processo` se repete; nas outras origens, o `processo`.
+    processo: tuple[str, str]
     origem: str
     uf: str
     estimado: Decimal | None
@@ -74,28 +94,42 @@ def _mediana(valores: Sequence[Decimal]) -> Decimal | None:
     return Decimal(statistics.median(valores)).quantize(_CENTAVO, rounding=ROUND_HALF_UP)
 
 
+def _processos(casos: Iterable[_Caso]) -> int:
+    return len({c.processo for c in casos})
+
+
+def _mediana_por_processo(pares: Iterable[tuple[tuple[str, str], Decimal]]) -> Decimal | None:
+    """Mediana das medianas de cada processo."""
+    por_processo: dict[tuple[str, str], list[Decimal]] = defaultdict(list)
+    for processo, valor in pares:
+        por_processo[processo].append(valor)
+    return _mediana([statistics.median(valores) for valores in por_processo.values()])
+
+
 def _estimados(casos: Iterable[_Caso]) -> list[_Caso]:
     com_preco = [c for c in casos if c.estimado is not None]
     sem_marca = [c for c in com_preco if not c.bdi_desconhecido]
-    return sem_marca if len(sem_marca) >= CASOS_SEM_BDI_DESCONHECIDO else com_preco
+    return sem_marca if _processos(sem_marca) >= CASOS_SEM_BDI_DESCONHECIDO else com_preco
 
 
-def _contratados(casos: Iterable[_Caso]) -> list[Decimal]:
-    return [c.contratado for c in casos if c.origem == "tce_pe" and c.contratado is not None]
+def _contratados(casos: Iterable[_Caso]) -> list[_Caso]:
+    return [c for c in casos if c.origem == ORIGEM_TCEPE and c.contratado is not None]
 
 
 def _referencia(
     servico: Servico, chave: _Chave, casos: list[_Caso], uf: str | None
 ) -> Referencia | None:
     na_uf = [c for c in casos if c.uf == uf] if uf is not None else []
-    abrangencia: Abrangencia = "uf" if len(_estimados(na_uf)) >= CASOS_UF else "nacional"
-    escolhidos = na_uf if abrangencia == "uf" else casos
+    escolhidos = na_uf if _processos(_estimados(na_uf)) >= CASOS_UF else casos
     estimados = _estimados(escolhidos)
     contratados = _contratados(escolhidos)
-    if not estimados and not contratados:
+    processos_estimado = _processos(estimados)
+    if processos_estimado == 0 and not contratados:
         return None
-    if servico.de_rede and len(estimados) < CASOS_REDE:
+    if servico.de_rede and processos_estimado < CASOS_REDE:
         return None
+    ufs = tuple(sorted({c.uf for c in [*estimados, *contratados]}))
+    abrangencia: Abrangencia = "uf" if uf is not None and ufs == (uf,) else "outras_ufs"
     datas = [c.data_base for c in estimados if c.data_base is not None]
     _, material, dn, escopo, faixa = chave
     return Referencia(
@@ -108,11 +142,21 @@ def _referencia(
         faixa=faixa,
         unidade=servico.unidade,
         abrangencia=abrangencia,
-        uf=uf if abrangencia == "uf" else None,
-        casos_estimado=len(estimados),
-        mediana_estimado=_mediana([c.estimado for c in estimados if c.estimado is not None]),
-        casos_contratado=len(contratados),
-        mediana_contratado=_mediana(contratados),
+        ufs=ufs,
+        processos_estimado=processos_estimado,
+        itens_estimado=len(estimados),
+        mediana_estimado=_mediana_por_processo(
+            (c.processo, c.estimado) for c in estimados if c.estimado is not None
+        ),
+        processos_contratado=_processos(contratados),
+        itens_contratado=len(contratados),
+        mediana_contratado=_mediana_por_processo(
+            (c.processo, c.contratado) for c in contratados if c.contratado is not None
+        ),
+        mediana_estimado_contratados=_mediana_por_processo(
+            (c.processo, c.estimado) for c in contratados if c.estimado is not None
+        ),
+        poucos_casos=processos_estimado < CASOS_MINIMOS,
         data_base_inicio=min(datas, default=None),
         data_base_fim=max(datas, default=None),
     )
@@ -126,7 +170,8 @@ def referencias(
 ) -> list[Referencia]:
     """Referências dos serviços das `linhas` do edital; vazia se nenhuma linha tem serviço.
 
-    Ordem: serviços na ordem de `config/servicos.toml`, depois mais casos primeiro.
+    Ordem: serviços na ordem de `config/servicos.toml`, depois mais processos primeiro. Chave
+    sem nenhum processo não aparece; com menos de `CASOS_MINIMOS`, vem com `poucos_casos`.
     """
     pedidas = set(linhas)
     escolhidos = [s for s in (servicos or servicos_padrao()) if s.linha in pedidas]
@@ -141,6 +186,8 @@ def referencias(
             PrecoItem.escopo,
             PrecoItem.faixa,
             PrecoItem.origem,
+            PrecoItem.chave_origem,
+            PrecoItem.processo,
             PrecoItem.uf,
             PrecoItem.preco_com_bdi,
             PrecoItem.preco_contratado_com_bdi,
@@ -154,6 +201,12 @@ def referencias(
         fator = linha.fator_unidade
         grupos[(linha.servico, linha.material, linha.dn, linha.escopo, linha.faixa)].append(
             _Caso(
+                processo=(
+                    linha.origem,
+                    processo_da_chave(linha.chave_origem)
+                    if linha.origem == ORIGEM_TCEPE
+                    else linha.processo,
+                ),
                 origem=linha.origem,
                 uf=linha.uf,
                 estimado=None if linha.preco_com_bdi is None else linha.preco_com_bdi / fator,
@@ -176,8 +229,8 @@ def referencias(
         achadas,
         key=lambda r: (
             ordem[r.servico],
-            -r.casos_estimado,
-            -r.casos_contratado,
+            -r.processos_estimado,
+            -r.processos_contratado,
             r.material or "",
             r.dn or 0,
             r.escopo or "",

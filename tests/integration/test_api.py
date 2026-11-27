@@ -448,14 +448,14 @@ def test_historico_404_para_edital_inexistente(cliente: TestClient) -> None:
     assert cliente.get("/api/historicos/sem-fonte").status_code == 404
 
 
-def _gravar_preco(sessao: Session, chave: str, preco: str, uf: str = "SP") -> None:
+def _gravar_preco(sessao: Session, chave: str, preco: str, uf: str = "PE", item: str = "1") -> None:
     sessao.add(
         PrecoItem(
             origem="tce_pe",
-            chave_origem=chave,
+            chave_origem=f"{chave}:{item}",
             uf=uf,
             orgao_nome="Compesa",
-            processo=f"proc-{chave}",
+            processo="802/1/2026",  # rótulo repetido: o processo é o prefixo da chave
             descricao="HIDROMETRO FORNECIMENTO E INSTALACAO",
             unidade="UN",
             preco_com_bdi=Decimal(preco),
@@ -473,6 +473,8 @@ def test_precos_do_edital(cliente: TestClient, sessao: Session) -> None:
     registrar(sessao, [_registro("alvo/2026", "Troca de hidrometro")])
     for i, preco in enumerate(["100", "200", "300"]):
         _gravar_preco(sessao, f"h{i}", preco)
+    # Segundo item do 1º processo: conta como item, não como processo (mediana dele: 120).
+    _gravar_preco(sessao, "h0", "140", item="2")
 
     resposta = cliente.get("/api/precos/pncp~alvo/2026")
 
@@ -489,12 +491,16 @@ def test_precos_do_edital(cliente: TestClient, sessao: Session) -> None:
                 "escopo": None,
                 "faixa": None,
                 "unidade": "un",
-                "abrangencia": "nacional",
-                "uf": None,
-                "casos_estimado": 3,
+                "abrangencia": "outras_ufs",
+                "ufs": ["PE"],
+                "processos_estimado": 3,
+                "itens_estimado": 4,
                 "mediana_estimado": "200.00",
-                "casos_contratado": 3,
+                "processos_contratado": 3,
+                "itens_contratado": 4,
                 "mediana_contratado": "160.00",
+                "mediana_estimado_contratados": "200.00",
+                "poucos_casos": False,
                 "data_base_inicio": "2025-06-01",
                 "data_base_fim": "2025-06-01",
             }

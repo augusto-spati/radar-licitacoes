@@ -298,12 +298,20 @@ class ReferenciaOut(BaseModel):
     escopo: str | None
     faixa: str | None
     unidade: str
+    # `uf`: todos os números da UF do edital; `outras_ufs`: não. Os de onde, em `ufs`.
     abrangencia: Abrangencia
-    uf: str | None
-    casos_estimado: int
+    ufs: list[str]
+    # Casos contam processos (mediana das medianas por processo); itens, só informação.
+    processos_estimado: int
+    itens_estimado: int
     mediana_estimado: str | None
-    casos_contratado: int
+    processos_contratado: int
+    itens_contratado: int
     mediana_contratado: str | None
+    # Estimado dos mesmos itens que têm contratado.
+    mediana_estimado_contratados: str | None
+    # Menos de 3 processos do estimado.
+    poucos_casos: bool
     data_base_inicio: str | None
     data_base_fim: str | None
 
@@ -327,11 +335,15 @@ def precos_out(uf: str | None, referencias: list[Referencia]) -> PrecosOut:
                 faixa=r.faixa,
                 unidade=r.unidade,
                 abrangencia=r.abrangencia,
-                uf=r.uf,
-                casos_estimado=r.casos_estimado,
+                ufs=list(r.ufs),
+                processos_estimado=r.processos_estimado,
+                itens_estimado=r.itens_estimado,
                 mediana_estimado=_decimal(r.mediana_estimado),
-                casos_contratado=r.casos_contratado,
+                processos_contratado=r.processos_contratado,
+                itens_contratado=r.itens_contratado,
                 mediana_contratado=_decimal(r.mediana_contratado),
+                mediana_estimado_contratados=_decimal(r.mediana_estimado_contratados),
+                poucos_casos=r.poucos_casos,
                 data_base_inicio=None
                 if r.data_base_inicio is None
                 else r.data_base_inicio.isoformat(),
