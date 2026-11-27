@@ -1,49 +1,44 @@
-import { List, ListItem } from "@astryxdesign/core/List";
-import { VStack } from "@astryxdesign/core/Stack";
-import { Heading, Text } from "@astryxdesign/core/Text";
-import { Token } from "@astryxdesign/core/Token";
-import {
-  formatarMesAno,
-  formatarPrecoUnitario,
-  nomeUnidade,
-} from "../dados/formatos";
-import type { Precos, ReferenciaPreco } from "../dados/tipos";
-import type { Carga } from "../dados/useCarga";
-import { Carregando, ErroAoCarregar } from "./EstadoCarga";
+import {List, ListItem} from '@astryxdesign/core/List';
+import {VStack} from '@astryxdesign/core/Stack';
+import {Heading, Text} from '@astryxdesign/core/Text';
+import {Token} from '@astryxdesign/core/Token';
+import {formatarMesAno, formatarPrecoUnitario, nomeUnidade} from '../dados/formatos';
+import type {Precos, ReferenciaPreco} from '../dados/tipos';
+import type {Carga} from '../dados/useCarga';
+import {Carregando, ErroAoCarregar} from './EstadoCarga';
 
 // Nomes de tela das chaves dos serviços-padrão (config/servicos.toml e
 // src/radar/precos/servicos.py). Valor novo sem nome aqui aparece como veio da API.
 const MATERIAIS: Record<string, string> = {
-  pvc: "PVC",
-  pead: "PEAD",
-  fofo: "ferro fundido",
-  ceramico: "cerâmico",
+  pvc: 'PVC',
+  pead: 'PEAD',
+  fofo: 'ferro fundido',
+  ceramico: 'cerâmico',
 };
 const ESCOPOS: Record<string, string> = {
-  material: "só o tubo",
-  assentamento: "só assentamento",
-  completo: "fornecimento e assentamento",
+  material: 'só o tubo',
+  assentamento: 'só assentamento',
+  completo: 'fornecimento e assentamento',
 };
 const FAIXAS: Record<string, string> = {
-  ate_1_5m: "até 1,5 m",
-  "1_5_a_3m": "1,5 a 3 m",
-  "3_a_6m": "3 a 6 m",
+  ate_1_5m: 'até 1,5 m',
+  '1_5_a_3m': '1,5 a 3 m',
+  '3_a_6m': '3 a 6 m',
 };
 
-const nome = (nomes: Record<string, string>, valor: string) =>
-  nomes[valor] ?? valor;
+const nome = (nomes: Record<string, string>, valor: string) => nomes[valor] ?? valor;
 /** "14 processos (37 itens)"; sem o parêntese quando cada processo tem um item. */
 function casos(processos: number, itens: number): string {
-  const p = processos === 1 ? "1 processo" : `${processos} processos`;
+  const p = processos === 1 ? '1 processo' : `${processos} processos`;
   if (itens === processos) return p;
-  return `${p} (${itens === 1 ? "1 item" : `${itens} itens`})`;
+  return `${p} (${itens === 1 ? '1 item' : `${itens} itens`})`;
 }
 
 /** "PE"; fora da UF do edital, "PE — sem dados na UF do edital". Nunca "Brasil". */
 function origem(r: ReferenciaPreco, ufEdital: string | null): string {
-  const ufs = r.ufs.join(", ");
-  if (r.abrangencia === "uf" || ufEdital === null) return ufs;
-  const falta = r.ufs.includes(ufEdital) ? "poucos dados" : "sem dados";
+  const ufs = r.ufs.join(', ');
+  if (r.abrangencia === 'uf' || ufEdital === null) return ufs;
+  const falta = r.ufs.includes(ufEdital) ? 'poucos dados' : 'sem dados';
   return `${ufs} — ${falta} na UF do edital`;
 }
 
@@ -52,21 +47,18 @@ function titulo(r: ReferenciaPreco): string {
   const tubo = [
     r.material === null ? null : nome(MATERIAIS, r.material),
     r.dn === null ? null : `DN ${r.dn}`,
-  ].filter((p) => p !== null);
+  ].filter(p => p !== null);
   const partes = [
     r.rotulo,
-    tubo.length === 0 ? null : tubo.join(" "),
+    tubo.length === 0 ? null : tubo.join(' '),
     r.escopo === null ? null : nome(ESCOPOS, r.escopo),
     r.faixa === null ? null : nome(FAIXAS, r.faixa),
-  ].filter((p) => p !== null);
-  return `${partes.join(" · ")} (${nomeUnidade(r.unidade)})`;
+  ].filter(p => p !== null);
+  return `${partes.join(' · ')} (${nomeUnidade(r.unidade)})`;
 }
 
 /** "preços de 05/2025 a 06/2025" (ou de um mês só); sem data-base, nada. */
-function periodo({
-  data_base_inicio: inicio,
-  data_base_fim: fim,
-}: ReferenciaPreco): string | null {
+function periodo({data_base_inicio: inicio, data_base_fim: fim}: ReferenciaPreco): string | null {
   if (inicio === null || fim === null) return null;
   const [de, ate] = [formatarMesAno(inicio), formatarMesAno(fim)];
   return de === ate ? `preços de ${de}` : `preços de ${de} a ${ate}`;
@@ -89,9 +81,7 @@ function Referencia({
       align="start"
       label={titulo(r)}
       endContent={
-        r.poucos_casos ? (
-          <Token label="poucos casos" size="sm" color="yellow" />
-        ) : undefined
+        r.poucos_casos ? <Token label="poucos casos" size="sm" color="yellow" /> : undefined
       }
       description={
         <VStack gap={1}>
@@ -125,7 +115,7 @@ const SEM_PRECOS = (
   </Text>
 );
 
-function Lista({ precos }: { precos: Precos }) {
+function Lista({precos}: {precos: Precos}) {
   if (precos.referencias.length === 0) return SEM_PRECOS;
   return (
     <VStack gap={2}>
@@ -135,17 +125,17 @@ function Lista({ precos }: { precos: Precos }) {
         ))}
       </List>
       <Text type="supporting" color="secondary">
-        Estimado é o preço do órgão, com BDI. Contratado: só Pernambuco
-        (TCE-PE). Datas-base diferentes, sem correção monetária.
+        Estimado é o preço do órgão, com BDI. Contratado: só Pernambuco (TCE-PE). Datas-base
+        diferentes, sem correção monetária.
       </Text>
     </VStack>
   );
 }
 
-type Props = { carga: Carga<Precos | null>; onTentarDeNovo: () => void };
+type Props = {carga: Carga<Precos | null>; onTentarDeNovo: () => void};
 
 /** Bloco "Preços de referência" do detalhe: mediana por serviço, estimado e contratado à parte. */
-export function PrecosReferencia({ carga, onTentarDeNovo }: Props) {
+export function PrecosReferencia({carga, onTentarDeNovo}: Props) {
   return (
     <VStack gap={2}>
       <VStack gap={0}>
@@ -154,16 +144,14 @@ export function PrecosReferencia({ carga, onTentarDeNovo }: Props) {
           Mediana por unidade, nas linhas de serviço deste edital
         </Text>
       </VStack>
-      {carga.estado === "carregando" && (
-        <Carregando rotulo="Carregando preços" alturas={[80]} />
-      )}
-      {carga.estado === "erro" && (
+      {carga.estado === 'carregando' && <Carregando rotulo="Carregando preços" alturas={[80]} />}
+      {carga.estado === 'erro' && (
         <ErroAoCarregar
           titulo="Não foi possível carregar os preços"
           onTentarDeNovo={onTentarDeNovo}
         />
       )}
-      {carga.estado === "pronto" &&
+      {carga.estado === 'pronto' &&
         (carga.dados === null ? SEM_PRECOS : <Lista precos={carga.dados} />)}
     </VStack>
   );

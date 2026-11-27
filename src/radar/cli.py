@@ -1186,10 +1186,14 @@ def _precos_de_um_processo(sessao: Session, cliente: ClienteTcepe, processo: dic
 
     Processo já casado com o mesmo `valorHomologado` não tem os contratos buscados de novo
     (`contratados_gravados`). Processo que ficou sem nenhum item com serviço tem as linhas
-    antigas apagadas.
+    antigas apagadas; orçamento vazio (instabilidade) não apaga nada.
     """
     processo_id = str(processo["processoContratacaoId"]).strip()
     orcamento = cliente.orcamento(processo_id)
+    if not orcamento:
+        # Orçamento vazio de um processo homologado é instabilidade da fonte: não apaga nada.
+        logger.warning("tcepe_orcamento_vazio", extra={"processo_id": processo_id})
+        return 0
     anteriores = contratados_gravados(sessao, processo_id, processo.get("valorHomologado"))
     contratos = [] if anteriores is not None else _contratos_tcepe(cliente, processo)
     novos = itens_de_processo(processo, orcamento, contratos, contratados=anteriores)
@@ -1243,7 +1247,7 @@ def tcepe_atualizar(
                     continue
                 alvos = [p for p in brutos if _alvo_tcepe(p)]
                 removidos += _limpar_fora_do_alvo(
-                    sessao, brutos, {str(p["processoContratacaoId"]).strip() for p in alvos}
+                    sessao, brutos, {str(p.get("processoContratacaoId") or "").strip() for p in alvos} - {""}
                 )
                 for processo in alvos:
                     try:
