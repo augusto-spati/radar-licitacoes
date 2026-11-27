@@ -340,6 +340,48 @@ resource "aws_scheduler_schedule" "resultados_diario" {
   }
 }
 
+# Agenda semanal do TCE-PE: domingo 04:00, fora das janelas do PNCP (05:00 e 06:00). Grava precos
+# unitarios (estimado e contratado) dos processos de saneamento. Mesmo alvo e role do atualizar_diario.
+resource "aws_scheduler_schedule" "tcepe_semanal" {
+  name                         = "radar-tcepe-semanal"
+  schedule_expression          = "cron(0 4 ? * SUN *)"
+  schedule_expression_timezone = "America/Sao_Paulo"
+
+  flexible_time_window {
+    mode = "OFF"
+  }
+
+  target {
+    arn      = aws_ecs_cluster.radar.arn
+    role_arn = aws_iam_role.scheduler_coletor.arn
+
+    input = jsonencode({
+      containerOverrides = [{
+        name    = "coletor"
+        command = ["tcepe", "atualizar"]
+      }]
+    })
+
+    ecs_parameters {
+      task_definition_arn = local.arn_familia_coletor
+      launch_type         = "FARGATE"
+      task_count          = 1
+      platform_version    = "LATEST"
+
+      network_configuration {
+        subnets          = data.aws_subnets.padrao.ids
+        security_groups  = [aws_security_group.coletor.id]
+        assign_public_ip = true
+      }
+    }
+
+    retry_policy {
+      maximum_retry_attempts       = 1
+      maximum_event_age_in_seconds = 3600
+    }
+  }
+}
+
 # ---------- Alarmes (nada de falha em silencio) ----------
 
 # (a) task parou com erro: exitCode != 0, ou nao chegou a iniciar (imagem, segredo).

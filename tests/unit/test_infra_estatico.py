@@ -235,6 +235,20 @@ def test_resultados_tem_agenda_diaria_0500_antes_da_coleta() -> None:
     assert "pncp" not in "".join(re.findall(r"command\s*=\s*\[[^\]]*\]", coletor))
 
 
+def test_tcepe_tem_agenda_semanal_domingo_0400() -> None:
+    coletor = _tf("coletor.tf")
+    bloco = re.sub(r"\s+", " ", coletor)
+    assert 'resource "aws_scheduler_schedule" "tcepe_semanal"' in bloco
+    assert 'name = "radar-tcepe-semanal"' in bloco
+    assert 'schedule_expression = "cron(0 4 ? * SUN *)"' in bloco
+    assert 'command = ["tcepe", "atualizar"]' in coletor
+    # mesmo alvo, role e rede do resultados_diario
+    trecho = bloco[bloco.index('"tcepe_semanal"') :]
+    assert "role_arn = aws_iam_role.scheduler_coletor.arn" in trecho
+    assert "task_definition_arn = local.arn_familia_coletor" in trecho
+    assert "security_groups = [aws_security_group.coletor.id]" in trecho
+
+
 def test_coletor_sai_pela_porta_do_portal_da_compesa() -> None:
     # Sem esta regra o security group descarta a saída para portalscl.compesa.com.br:8743.
     regra = re.sub(r"\s+", " ", _tf("coletor.tf"))
