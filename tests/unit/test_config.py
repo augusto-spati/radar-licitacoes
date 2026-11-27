@@ -65,7 +65,7 @@ def test_config_ia_padroes(monkeypatch: pytest.MonkeyPatch) -> None:
     config = obter_config()
     assert config.ia_provedor == "desligado"
     assert config.config_ia == RAIZ / "config" / "ia.toml"
-    assert config.config_perfil == RAIZ / "config" / "perfil.toml"
+    assert config.config_perfil == str(RAIZ / "config" / "perfil.toml")
     assert config.documentos == str(Path.home() / ".radar" / "documentos")
 
 

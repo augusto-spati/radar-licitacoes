@@ -243,3 +243,20 @@ def test_documento_sem_texto_nao_tem_pagina_inicial(sessao: Session, tmp_path: P
     analisar_edital(sessao, ALVO, _dep(rede, tmp_path, ProvedorFalso()), AGORA)
     inicio = {d.sequencial: d.pagina_inicial for d in sessao.scalars(select(DocumentoEdital))}
     assert inicio == {1: None, 2: 1}
+
+
+def test_recomparar_refaz_veredito_com_perfil_novo_sem_ia(sessao: Session, tmp_path: Path) -> None:
+    from radar.analise import recomparar
+
+    # Capital mínimo de R$ 250 mil no edital; o perfil de exemplo tem 1 milhão: apto.
+    analisar_edital(sessao, ALVO, _dep(Rede({1: PDF_TEXTO}), tmp_path, ProvedorFalso()), AGORA)
+    menor = PERFIL.model_copy(update={"capital_social": Decimal("100000")})
+
+    assert recomparar(sessao, menor) == (1, 1)
+    sessao.expire_all()
+    [analise] = sessao.scalars(select(AnaliseEdital)).all()
+    assert analise.veredito == "inapto"
+    [capital] = [i for i in analise.comparacao["itens"] if i["campo"] == "capital_social_minimo"]
+    assert capital["situacao"] == "nao_atende"
+    assert recomparar(sessao, menor) == (1, 0)  # idempotente
+    assert recomparar(sessao, PERFIL) == (1, 1)

@@ -246,3 +246,21 @@ def test_documento_invalido_no_perfil(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="alvara"):
         carregar_perfil(arquivo)
+
+
+def test_perfil_do_s3_e_ausente(monkeypatch: pytest.MonkeyPatch) -> None:
+    from radar.analise import armazem, carregar_perfil_de
+
+    conteudo = (Path(__file__).resolve().parents[2] / "config" / "perfil.toml").read_bytes()
+    lidos: list[tuple[str, str]] = []
+
+    def ler(self: armazem.ArmazemS3, chave: str) -> bytes | None:
+        lidos.append((self.bucket, chave))
+        return conteudo if chave == "perfil/perfil.toml" else None
+
+    monkeypatch.setattr(armazem.ArmazemS3, "ler", ler)
+    perfil = carregar_perfil_de("s3://radar-documentos/perfil/perfil.toml")
+    assert perfil.porte == "demais"
+    assert lidos == [("radar-documentos", "perfil/perfil.toml")]
+    with pytest.raises(FileNotFoundError, match="perfil ausente"):
+        carregar_perfil_de("s3://radar-documentos/perfil/outro.toml")

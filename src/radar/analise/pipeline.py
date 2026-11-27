@@ -430,3 +430,27 @@ def obter_analise(sessao: Session, fonte: str, id_na_fonte: str, modelo: str) ->
         )
     )
     return AnaliseLida(analise=analise, documentos=documentos)
+
+
+def recomparar(sessao: Session, perfil: Perfil, lote: int = 200) -> tuple[int, int]:
+    """Refaz comparação e veredito de todas as análises com `perfil`, sem chamar a IA.
+
+    As exigências extraídas ficam gravadas; só a comparação depende do perfil. Devolve
+    (análises, quantas mudaram de veredito). Commita a cada lote (transações curtas).
+    """
+    ids = list(sessao.scalars(select(AnaliseEdital.id).order_by(AnaliseEdital.id)))
+    sessao.commit()
+    mudaram = 0
+    for inicio in range(0, len(ids), lote):
+        analises = sessao.scalars(
+            select(AnaliseEdital).where(AnaliseEdital.id.in_(ids[inicio : inicio + lote]))
+        ).all()
+        for analise in analises:
+            exigencias = Exigencias.model_validate(analise.exigencias)
+            comparacao = comparar(exigencias, perfil, analise.incompleta)
+            if comparacao.veredito != analise.veredito:
+                mudaram += 1
+            analise.veredito = comparacao.veredito
+            analise.comparacao = comparacao.model_dump(mode="json")
+        sessao.commit()
+    return len(ids), mudaram
