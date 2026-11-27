@@ -67,3 +67,13 @@ output "url_fila_falhas" {
   description = "URL da DLQ radar-editais-falhas."
   value       = aws_sqs_queue.editais_falhas.url
 }
+
+output "url_fila_janelas" {
+  description = "URL da fila SQS radar-janelas (RADAR_FILA_JANELAS_URL)."
+  value       = aws_sqs_queue.janelas.url
+}
+
+output "url_fila_janelas_falhas" {
+  description = "URL da DLQ radar-janelas-falhas (RADAR_FILA_JANELAS_FALHAS_URL)."
+  value       = aws_sqs_queue.janelas_falhas.url
+}

@@ -123,7 +123,7 @@ resource "aws_lambda_event_source_mapping" "processador" {
 data "aws_iam_policy_document" "coletor_fila" {
   statement {
     actions   = ["sqs:SendMessage"]
-    resources = [aws_sqs_queue.editais.arn]
+    resources = [aws_sqs_queue.editais.arn, aws_sqs_queue.janelas.arn]
   }
 }
 

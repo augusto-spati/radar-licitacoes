@@ -105,3 +105,55 @@ def test_fila_tem_dlq_e_alarmes() -> None:
     assert 'function_response_types = ["ReportBatchItemFailures"]' in fila
     assert "maximum_concurrency = 2" in fila
     assert len(re.findall(r'resource\s+"aws_cloudwatch_metric_alarm"', fila)) == 3
+
+
+def _tf(nome: str) -> str:
+    return (RAIZ / "infra" / "prod" / nome).read_text(encoding="utf-8")
+
+
+def test_janelas_tem_dlq_agenda_e_alarmes() -> None:
+    janelas = _tf("janelas.tf")
+    assert "maxReceiveCount     = 5" in janelas
+    assert "visibility_timeout_seconds = 5400" in janelas
+    assert "message_retention_seconds  = 345600" in janelas
+    assert "message_retention_seconds = 1209600" in janelas
+    assert "timeout       = 900" in janelas
+    assert "timeout       = 120" in janelas
+    assert janelas.count("memory_size   = 256") == 2
+    assert "batch_size              = 1" in janelas
+    assert 'function_response_types = ["ReportBatchItemFailures"]' in janelas
+    assert "maximum_concurrency = 2" in janelas
+    assert 'schedule_expression          = "cron(0 6 * * ? *)"' in janelas
+    assert 'schedule_expression_timezone = "America/Sao_Paulo"' in janelas
+    assert '["radar.processador.lambda_coletora.handler"]' in janelas
+    assert '["radar.processador.lambda_planejador.handler"]' in janelas
+    # Confiança do Scheduler: a mesma do coletor, com aws:SourceAccount.
+    assert "data.aws_iam_policy_document.scheduler_assume.json" in janelas
+    assert "aws:SourceAccount" in _tf("coletor.tf")
+    assert 'pattern        = "\\"janela_concluida\\""' in janelas
+    assert "threshold           = 21600" in janelas
+    assert len(re.findall(r'resource\s+"aws_cloudwatch_metric_alarm"', janelas)) == 3
+    # Recursos só na região do projeto: nenhum provider ou região fixa noutro lugar.
+    assert "provider" not in janelas and "us-east-1" not in janelas
+
+
+def test_alarmes_novos_publicam_no_topico() -> None:
+    coletor = _tf("coletor.tf")
+    for nome in ("janelas_dlq_com_mensagens", "janelas_fila_parada", "pncp_nao_concluiu"):
+        assert f"aws_cloudwatch_metric_alarm.{nome}.arn" in coletor
+
+
+def test_alarmes_cabem_no_gratis() -> None:
+    total = sum(
+        len(re.findall(r'resource\s+"aws_cloudwatch_metric_alarm"', arquivo.read_text("utf-8")))
+        for arquivo in (RAIZ / "infra" / "prod").glob("*.tf")
+    )
+    assert total <= 10
+
+
+def test_coletor_so_retratos() -> None:
+    coletor = _tf("coletor.tf")
+    assert 'command     = ["atualizar", "--fontes", "sanepar,compesa"]' in coletor
+    assert '{ name = "RADAR_FILA_JANELAS_URL", value = aws_sqs_queue.janelas.url }' in coletor
+    assert "aws_sqs_queue.janelas.arn" in _tf("fila.tf")  # o relay do coletor pode enviar
+
