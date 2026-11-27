@@ -10,6 +10,7 @@ import {Section} from '@astryxdesign/core/Section';
 import {HStack, VStack} from '@astryxdesign/core/Stack';
 import {Heading, Text} from '@astryxdesign/core/Text';
 import {rtlStyles} from '@astryxdesign/core/utils';
+import {Aderencia} from '../componentes/Aderencia';
 import {Carregando, ErroAoCarregar} from '../componentes/EstadoCarga';
 import {TokensLinhas} from '../componentes/TokensLinhas';
 import {useFonte} from '../dados/FonteContext';
@@ -85,6 +86,13 @@ function Cabecalho({edital}: {edital?: EditalDetalhe}) {
   );
 }
 
+// A análise carrega à parte: se ela falhar, os dados do edital continuam na tela.
+function AderenciaDoEdital({id}: {id: string}) {
+  const fonte = useFonte();
+  const {carga, tentarDeNovo} = useCarga(() => fonte.analise(id), id);
+  return <Aderencia carga={carga} onTentarDeNovo={tentarDeNovo} />;
+}
+
 function Conteudo({edital}: {edital: EditalDetalhe}) {
   return (
     <VStack gap={4}>
@@ -122,12 +130,7 @@ function Conteudo({edital}: {edital: EditalDetalhe}) {
         </VStack>
       </Section>
       <Section>
-        <VStack gap={2}>
-          <Heading level={2}>Aderência à FR — em breve</Heading>
-          <Text type="body" color="secondary">
-            Em breve, este espaço vai dizer o quanto o edital combina com o que a FR faz.
-          </Text>
-        </VStack>
+        <AderenciaDoEdital id={edital.id_publico} />
       </Section>
     </VStack>
   );

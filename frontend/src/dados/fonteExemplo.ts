@@ -40,6 +40,8 @@ export function criarFonteExemplo(
       editais: selecionar(dados, f, agora()),
     }),
     obter: async id => dados.editais.find(e => e.id_publico === id) ?? null,
+    // O exemplo não traz análise por IA: o detalhe mostra "ainda não analisado".
+    analise: async () => null,
     status: async () => ({atualizado_em: dados.atualizado_em}),
   };
 }

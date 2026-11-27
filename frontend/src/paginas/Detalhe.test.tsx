@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import {cleanup, fireEvent, screen} from '@testing-library/react';
 import {afterEach, describe, expect, it, vi} from 'vitest';
+import type {Fonte} from '../dados/fonte';
+import type {Analise} from '../dados/tipos';
 import {edital, fonteFalsa, renderizar} from '../testes/apoio';
 import {Detalhe} from './Detalhe';
 
@@ -45,7 +47,7 @@ describe('Detalhe', () => {
     expect(origem.getAttribute('target')).toBe('_blank');
     expect(origem.getAttribute('rel')).toContain('noopener');
 
-    expect(screen.getByText('Aderência à FR — em breve')).toBeTruthy();
+    expect(screen.getByRole('heading', {level: 2, name: 'Aderência à FR'})).toBeTruthy();
     // "Voltar" leva os filtros de volta para a lista.
     expect(screen.getByRole('link', {name: /Voltar/}).getAttribute('href')).toBe(
       '/?linha=redes&uf=SP',
@@ -134,5 +136,115 @@ describe('Detalhe', () => {
   it('mostra o esqueleto enquanto carrega', () => {
     abrir(() => new Promise(() => {}));
     expect(screen.getByRole('status', {name: 'Carregando edital'})).toBeTruthy();
+  });
+});
+
+const analise = (parcial: Partial<Analise> = {}): Analise => ({
+  id_publico: ID,
+  modelo: 'amazon.nova-lite-v1:0',
+  versao_prompt: 'v1',
+  criada_em: '2026-11-27T12:05:00+00:00',
+  veredito: 'verificar',
+  incompleta: false,
+  aviso: 'Segundo o que foi extraído do edital por IA.',
+  itens: [
+    {
+      campo: 'capital_social_minimo',
+      situacao: 'atende',
+      exigido: 'R$ 100.000,00',
+      perfil: 'R$ 500.000,00',
+      motivo: 'perfil ≥ exigido',
+      trecho: 'capital social mínimo de R$ 100.000,00',
+      documento: 'Edital',
+      pagina: 12,
+    },
+    {
+      campo: 'atestados',
+      situacao: 'verificar',
+      exigido: 'rede de esgoto (500 m)',
+      perfil: 'nenhum atestado do perfil casa',
+      motivo: 'casamento por termo é aproximado: confira',
+      trecho: null,
+      documento: null,
+      pagina: null,
+    },
+  ],
+  documentos: [
+    {
+      titulo: 'Edital',
+      url: 'https://pncp.gov.br/pncp-api/v1/arquivo/1',
+      paginas: 40,
+      status: 'extraido',
+    },
+    {
+      titulo: 'Projeto',
+      url: 'https://pncp.gov.br/pncp-api/v1/arquivo/2',
+      paginas: null,
+      status: 'sem_texto',
+    },
+  ],
+  ...parcial,
+});
+
+describe('Detalhe: aderência (análise por IA)', () => {
+  const abrirCom = (analiseFn: Fonte['analise']) =>
+    renderizar(<Detalhe />, {
+      fonte: fonteFalsa({obter: async () => edital(), analise: analiseFn}),
+      endereco: `/edital/${encodeURIComponent(ID)}`,
+      padrao: '/edital/:id',
+    });
+
+  it('sem análise diz que ainda não foi analisado', async () => {
+    const pedir = vi.fn(async () => null);
+    abrirCom(pedir);
+    expect(await screen.findByText(/Este edital ainda não foi analisado/)).toBeTruthy();
+    expect(pedir).toHaveBeenCalledWith(ID);
+  });
+
+  it('com análise mostra veredito, exigências com trecho e página, e documentos', async () => {
+    abrirCom(async () => analise());
+    expect(await screen.findByText('Verificar antes de participar')).toBeTruthy();
+    expect(screen.getByText('Capital social mínimo')).toBeTruthy();
+    expect(screen.getByText('Atende')).toBeTruthy();
+    expect(screen.getByText('Exigido: R$ 100.000,00')).toBeTruthy();
+    expect(
+      screen.getByText('“capital social mínimo de R$ 100.000,00” (Edital, página 12)'),
+    ).toBeTruthy();
+    expect(screen.getByText('Atestado técnico')).toBeTruthy();
+    expect(screen.getByText('Verificar')).toBeTruthy();
+    const doc = screen.getByRole('link', {name: 'Edital (40 páginas)'});
+    expect(doc.getAttribute('href')).toBe('https://pncp.gov.br/pncp-api/v1/arquivo/1');
+    expect(doc.getAttribute('target')).toBe('_blank');
+    expect(screen.getByText('sem texto (PDF escaneado)')).toBeTruthy();
+    expect(
+      screen.getByText(/Analisado em 27\/11\/2026 09:05 por amazon.nova-lite-v1:0/),
+    ).toBeTruthy();
+  });
+
+  it('veredito inapto e análise incompleta aparecem no aviso', async () => {
+    abrirCom(async () => analise({veredito: 'inapto', incompleta: true, itens: []}));
+    expect(await screen.findByText('Não atende ao perfil da FR')).toBeTruthy();
+    expect(screen.getByText(/Análise incompleta/)).toBeTruthy();
+    expect(screen.getByText(/A IA não achou exigência/)).toBeTruthy();
+  });
+
+  it('campo desconhecido aparece com o nome da API', async () => {
+    const [item] = analise().itens;
+    abrirCom(async () => analise({veredito: 'apto', itens: [{...item, campo: 'campo_novo'}]}));
+    expect(await screen.findByText('Atende ao perfil da FR')).toBeTruthy();
+    expect(screen.getByText('campo_novo')).toBeTruthy();
+  });
+
+  it('erro na análise não derruba o edital e oferece tentar de novo', async () => {
+    const pedir = vi
+      .fn<Fonte['analise']>()
+      .mockRejectedValueOnce(new Error('A API respondeu 500'))
+      .mockResolvedValueOnce(null);
+    abrirCom(pedir);
+    expect(await screen.findByText('Não foi possível carregar a análise')).toBeTruthy();
+    expect(screen.getByText('Execução de rede de esgoto no bairro Centro')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', {name: 'Tentar de novo'}));
+    expect(await screen.findByText(/Este edital ainda não foi analisado/)).toBeTruthy();
+    expect(pedir).toHaveBeenCalledTimes(2);
   });
 });

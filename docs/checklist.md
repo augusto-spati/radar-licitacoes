@@ -50,7 +50,7 @@ Filas ficam como futuro, no tema 2: outbox + SQS (etapa 4a; o pgmq não existe n
 - [x] Provedor de modelo trocável, cache por hash e teto de custo. `src/radar/analise/`, `config/ia.toml`. Vídeo: a gravar.
 - [x] Harness de evals com precisão e recall por campo e replay sem rede no CI. `evals/`, `src/radar/analise/evals.py`. Vídeo: a gravar.
 - [ ] Gabaritos conferidos pelo Augusto (12 rascunhos com `conferido: false` em `evals/gabarito/`), seguidos da rodada real comparando modelos.
-- [ ] Tela das exigências (etapa 6b).
+- [x] Tela das exigências (etapa 6b).
 
 ## Front com IA
 
