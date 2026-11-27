@@ -147,6 +147,8 @@ def test_auditar_sai_com_1_quando_falta(
 
     assert resultado.exit_code == 1
     assert "faltando" in resultado.output
+    # O alarme radar-auditoria-falhou conta este evento no log.
+    assert '"evento": "auditoria_falhou"' in resultado.output
 
 
 def test_filtrar_imprime_edital_aberto(fabrica: sessionmaker[Session], config_filtro: Path) -> None:
@@ -430,6 +432,8 @@ def test_auditar_aponta_outbox_pendente(
     limpo = _auditar(config_filtro)
     assert limpo.exit_code == 0, limpo.output
     assert "outbox pendente: 0" in limpo.output
+    assert '"evento": "auditoria_ok"' in limpo.output
+    assert "auditoria_falhou" not in limpo.output
     _pagina_pendente(fabrica, "1/2026", AGORA - timedelta(hours=2))
     _pagina_pendente(fabrica, "2/2026", AGORA - timedelta(minutes=5))
 

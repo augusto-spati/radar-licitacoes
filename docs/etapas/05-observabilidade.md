@@ -9,8 +9,10 @@ Até a etapa 4b o radar já coletava, enfileirava e processava, mas responder "e
 - **Amostragem.** `RADAR_TRACES_FRACAO = 0,25` vale para cada raiz sem link amostrado; raiz com link amostrado é sempre amostrada. A taxa efetiva por etapa é maior que 25 % (ver `05-medicoes.md`).
 - **Métricas.** Um catálogo fechado, emitido por EMF (uma linha de log com `_aws`) na Lambda e por `PutMetricData` no Fargate: `FrescorHoras`, `PaginaComErro`, `LatenciaRequisicao{fonte}` e `ExecucaoOk`, somadas às métricas de filtro de log que já existiam. Total: 9 de 10 métricas customizadas.
 - **Logs correlacionados.** O formatador JSON acrescenta `trace_id`, `span_id` e `xray_trace_id` quando há span válido, e há um log `requisicao_http` por tentativa, sem URL com query nem corpo.
-- **Infra (`infra/prod/observabilidade.tf`).** Permissões do X-Ray nas roles, `PutMetricData` restrito ao namespace `Radar`, dashboard `radar`, consultas salvas do Logs Insights e os alarmes novos. Total: 9 de 10 alarmes.
+- **Infra (`infra/prod/observabilidade.tf`).** Permissões do X-Ray nas roles, `PutMetricData` restrito ao namespace `Radar`, dashboard `radar`, consultas salvas do Logs Insights e os alarmes novos. Total: 9 de 10 alarmes nesta etapa; o 10º veio depois (abaixo).
 - **Telemetria que não atrapalha.** Exportador ou `PutMetricData` que falham não mudam o código de saída nem os editais gravados (teste com ambos levantando exceção).
+
+- **Auditoria diária com alarme (depois, em 2026-11-27).** `radar auditar --endpoint atualizacao` roda às 11:00 (EventBridge Scheduler, mesma task do coletor) e confere janelas do PNCP, retratos e fila. Com problema, loga `auditoria_falhou` com as contagens; o filtro de log `radar-auditoria-falhou` vira a métrica `RadarAuditoriaFalhou` e o alarme do mesmo nome avisa no primeiro caso. Sem dado não dispara (quem cobre "não rodou" é `radar-coletor-nao-rodou`). Com ele, o radar usa 10 de 10 alarmes e 10 de 10 métricas customizadas do plano grátis.
 
 ## SLIs e SLOs
 
