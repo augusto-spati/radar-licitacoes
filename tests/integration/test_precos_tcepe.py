@@ -360,3 +360,121 @@ def test_pre_filtro_usa_os_termos_da_config_por_padrao() -> None:
 def test_gravar_lista_vazia(sessao: Session) -> None:
     assert gravar_precos(sessao, []) == 0
     assert _contar(sessao) == 0
+
+
+# --- Fix round 2: duplicados, unidade e limpeza ---
+
+
+def _lotes_iguais(precos: list[str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    descricao = "LIGAÇÃO PREDIAL DE ESGOTO TIPO II EM PISO CIMENTADO"
+    orcamento = [
+        {
+            "itemId": f"9{n}",
+            "itemDescricao": descricao,
+            "UnidadeMedida": "Ud",
+            "Quantidade": "50",
+            "ValorUnitario": "460.06",
+        }
+        for n in range(2)
+    ]
+    contrato = [
+        {
+            "itemDescricao": descricao,
+            "UnidadeMedida": "Ud",
+            "Quantidade": "50.0000",
+            "ValorUnitario": preco,
+        }
+        for preco in precos
+    ]
+    return orcamento, contrato
+
+
+def test_dois_lotes_iguais_com_vencedores_de_precos_diferentes_nao_casam() -> None:
+    processo = _processo("60116414")
+    orcamento, contrato = _lotes_iguais(["345.05", "401.10"])  # vencedor A e vencedor B
+    total = sum(Decimal(c["ValorUnitario"]) * 50 for c in contrato)
+    instrumento = {"ValorGlobalAtualizado": str(total)}
+    processo = dict(processo, valorHomologado=str(total))
+
+    novos = itens_de_processo(processo, orcamento, [(instrumento, contrato)], TERMOS)
+
+    assert [n.servico for n in novos] == ["ligacao_esgoto", "ligacao_esgoto"]
+    assert all(n.preco_contratado_com_bdi is None for n in novos)
+    assert casar_itens(orcamento, contrato) == {}
+
+
+def test_lotes_iguais_com_o_mesmo_preco_casam() -> None:
+    orcamento, contrato = _lotes_iguais(["345.05", "345.05"])
+
+    assert casar_itens(orcamento, contrato) == {0: contrato[0], 1: contrato[1]}
+
+
+def test_chave_repetida_com_contagem_diferente_nao_casa() -> None:
+    orcamento, contrato = _lotes_iguais(["345.05"])  # 2 no orçamento, 1 no contrato
+
+    assert casar_itens(orcamento, contrato) == {}
+
+
+def test_unidade_diferente_nao_casa_nem_pela_posicao() -> None:
+    orcamento = [{"itemDescricao": "TUBO PVC DN 150", "UnidadeMedida": "M", "Quantidade": "1000"}]
+    contrato = [{"itemDescricao": "TUBO PVC DN 150", "UnidadeMedida": "KM", "Quantidade": "1"}]
+
+    assert casar_itens(orcamento, contrato) == {}
+
+
+def test_unidade_diferente_nao_casa_pela_chave() -> None:
+    orcamento = [{"itemDescricao": "TUBO PVC DN 150", "UnidadeMedida": "M", "Quantidade": "1"}]
+    contrato = [{"itemDescricao": "TUBO PVC DN 150", "UnidadeMedida": "KM", "Quantidade": "1"}]
+
+    assert casar_itens(orcamento, contrato) == {}
+
+
+def test_grafias_da_mesma_unidade_casam() -> None:
+    orcamento = [{"itemDescricao": "LIGACAO", "UnidadeMedida": "UN", "Quantidade": "5"}]
+    contrato = [{"itemDescricao": "LIGACAO", "UnidadeMedida": "Ud.", "Quantidade": "5"}]
+
+    assert casar_itens(orcamento, contrato) == {0: contrato[0]}
+
+
+def test_contrato_sem_unidade_so_casa_pela_posicao_com_a_mesma_quantidade() -> None:
+    orcamento = [
+        {"itemDescricao": "TUBO PVC DN 150", "UnidadeMedida": "M", "Quantidade": "1000"},
+        {"itemDescricao": "TUBO PVC DN 200", "UnidadeMedida": "M", "Quantidade": "10"},
+    ]
+    contrato = [
+        {"itemDescricao": "TUBO PVC DN 150", "Quantidade": "1"},
+        {"itemDescricao": "TUBO PVC DN 200", "Quantidade": "10"},
+    ]
+
+    assert casar_itens(orcamento, contrato) == {1: contrato[1]}
+
+
+def test_gravar_apaga_itens_antigos_do_mesmo_processo(sessao: Session) -> None:
+    pedra = _pedra()
+    compesa = _compesa()
+    novos_pedra = itens_de_processo(pedra[0], pedra[1], [(pedra[2], pedra[3])], TERMOS)
+    novos_compesa = itens_de_processo(compesa[0], compesa[1], [(compesa[2], compesa[3])], TERMOS)
+    gravar_precos(sessao, novos_pedra + novos_compesa)
+    assert _contar(sessao) == 6
+
+    # Nova rodada de Pedra em que só o tubo continua casando com um serviço.
+    so_tubo = [n for n in novos_pedra if n.servico == "rede_esgoto"]
+    assert gravar_precos(sessao, so_tubo) == 1
+
+    sessao.expire_all()
+    restantes = sessao.scalars(select(PrecoItem)).all()
+    assert sorted((linha.processo, linha.servico) for linha in restantes) == [
+        ("462/016/2026", "rede_esgoto"),
+        ("802/4015/2026", "escavacao_vala"),
+        ("802/4015/2026", "escavacao_vala"),
+    ]
+
+
+def test_chave_repetida_no_lote_avisa(sessao: Session, caplog: pytest.LogCaptureFixture) -> None:
+    processo, orcamento, instrumento, itens = _pedra()
+    novos = itens_de_processo(processo, orcamento, [(instrumento, itens)], TERMOS)
+
+    with caplog.at_level("WARNING", logger="radar.precos.tcepe"):
+        assert gravar_precos(sessao, [novos[0], novos[0]]) == 1
+
+    assert "preco_item_chave_repetida" in caplog.text

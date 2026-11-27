@@ -11,9 +11,11 @@ importa a coleta: quem compõe é a CLI.
   `valorHomologado` (±2%); se nenhum bater sozinho, todos juntos (processo em lotes com mais
   de um vencedor); senão, o item fica só com o estimado.
 - Os itens do contrato não têm número: casam por descrição normalizada + quantidade e, quando
-  as duas listas têm o mesmo tamanho, pela mesma posição com a mesma descrição.
+  as duas listas têm o mesmo tamanho, pela mesma posição com a mesma descrição. A unidade
+  precisa ser a mesma, e chave repetida com preços diferentes no contrato não casa.
 """
 
+import logging
 import re
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
@@ -22,7 +24,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from sqlalchemy import func
+from sqlalchemy import delete, func
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -31,9 +33,12 @@ from radar.precos.servicos import (
     CURINGA,
     Servico,
     classificar,
+    normalizar_unidade,
     sem_acento,
     termos_processo_padrao,
 )
+
+logger = logging.getLogger(__name__)
 
 ORIGEM: Origem = "tce_pe"
 UF = "PE"
@@ -198,38 +203,93 @@ def _descricao_normalizada(texto: object) -> str:
     return " ".join(re.findall(r"[a-z0-9]+", sem_acento(str(texto or ""))))
 
 
-def casar_itens(orcamento: list[Registro], contrato: list[Registro]) -> dict[int, Registro]:
-    """Índice do item do orçamento → item do contrato.
+# Grafias da mesma unidade vistas no TCE-PE ("UN", "Ud", "und"; "M", "ml").
+_SINONIMOS_UNIDADE = {
+    "und": "un",
+    "unid": "un",
+    "unidade": "un",
+    "ud": "un",
+    "u": "un",
+    "ml": "m",
+    "mt": "m",
+    "metro": "m",
+    "metros": "m",
+}
 
-    Primeiro por descrição normalizada + quantidade (repetidos são consumidos em ordem); o que
-    sobrar, pela mesma posição quando as listas têm o mesmo tamanho e a descrição é a mesma.
+
+def _unidade(item: Registro) -> str | None:
+    """Unidade normalizada, ou None se o registro não tem o campo (ou vem vazio)."""
+    bruta = item.get("UnidadeMedida")
+    if bruta is None or not str(bruta).strip():
+        return None
+    unidade = normalizar_unidade(str(bruta))
+    return _SINONIMOS_UNIDADE.get(unidade, unidade)
+
+
+def _mesma_unidade(orcado: Registro, contratado: Registro) -> bool:
+    """Unidades iguais; sem unidade no contrato não dá para conferir (quem chama decide)."""
+    return _unidade(orcado) == _unidade(contratado)
+
+
+def _chave_item(item: Registro) -> tuple[str, Decimal | None]:
+    return (_descricao_normalizada(item.get("itemDescricao")), _decimal(item.get("Quantidade")))
+
+
+def casar_itens(orcamento: list[Registro], contrato: list[Registro]) -> dict[int, Registro]:
+    """Índice do item do orçamento → item do contrato. Na dúvida, não casa.
+
+    1. Por (descrição normalizada, quantidade). Chave repetida só casa se orçamento e contrato
+       têm o mesmo número de itens com ela e os do contrato têm o mesmo `ValorUnitario` (dois
+       lotes iguais com vencedores de preços diferentes: não dá para saber qual é qual).
+    2. O que sobrar, pela mesma posição, quando as listas têm o mesmo tamanho e a descrição é
+       a mesma. Se o contrato não traz unidade, só com a mesma quantidade.
+    Em ambos, a unidade do contrato (quando existe) precisa ser a do orçamento ("1000 M" não
+    casa com "1 KM").
     """
-    livres: dict[tuple[str, Decimal | None], list[int]] = defaultdict(list)
-    for j, item in enumerate(contrato):
-        chave = (
-            _descricao_normalizada(item.get("itemDescricao")),
-            _decimal(item.get("Quantidade")),
-        )
-        livres[chave].append(j)
-    usados: set[int] = set()
-    casados: dict[int, Registro] = {}
+    no_orcamento: dict[tuple[str, Decimal | None], list[int]] = defaultdict(list)
     for i, item in enumerate(orcamento):
-        quantidade = _decimal(item.get("Quantidade"))
-        fila = livres.get((_descricao_normalizada(item.get("itemDescricao")), quantidade))
-        if quantidade is not None and fila:
-            j = fila.pop(0)
+        no_orcamento[_chave_item(item)].append(i)
+    no_contrato: dict[tuple[str, Decimal | None], list[int]] = defaultdict(list)
+    for j, item in enumerate(contrato):
+        no_contrato[_chave_item(item)].append(j)
+
+    casados: dict[int, Registro] = {}
+    # Itens envolvidos numa chave ambígua não voltam pela posição.
+    bloqueados_orc: set[int] = set()
+    usados: set[int] = set()
+    for chave, indices_orc in no_orcamento.items():
+        indices_ctr = no_contrato.get(chave, [])
+        if chave[1] is None or not indices_ctr:
+            continue
+        precos = {_decimal(contrato[j].get("ValorUnitario")) for j in indices_ctr}
+        if len(indices_orc) != len(indices_ctr) or len(precos) > 1:
+            bloqueados_orc.update(indices_orc)
+            usados.update(indices_ctr)
+            continue
+        for i, j in zip(indices_orc, indices_ctr, strict=True):
             usados.add(j)
-            casados[i] = contrato[j]
+            # Mesma descrição e quantidade: sem unidade no contrato, vale a quantidade.
+            if _unidade(contrato[j]) is None or _mesma_unidade(orcamento[i], contrato[j]):
+                casados[i] = contrato[j]
+            else:
+                bloqueados_orc.add(i)
+
     if len(orcamento) == len(contrato):
         for i, item in enumerate(orcamento):
-            if i in casados or i in usados:
+            if i in casados or i in bloqueados_orc or i in usados:
                 continue
-            mesma = _descricao_normalizada(item.get("itemDescricao")) == _descricao_normalizada(
-                contrato[i].get("itemDescricao")
-            )
-            if mesma:
+            par = contrato[i]
+            if _descricao_normalizada(item.get("itemDescricao")) != _descricao_normalizada(
+                par.get("itemDescricao")
+            ):
+                continue
+            if _unidade(par) is None:
+                ok = _decimal(item.get("Quantidade")) == _decimal(par.get("Quantidade"))
+            else:
+                ok = _mesma_unidade(item, par)
+            if ok:
                 usados.add(i)
-                casados[i] = contrato[i]
+                casados[i] = par
     return casados
 
 
@@ -323,12 +383,39 @@ def itens_de_processo(
 
 
 def gravar_precos(sessao: Session, itens: Iterable[PrecoItemNovo]) -> int:
-    """Upsert por `(origem, chave_origem)`; devolve quantas linhas foram gravadas. Sem commit."""
+    """Upsert por `(origem, chave_origem)`; devolve quantas linhas foram gravadas. Sem commit.
+
+    Para cada `(origem, processo)` presente em `itens`, apaga as linhas antigas desse processo
+    cuja chave não veio agora (item que deixou de casar com um serviço depois de uma mudança de
+    regra, ou orçamento refeito), na mesma transação. Processo que ficou sem nenhum item não
+    aparece em `itens` e, por isso, não é limpo aqui.
+    """
     linhas = [asdict(item) for item in itens]
     if not linhas:
         return 0
     # Chave repetida no mesmo lote faria o ON CONFLICT falhar; vale a última.
-    unicas = list({(linha["origem"], linha["chave_origem"]): linha for linha in linhas}.values())
+    por_chave: dict[tuple[str, str], dict[str, Any]] = {}
+    for linha in linhas:
+        chave = (linha["origem"], linha["chave_origem"])
+        if chave in por_chave:
+            logger.warning(
+                "preco_item_chave_repetida origem=%s chave_origem=%s", chave[0], chave[1]
+            )
+        por_chave[chave] = linha
+    unicas = list(por_chave.values())
+
+    chaves_por_processo: dict[tuple[str, str], set[str]] = defaultdict(set)
+    for linha in unicas:
+        chaves_por_processo[(linha["origem"], linha["processo"])].add(linha["chave_origem"])
+    for (origem, processo), chaves in chaves_por_processo.items():
+        sessao.execute(
+            delete(PrecoItem).where(
+                PrecoItem.origem == origem,
+                PrecoItem.processo == processo,
+                PrecoItem.chave_origem.not_in(chaves),
+            )
+        )
+
     insercao = insert(PrecoItem).values(unicas)
     atualizar: dict[str, Any] = {
         c: insercao.excluded[c] for c in unicas[0] if c not in ("origem", "chave_origem")

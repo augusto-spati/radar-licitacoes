@@ -117,8 +117,9 @@ def _contem_numero(registro: Any, campo: str, valor: str) -> bool:
 
 
 # Filtros que o servidor aplica como substring (LIKE): `NumeroProcessoContratacao=44` devolve
-# também o processo "144" (visto em 2026-11-27, UJ 66). O registro que só contém o número é
-# descartado; o que nem contém continua sendo filtro ignorado (erro).
+# também o processo "144" (visto em 2026-11-27, UJ 66). Todo registro que não bate exatamente
+# (ignorando zeros à esquerda) mas contém o número é descartado ("144" e "0440" para "44");
+# o que nem contém continua sendo filtro ignorado (erro).
 _FILTROS_SUBSTRING = frozenset({"NumeroProcessoContratacao"})
 
 

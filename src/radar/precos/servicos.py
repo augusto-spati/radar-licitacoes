@@ -217,8 +217,9 @@ def faixa_profundidade(texto: str) -> Faixa | None:
     """Faixa de profundidade de uma escavação (texto já normalizado por `sem_acento`).
 
     "PROF. ATE 1,5 M" → ate_1_5m; "MAIOR QUE 1,5 M ATE 3,0 M", "1,5 A 3,0 M" → 1_5_a_3m;
-    "DE 3,0 M ATE 4,5 M", "ACIMA DE 3,00 M" → 3_a_6m. Sem profundidade, faixa que atravessa
-    um limite ("ATE 3,0 M", "ACIMA DE 1,5 M") ou duas faixas diferentes → None.
+    "DE 3,0 M ATE 4,5 M", "ACIMA DE 3,00 M" → 3_a_6m ("acima de 3" sem teto também vai para
+    3_a_6m: o teto de 6 m só é conferido quando a descrição o diz). Sem profundidade, faixa
+    que atravessa um limite ("ATE 3,0 M", "ACIMA DE 1,5 M") ou duas faixas diferentes → None.
     """
     resto = _LARGURA.sub(" ", _ATE_SEM_ACENTO.sub("ate", texto))
     faixas: set[Faixa | None] = set()
