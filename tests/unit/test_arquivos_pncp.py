@@ -146,4 +146,12 @@ def test_escolher_documentos() -> None:
 def test_compra_le_valor_estimado() -> None:
     cliente, chamadas = _cliente([httpx.Response(200, json={"valorTotalEstimado": 1234.5})])
     assert cliente.compra("78200482000110", 2026, 298)["valorTotalEstimado"] == 1234.5
-    assert chamadas[0].url.path == "/pncp-api/v1/orgaos/78200482000110/compras/2026/298"
+    assert str(chamadas[0].url) == (
+        "https://pncp.gov.br/api/consulta/v1/orgaos/78200482000110/compras/2026/298"
+    )
+
+
+def test_301_e_erro() -> None:
+    cliente, _ = _cliente([httpx.Response(301, json={"status": "301"})])
+    with pytest.raises(ErroArquivos):
+        cliente.listar("1", 2026, 1)

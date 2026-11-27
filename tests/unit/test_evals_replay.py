@@ -161,6 +161,11 @@ def test_evals_do_repositorio_em_replay() -> None:
     if not list((raiz / "gabarito").glob("*.json")):
         pytest.skip("evals/gabarito/ ainda vazio")
     assert validar_gabaritos(raiz) == []
+    gabaritos = [json.loads(p.read_text("utf-8")) for p in (raiz / "gabarito").glob("*.json")]
+    if not any(g["conferido"] for g in gabaritos):
+        # Rascunho sem conferência ainda não tem respostas gravadas (a rodada real é depois
+        # dela); a partir do primeiro gabarito conferido, resposta ausente falha.
+        pytest.skip("nenhum gabarito conferido em evals/gabarito/")
     relatorio = avaliar(raiz, _replay(raiz), MODELO, CONFIG, "todos")
     assert not relatorio.ausentes, (
         f"{len(relatorio.ausentes)} respostas ausentes em evals/respostas: {INSTRUCAO_GRAVAR} "
@@ -188,7 +193,7 @@ def test_preparar_grava_texto(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
 
     def tratar(requisicao: httpx.Request) -> httpx.Response:
         caminho = requisicao.url.path
-        if caminho.endswith("/compras/2026/298"):
+        if caminho.endswith("/consulta/v1/orgaos/78200482000110/compras/2026/298"):
             return httpx.Response(200, json={"valorTotalEstimado": 1500000.5})
         if caminho.endswith("/arquivos"):
             documento = {

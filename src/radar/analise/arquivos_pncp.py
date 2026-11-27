@@ -20,6 +20,8 @@ from radar.analise.normalizacao import sem_acento
 logger = logging.getLogger(__name__)
 
 URL_BASE = "https://pncp.gov.br/pncp-api/v1"
+# A contratação saiu da pncp-api (que agora responde 301 em JSON) para a API de consulta.
+URL_CONSULTA = "https://pncp.gov.br/api/consulta/v1"
 TIMEOUT_SEGUNDOS = 120.0
 USER_AGENT = "radar-licitacoes-estudo (github.com/augusto-spati/radar-licitacoes)"
 STATUS_RETENTAVEIS = frozenset({429, 500, 502, 503, 504})
@@ -96,7 +98,8 @@ class ClienteArquivosPNCP:
 
     def compra(self, cnpj: str, ano: int, sequencial: int) -> dict[str, Any]:
         """A contratação (para o `valorTotalEstimado` no preparo dos evals)."""
-        corpo = self._com_tentativas(self._obter_json, f"/orgaos/{cnpj}/compras/{ano}/{sequencial}")
+        caminho = f"{URL_CONSULTA}/orgaos/{cnpj}/compras/{ano}/{sequencial}"
+        corpo = self._com_tentativas(self._obter_json, caminho)
         if not isinstance(corpo, dict):
             raise ErroArquivos(f"contratação com formato inesperado: {str(corpo)[:200]}")
         return corpo
@@ -144,7 +147,7 @@ class ClienteArquivosPNCP:
     def _verificar(self, resposta: httpx.Response) -> None:
         if resposta.status_code in STATUS_RETENTAVEIS:
             raise _FalhaTransitoria(f"HTTP {resposta.status_code}")
-        if resposta.status_code >= 400:
+        if not 200 <= resposta.status_code < 300:
             raise ErroArquivos(f"HTTP {resposta.status_code}")
 
     def _listar(self, caminho: str) -> list[dict[str, Any]]:
