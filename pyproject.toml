@@ -21,6 +21,7 @@ dependencies = [
     "opentelemetry-api>=1.27",
     "opentelemetry-sdk>=1.27",
     "opentelemetry-exporter-otlp-proto-http>=1.27",
+    "pypdf>=5",
 ]
 
 [project.scripts]
@@ -91,6 +92,21 @@ forbidden_modules = [
     "radar.editais.filtro",
     "radar.editais.registro",
     "radar.editais.modelos",
+    "radar.analise.exigencias",
+    "radar.analise.modelos",
+    "radar.analise.normalizacao",
+    "radar.analise.perfil",
+    "radar.analise.comparacao",
+    "radar.analise.arquivos_pncp",
+    "radar.analise.extracao",
+    "radar.analise.trechos",
+    "radar.analise.armazem",
+    "radar.analise.provedor",
+    "radar.analise.cache",
+    "radar.analise.custos",
+    "radar.analise.extrator",
+    "radar.analise.pipeline",
+    "radar.analise.evals",
 ]
 allow_indirect_imports = true
 

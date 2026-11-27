@@ -1,0 +1,76 @@
+{
+  "edital": "pncp~00460408000146-1-000078/2026",
+  "documentos": [
+    {
+      "sequencial": 1,
+      "url": "https://pncp.gov.br/pncp-api/v1/orgaos/00460408000146/compras/2026/78/arquivos/1",
+      "sha256": "bef8dacb6068b5972947092789e150384235f804094a319baa21a85388554724"
+    }
+  ],
+  "conjunto": "ajuste",
+  "conferido": false,
+  "conferido_por": null,
+  "conferido_em": null,
+  "observacoes": "RASCUNHO DO CLAUDE, A CONFERIR PELO AUGUSTO: feito lendo o texto extraído (busca por palavras-chave nas seções de habilitação), sem rodar nenhum modelo avaliado. Exigência que a busca não achou pode estar faltando. SAAE Cambuí/MG, compra de tubos de PVC DEFOFO. Sem capital, patrimônio, garantia, visita, consórcio ou ME/EPP achados; atestado sem quantidade. Prazo: só vigência de 1 ano (p20), ficou nulo. 'Registro empresarial na Junta Comercial' mapeado para contrato_social.",
+  "exigencias": {
+    "atestados": [
+      {
+        "descricao": "Fornecimento de materiais hidráulicos compatíveis (sem quantidade)",
+        "quantidade": null,
+        "unidade": null,
+        "trecho": "Comprovação de aptidão para fornecimento de materiais hidráulicos compatíveis em características e complexidade com o objeto licitado",
+        "pagina": 18
+      }
+    ],
+    "documentos": [
+      {
+        "valor": "declaracao_menor",
+        "trecho": "Não emprega menor de 18 anos em trabalho noturno, perigoso ou insalubre",
+        "pagina": 3,
+        "conflito": false
+      },
+      {
+        "valor": "contrato_social",
+        "trecho": "Registro empresarial na Junta Comercial",
+        "pagina": 17,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_federal",
+        "trecho": "Prova de Regularidade Fiscal para com a Fazenda Pública Federal",
+        "pagina": 17,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_estadual",
+        "trecho": "Prova de Regularidade Fiscal para com a Fazenda Estadual",
+        "pagina": 17,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_municipal",
+        "trecho": "Prova de Regularidade Fiscal junto à Fazenda Municipal",
+        "pagina": 17,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_fgts",
+        "trecho": "Prova de Regularidade Relativa ao Fundo de Garantia por Tempo de Serviço – FGTS",
+        "pagina": 17,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_trabalhista",
+        "trecho": "Prova de Inexistência de Débitos Inadimplidos perante a Justiça do Trabalho",
+        "pagina": 17,
+        "conflito": false
+      },
+      {
+        "valor": "balanco_patrimonial",
+        "trecho": "Balanço patrimonial, demonstração de resultado de exercício (DRE)",
+        "pagina": 18,
+        "conflito": false
+      }
+    ]
+  }
+}

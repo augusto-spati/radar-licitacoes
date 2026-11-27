@@ -47,7 +47,7 @@ from radar.coleta.retratos import (
     ultimo_retrato,
 )
 from radar.coleta.sanepar import FonteSanepar
-from radar.coleta.trava import trava_fonte
+from radar.coleta.trava import liberar_trava, obter_trava, trava_fonte
 
 __all__ = [
     "LEASE_S",
@@ -84,10 +84,12 @@ __all__ = [
     "janelas_paradas",
     "ler_pagina_para_processar",
     "ler_paginas_nao_processadas",
+    "liberar_trava",
     "limpar_brutos",
     "marcar_processada",
     "marcar_retrato_falha",
     "marcar_retrato_processado",
+    "obter_trava",
     "paginas_do_retrato",
     "paginas_publicadas_sem_processar",
     "planejar_janelas",

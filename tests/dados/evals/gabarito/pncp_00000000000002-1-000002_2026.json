@@ -1,0 +1,24 @@
+{
+  "edital": "pncp~00000000000002-1-000002/2026",
+  "documentos": [
+    {
+      "sequencial": 1,
+      "url": "https://exemplo/2",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ],
+  "conjunto": "teste",
+  "conferido": true,
+  "conferido_por": "teste",
+  "conferido_em": "2026-11-27",
+  "observacoes": "edital de brinquedo dos testes",
+  "exigencias": {
+    "prazo_execucao_dias": {
+      "trecho": "Prazo de execução: 6 (seis) meses.",
+      "pagina": 1,
+      "conflito": false,
+      "numero": "180",
+      "observacao": ""
+    }
+  }
+}

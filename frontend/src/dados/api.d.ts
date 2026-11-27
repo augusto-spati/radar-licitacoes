@@ -4,6 +4,26 @@
  */
 
 export interface paths {
+    "/api/analises/{id_publico}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Analise
+         * @description Exigências extraídas por IA e comparadas com o perfil (modelo padrão).
+         */
+        get: operations["analise_api_analises__id_publico__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/editais": {
         parameters: {
             query?: never;
@@ -62,6 +82,44 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AnaliseOut */
+        AnaliseOut: {
+            /** Aviso */
+            aviso: string;
+            /** Criada Em */
+            criada_em: string | null;
+            /** Documentos */
+            documentos: components["schemas"]["DocumentoAnaliseOut"][];
+            /** Id Publico */
+            id_publico: string;
+            /** Incompleta */
+            incompleta: boolean;
+            /** Itens */
+            itens: components["schemas"]["ItemAnaliseOut"][];
+            /** Modelo */
+            modelo: string;
+            /**
+             * Veredito
+             * @enum {string}
+             */
+            veredito: "apto" | "inapto" | "verificar";
+            /** Versao Prompt */
+            versao_prompt: string;
+        };
+        /** DocumentoAnaliseOut */
+        DocumentoAnaliseOut: {
+            /** Paginas */
+            paginas: number | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "extraido" | "sem_texto" | "nao_pdf" | "grande_demais" | "falha";
+            /** Titulo */
+            titulo: string;
+            /** Url */
+            url: string;
+        };
         /** EditalDetalheOut */
         EditalDetalheOut: {
             /** Data Abertura Proposta */
@@ -138,6 +196,28 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** ItemAnaliseOut */
+        ItemAnaliseOut: {
+            /** Campo */
+            campo: string;
+            /** Documento */
+            documento: string | null;
+            /** Exigido */
+            exigido: string;
+            /** Motivo */
+            motivo: string;
+            /** Pagina */
+            pagina: number | null;
+            /** Perfil */
+            perfil: string;
+            /**
+             * Situacao
+             * @enum {string}
+             */
+            situacao: "atende" | "nao_atende" | "verificar" | "informativo";
+            /** Trecho */
+            trecho: string | null;
+        };
         /**
          * Linha
          * @enum {string}
@@ -182,6 +262,37 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    analise_api_analises__id_publico__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id_publico: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnaliseOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     listar_api_editais_get: {
         parameters: {
             query?: {

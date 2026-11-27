@@ -1,0 +1,53 @@
+{
+  "edital": "pncp~00000000000001-1-000001/2026",
+  "documentos": [
+    {
+      "sequencial": 1,
+      "url": "https://exemplo/1",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "conjunto": "ajuste",
+  "conferido": true,
+  "conferido_por": "teste",
+  "conferido_em": "2026-11-27",
+  "observacoes": "edital de brinquedo dos testes",
+  "exigencias": {
+    "capital_social_minimo": {
+      "trecho": "capital social mínimo de R$ 100.000,00",
+      "pagina": 1,
+      "conflito": false,
+      "numero": "100000",
+      "observacao": ""
+    },
+    "visita_tecnica": {
+      "trecho": "A visita técnica é obrigatória.",
+      "pagina": 1,
+      "conflito": false,
+      "valor": "obrigatoria"
+    },
+    "consorcio": {
+      "trecho": "É vedada a participação de consórcio.",
+      "pagina": 2,
+      "conflito": false,
+      "valor": "vedado"
+    },
+    "atestados": [
+      {
+        "descricao": "pesquisa de vazamentos",
+        "quantidade": "500",
+        "unidade": "km",
+        "trecho": "pesquisa de vazamentos em no mínimo 500 km",
+        "pagina": 2
+      }
+    ],
+    "documentos": [
+      {
+        "trecho": "Certidão de regularidade do FGTS.",
+        "pagina": 2,
+        "conflito": false,
+        "valor": "certidao_fgts"
+      }
+    ]
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "edital": "pncp~11040912000103-1-000017/2026",
+  "documentos": [
+    {
+      "sequencial": 1,
+      "url": "https://pncp.gov.br/pncp-api/v1/orgaos/11040912000103/compras/2026/17/arquivos/1",
+      "sha256": "3129ee33e8e36b6465cdccb7d526fc89a64598da42ab4ced596aaadb991a9038"
+    }
+  ],
+  "conjunto": "ajuste",
+  "conferido": false,
+  "conferido_por": null,
+  "conferido_em": null,
+  "observacoes": "RASCUNHO DO CLAUDE, A CONFERIR PELO AUGUSTO: feito lendo o texto extraído (busca por palavras-chave nas seções de habilitação), sem rodar nenhum modelo avaliado. Exigência que a busca não achou pode estar faltando. Pernambuco (CNPJ 11040912), compra de tubos, conexões, registros e bombas (R$ 1.984.522,15). Patrimônio líquido ≥ 5% do valor estimado = R$ 99.226,11 (p28). Itens com cota principal e cota reservada para ME/EPP. O texto extraído tem acentos quebrados em partes (pypdf: 'o rga o'): os trechos escolhidos evitam essas partes. Certidões municipal, FGTS, trabalhista, falência e atestados não foram lidos: conferir.",
+  "exigencias": {
+    "patrimonio_liquido_minimo": {
+      "numero": "99226.11",
+      "trecho": "Comprovação de Patrimônio Líquido Mínimo (através de balanço patrimonial)",
+      "pagina": 28,
+      "conflito": false,
+      "observacao": "5% do valor estimado"
+    },
+    "consorcio": {
+      "valor": "permitido",
+      "trecho": "Na licitação será admitida a possibilidade de Consórcio",
+      "pagina": 8,
+      "conflito": false
+    },
+    "me_epp": {
+      "valor": "cota",
+      "trecho": "Não havendo vencedor para a COTA RESERVADA às microempresas",
+      "pagina": 6,
+      "conflito": false
+    },
+    "atestados": [],
+    "documentos": [
+      {
+        "valor": "contrato_social",
+        "trecho": "ATO CONSTITUTIVO, ESTATUTO OU CONTRATO SOCIAL CONSOLIDADO em vigor",
+        "pagina": 24,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_federal",
+        "trecho": "PROVA DE REGULARIDADE com a FAZENDA FEDERAL",
+        "pagina": 25,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_estadual",
+        "trecho": "PROVA DE REGULARIDADE para com a FAZENDA ESTADUAL",
+        "pagina": 25,
+        "conflito": false
+      },
+      {
+        "valor": "balanco_patrimonial",
+        "trecho": "Apresentar balanço patrimonial",
+        "pagina": 28,
+        "conflito": false
+      }
+    ]
+  }
+}

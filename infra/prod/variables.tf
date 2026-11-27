@@ -72,3 +72,25 @@ variable "tag_coletor" {
   type        = string
   default     = "bootstrap"
 }
+
+variable "modelos_ia" {
+  description = "Ids de foundation model do Bedrock (us-east-2, on-demand) que a analise pode chamar."
+  type        = list(string)
+  default = [
+    "amazon.nova-lite-v1:0",
+    "openai.gpt-oss-120b-1:0",
+    "qwen.qwen3-32b-v1:0",
+    "mistral.ministral-3-14b-instruct",
+  ]
+
+  validation {
+    condition     = alltrue([for m in var.modelos_ia : !can(regex("^(us|eu|apac|global)\\.", m))])
+    error_message = "modelos_ia aceita so ids de foundation model; perfis de inferencia (us., eu., apac., global.) sao cross-region."
+  }
+}
+
+variable "analise_agendada" {
+  description = "Liga a agenda diaria do `radar analisar`. O primeiro apply vai com false, ate uma execucao manual provar a role e os overrides do alvo universal."
+  type        = bool
+  default     = true
+}

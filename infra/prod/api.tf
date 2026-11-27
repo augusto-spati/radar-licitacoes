@@ -71,6 +71,7 @@ resource "aws_lambda_function" "api" {
     variables = {
       RADAR_DB_NULLPOOL   = "true"
       RADAR_CONFIG_FILTRO = "/var/task/config/filtro.toml"
+      RADAR_CONFIG_IA     = "/var/task/config/ia.toml"
     }
   }
 

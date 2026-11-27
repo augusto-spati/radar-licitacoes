@@ -1,0 +1,48 @@
+{
+  "output": {
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "reasoningContent": {
+            "reasoningText": {
+              "text": "We need to extract requirements: fields capital_social_minimo and visita_tecnica. Provide value, number, unit, and the literal excerpt.\n\nThe text: \"comprovação de capital social mínimo de R$ 250.000,00 (duzentos e cinquenta mil reais), registrado na Junta Comercial. A visita técnica é facultativa.\"\n\nSo capital_social_minimo: value \"R$ 250.000,00\", number 250000, unit \"R$\". Or maybe \"R$\". Provide as string.\n\nvisita_tecnica: value \"facultativa\". number null, unit empty.\n\nWe need to call registrar_achados with array of objects.\n\n"
+            }
+          }
+        },
+        {
+          "toolUse": {
+            "toolUseId": "tooluse_u3dBEeTfixs2wg7YsiO97M",
+            "name": "registrar_achados",
+            "input": {
+              "achados": [
+                {
+                  "campo": "capital_social_minimo",
+                  "valor": "R$ 250.000,00",
+                  "numero": 250000,
+                  "unidade": "R$",
+                  "trecho": "comprovação de capital social mínimo de R$ 250.000,00 (duzentos e cinquenta mil reais), registrado na Junta Comercial."
+                },
+                {
+                  "campo": "visita_tecnica",
+                  "valor": "facultativa",
+                  "unidade": "",
+                  "trecho": "A visita técnica é facultativa."
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "stopReason": "tool_use",
+  "usage": {
+    "inputTokens": 250,
+    "outputTokens": 299,
+    "totalTokens": 549
+  },
+  "metrics": {
+    "latencyMs": 1637
+  }
+}

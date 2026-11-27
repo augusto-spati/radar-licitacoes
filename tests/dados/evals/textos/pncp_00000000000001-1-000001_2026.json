@@ -1,0 +1,17 @@
+{
+  "edital": "pncp~00000000000001-1-000001/2026",
+  "valor_estimado": "1000000",
+  "documentos": [
+    {
+      "sequencial": 1,
+      "url": "https://exemplo/1",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "status": "extraido",
+      "paginas": 2
+    }
+  ],
+  "paginas": [
+    "EDITAL DE BRINQUEDO 1. Exige-se capital social mínimo de R$ 100.000,00. A visita técnica é obrigatória. Não será exigida garantia contratual. Este parágrafo é enchimento do edital de brinquedo para a página ter texto suficiente. Este parágrafo é enchimento do edital de brinquedo para a página ter texto suficiente. Este parágrafo é enchimento do edital de brinquedo para a página ter texto suficiente.",
+    "Atestado de pesquisa de vazamentos em no mínimo 500 km de rede. É vedada a participação de consórcio. Certidão de regularidade do FGTS. Este parágrafo é enchimento do edital de brinquedo para a página ter texto suficiente. Este parágrafo é enchimento do edital de brinquedo para a página ter texto suficiente. Este parágrafo é enchimento do edital de brinquedo para a página ter texto suficiente."
+  ]
+}

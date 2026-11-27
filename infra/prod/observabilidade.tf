@@ -3,7 +3,8 @@
 # alarmes de SLO, um dashboard e consultas salvas do Logs Insights. Tudo na regiao do projeto.
 #
 # Orcamento do plano gratis: 10 metricas customizadas (3 filtros de log + 6 do catalogo em
-# src/radar/comum/metricas.py = 9) e 10 alarmes (9). Os testes estaticos contam.
+# src/radar/comum/metricas.py = 9) e 10 alarmes (9; a analise da etapa 6 nao criou nenhum). Os
+# testes estaticos contam.
 #
 # Transaction Search e configuracao da conta, ligada uma vez, a mao, DEPOIS do apply (o log
 # group aws/spans abaixo precisa existir antes):
@@ -18,6 +19,7 @@ locals {
     processador = aws_iam_role.processador.name
     coletora    = aws_iam_role.coletora.name
     planejador  = aws_iam_role.planejador.name
+    analisador  = aws_iam_role.analisador_task.name # `radar analisar` (analise.tf)
   }
   grupos_de_log_do_radar = [
     aws_cloudwatch_log_group.coletor.name,
@@ -36,7 +38,7 @@ resource "aws_iam_role_policy_attachment" "traces" {
   policy_arn = "arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess"
 }
 
-# So o coletor (Fargate) chama PutMetricData; as Lambdas usam EMF (so logs).
+# So as tasks Fargate (coletor e analisador) chamam PutMetricData; as Lambdas usam EMF.
 data "aws_iam_policy_document" "coletor_metricas" {
   statement {
     actions   = ["cloudwatch:PutMetricData"]
@@ -53,6 +55,13 @@ data "aws_iam_policy_document" "coletor_metricas" {
 resource "aws_iam_role_policy" "coletor_metricas" {
   name   = "publicar-metricas-radar"
   role   = aws_iam_role.coletor_task.id
+  policy = data.aws_iam_policy_document.coletor_metricas.json
+}
+
+# Mesma task do coletor com outra role (override na agenda radar-analisar-diario).
+resource "aws_iam_role_policy" "analisador_metricas" {
+  name   = "publicar-metricas-radar"
+  role   = aws_iam_role.analisador_task.id
   policy = data.aws_iam_policy_document.coletor_metricas.json
 }
 
