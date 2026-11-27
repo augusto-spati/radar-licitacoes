@@ -1,5 +1,6 @@
 """Tabela `preco_item`: preço unitário por item, já normalizado num serviço-padrão."""
 
+from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal, get_args
@@ -81,3 +82,34 @@ class PrecoItem(Base):
     fator_unidade: Mapped[Decimal] = mapped_column(Numeric)
     suspeito: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     gravado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+@dataclass(frozen=True)
+class PrecoItemNovo:
+    """Linha a gravar em `preco_item` (sem `id` e `gravado_em`), vinda de qualquer origem."""
+
+    origem: Origem
+    chave_origem: str
+    uf: str
+    municipio: str | None
+    orgao_nome: str
+    orgao_cnpj: str | None
+    processo: str
+    data: date | None
+    descricao: str
+    unidade: str
+    quantidade: Decimal | None
+    preco_sem_bdi: Decimal | None
+    bdi: Decimal | None
+    preco_com_bdi: Decimal | None
+    bdi_desconhecido: bool
+    preco_contratado_com_bdi: Decimal | None
+    fonte_referencia: str | None
+    codigo_referencia: str | None
+    servico: str
+    material: str | None
+    dn: int | None
+    escopo: str | None
+    unidade_canonica: str
+    fator_unidade: Decimal
+    suspeito: bool
