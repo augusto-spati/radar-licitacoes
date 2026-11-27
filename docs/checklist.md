@@ -23,8 +23,10 @@ Cada item marcado aponta para o arquivo e o commit onde está implementado e par
 
 Filas ficam como futuro, no tema 2: outbox + SQS (etapa 4a; o pgmq não existe no Neon) e depois a coleta do PNCP por janela em Lambda (4b). A etapa "2b-brutos" (páginas brutas no S3) foi descartada: a retenção de brutos da etapa 3 (`limpar_brutos`) mantém o banco em cerca de 120 MB. O S3 volta no tema 4, para os PDFs dos editais.
 
-- [ ] Coleta, fila e processamento: outbox + SQS com consumidor idempotente (etapa 4a).
-- [ ] Padrão outbox e SQS (tema 2).
+- [x] Coleta, fila e processamento: outbox + SQS com consumidor idempotente (etapa 4a). `docs/etapas/04a-filas.md`. Vídeo: a gravar (`docs/videos/04a-filas.md`).
+- [x] Padrão outbox e SQS (tema 2), com DLQ, alarme e `radar reprocessar-falhas`. `docs/etapas/04a-filas.md`. Vídeo: a gravar.
+- [x] Coleta do PNCP por janela em Lambda, com fatias, lease com fencing e cortesia. `docs/etapas/04b-coleta-por-janela.md`. Vídeo: a gravar (`docs/videos/04b-coleta-por-janela.md`).
+- [ ] Tempo total e custo da primeira rodada da 4b. A medir em 2026-12-03.
 - [x] Infraestrutura como código (Terraform): S3, CloudFront, Lambda, API Gateway, ECS Fargate, EventBridge Scheduler, Cognito, SES, SSM, alarmes e orçamento. `infra/bootstrap/`, `infra/prod/*.tf`, `infra/README.md`. Vídeo: a gravar (`docs/videos/02b-aws.md`).
 - [x] IAM com papel por função e deploy sem chave fixa (OIDC do GitHub Actions, trust com `sub` imutável e `job_workflow_ref`). `infra/prod/github_oidc.tf`, `.github/workflows/deploy.yml` (commits `80ec1d9`, `c34b14f`). Vídeo: a gravar.
 - [x] Custos sob controle: sem NAT Gateway, load balancer, RDS, EC2 e EIP (teste `tests/unit/test_infra_estatico.py`) e orçamento de US$ 5 com alertas. `infra/prod/orcamento.tf`. Vídeo: a gravar.
