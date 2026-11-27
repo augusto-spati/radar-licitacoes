@@ -32,6 +32,7 @@ from radar.coleta.sanepar import FonteSanepar
 from radar.comum import Base, Outbox, fabrica_sessao
 from radar.editais import registrar_normalizados
 from radar.editais.modelos import Edital
+from radar.processador import consumidor
 
 FUSO = ZoneInfo("America/Sao_Paulo")
 AGORA = datetime(2026, 11, 26, 12, 0, tzinfo=FUSO)
@@ -796,14 +797,14 @@ def test_erro_inesperado_no_registro_e_isolado(
     _ja_abertos(fabrica, "sanepar", "OE-9/26")
     rotas = _rotas("sanepar", _lista("OE-1/26")) | _rotas("compesa", _lista("2026LC1"))
     _registrar_fontes(monkeypatch, [FonteFalsa("sanepar", 1), FonteFalsa("compesa", 1)], rotas)
-    original = cli.registrar_normalizados
+    original = consumidor.registrar_normalizados
 
     def registrar_com_erro(sessao: Session, registros: list[dict[str, Any]]) -> Any:
         if registros[0]["fonte"] == "sanepar":
             raise RuntimeError("boom")
         return original(sessao, registros)
 
-    monkeypatch.setattr(cli, "registrar_normalizados", registrar_com_erro)
+    monkeypatch.setattr(consumidor, "registrar_normalizados", registrar_com_erro)
 
     resultado = _atualizar(config_filtro, "sanepar,compesa")
 
@@ -811,20 +812,25 @@ def test_erro_inesperado_no_registro_e_isolado(
     assert _situacoes(fabrica, "sanepar") == {"OE-9/26": "aberta"}
     assert _situacoes(fabrica, "compesa") == {"2026LC1": "aberta"}
     with fabrica() as sessao:
-        sanepar = ultimo_retrato(sessao, "sanepar")
-        compesa = ultimo_retrato(sessao, "compesa")
-    assert sanepar is not None and sanepar.status == "falha"
-    assert sanepar.erro == "registro: RuntimeError('boom')"
-    assert compesa is not None and compesa.status == "concluido"
+        retratos = {
+            r.fonte: (r.status, r.processado_em is not None)
+            for r in sessao.scalars(select(ColetaRetrato))
+        }
+        recusada = sessao.scalars(
+            select(Outbox).where(Outbox.publicada_em.is_(None), Outbox.tipo == "retrato_coletado")
+        ).one()
+    # Erro inesperado é transitório: o retrato continua concluído, à espera de nova tentativa.
+    assert retratos == {"sanepar": ("concluido", False), "compesa": ("concluido", True)}
+    assert recusada.erro == "RuntimeError('boom')"
 
 
 def test_segunda_rodada_durante_o_registro_e_ocupado(
     fabrica: sessionmaker[Session], config_filtro: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # O lock da fonte vale até o fim do registro, não só durante a leitura das páginas.
+    # O consumidor segura o lock da fonte até o fim do registro.
     fonte = FonteFalsa("sanepar", 1)
     _registrar_fontes(monkeypatch, [fonte], _rotas("sanepar", _lista("OE-1/26")))
-    original = cli.registrar_normalizados
+    original = consumidor.registrar_normalizados
     concorrentes: list[str] = []
 
     def registrar_com_concorrente(sessao: Session, registros: list[dict[str, Any]]) -> Any:
@@ -833,7 +839,7 @@ def test_segunda_rodada_durante_o_registro_e_ocupado(
             concorrentes.append(executar_retrato(outra, fonte, cliente, AGORA).status)
         return original(sessao, registros)
 
-    monkeypatch.setattr(cli, "registrar_normalizados", registrar_com_concorrente)
+    monkeypatch.setattr(consumidor, "registrar_normalizados", registrar_com_concorrente)
 
     resultado = _atualizar(config_filtro, "sanepar")
 
@@ -854,7 +860,6 @@ def test_muitos_invalidos_e_falha_sem_gravar_nem_reconciliar(
     resultado = _atualizar(config_filtro, "sanepar")
 
     assert resultado.exit_code == 1
-    assert "muitos inválidos: 1 de 3" in resultado.output
     assert _situacoes(fabrica, "sanepar") == {"OE-9/26": "aberta"}
     with fabrica() as sessao:
         info = ultimo_retrato(sessao, "sanepar")
@@ -879,9 +884,6 @@ def test_rotulo_de_saida_vem_da_fonte(
         )
 
 
-@pytest.mark.xfail(
-    reason="Task 5: a cli ainda registra síncrono e não marca processado_em", strict=False
-)
 def test_atualizar_limpa_brutos_antigos_da_fonte(
     fabrica: sessionmaker[Session],
     config_filtro: Path,
@@ -938,7 +940,7 @@ def test_processar_ignora_paginas_de_retrato(
     _registrar_fontes(monkeypatch, [FonteFalsa("sanepar", 1)], _rotas("sanepar", _lista("OE-1/26")))
     assert _atualizar(config_filtro, "sanepar").exit_code == 0
     registrar = []
-    monkeypatch.setattr(cli, "registrar", lambda _s, r: registrar.append(r))
+    monkeypatch.setattr(consumidor, "registrar", lambda _s, r: registrar.append(r))
 
     resultado = runner.invoke(cli.app, ["processar"])
 
@@ -965,6 +967,7 @@ def _retrato(fabrica: sessionmaker[Session], fonte: str, status: str, horas_atra
             ColetaRetrato(
                 fonte=fonte, status=status, iniciado_em=AGORA - timedelta(hours=horas_atras),
                 paginas=1, registros=7, erro="HTTP 403" if status == "falha" else None,
+                processado_em=AGORA if status == "concluido" else None,
             )
         )  # fmt: skip
         sessao.commit()

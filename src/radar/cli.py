@@ -1,6 +1,8 @@
 """Porta de entrada de terminal."""
 
+import functools
 import logging
+from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any
@@ -8,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 import typer
 import uvicorn
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from radar import __version__
 from radar.api.app import criar_app
@@ -20,29 +22,28 @@ from radar.coleta import (
     criar_http,
     criar_http_educado,
     executar_retrato,
-    ler_paginas_nao_processadas,
-    limpar_brutos,
-    marcar_processada,
-    marcar_retrato_falha,
-    paginas_do_retrato,
+    paginas_publicadas_sem_processar,
     planejar_janelas,
-    trava_fonte,
+    retratos_sem_processar,
     ultimo_retrato,
 )
 from radar.coleta import (
     auditar as auditar_cobertura,
 )
-from radar.comum import configurar_logs, criar_engine, fabrica_sessao, obter_config
-from radar.editais import (
-    Criterios,
-    EditalResumo,
-    carregar_criterios,
-    reconciliar_retrato,
-    registrar,
-    registrar_normalizados,
+from radar.comum import (
+    Fila,
+    FilaSQS,
+    configurar_logs,
+    criar_engine,
+    fabrica_sessao,
+    limpar_outbox,
+    obter_config,
+    pendencias_outbox,
+    publicar_outbox,
 )
+from radar.editais import Criterios, EditalResumo, carregar_criterios
 from radar.editais import filtrar as filtrar_editais
-from radar.processador import FRACAO_INVALIDOS, fontes_retrato
+from radar.processador import FilaLocal, criar_fila, fontes_retrato
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,8 @@ app = typer.Typer(help="Radar de licitações.", no_args_is_help=True)
 
 FUSO = ZoneInfo("America/Sao_Paulo")
 IDADE_MAXIMA_RETRATO = timedelta(hours=36)
+# Mensagem publicada e página ainda parada depois disto: o consumidor não está dando conta.
+ATRASO_MAXIMO_FILA = timedelta(hours=1)
 # Padrão de RADAR_CONFIG_FILTRO (config/filtro.toml da raiz, sem depender do cwd).
 ARQUIVO_CONFIG = obter_config().config_filtro
 
@@ -62,8 +65,14 @@ def _agora() -> datetime:
     return datetime.now(FUSO)
 
 
+@functools.cache
+def _fabrica() -> sessionmaker[Session]:
+    """Um engine por processo: a fila local abre uma sessão por mensagem."""
+    return fabrica_sessao(criar_engine(obter_config()))
+
+
 def _criar_sessao() -> Session:
-    return fabrica_sessao(criar_engine(obter_config()))()
+    return _fabrica()()
 
 
 def _criar_cliente() -> ClientePNCP:
@@ -72,6 +81,22 @@ def _criar_cliente() -> ClientePNCP:
 
 def _criar_cliente_retrato(fonte: FonteRetrato) -> ClienteEducado:
     return ClienteEducado(criar_http_educado(), marcador_bloqueio=fonte.marcador_bloqueio)
+
+
+def _criar_cliente_sqs() -> Any:
+    import boto3  # type: ignore[import-untyped]
+
+    return boto3.client("sqs")
+
+
+def _criar_fila(fontes: dict[str, FonteRetrato]) -> Fila:
+    """A fila de `RADAR_FILA`: local (consome aqui mesmo) ou SQS."""
+    config = obter_config()
+    if config.fila == "sqs" and not config.fila_url:
+        typer.echo("RADAR_FILA=sqs exige RADAR_FILA_URL", err=True)
+        raise typer.Exit(code=2)
+    cliente = _criar_cliente_sqs() if config.fila == "sqs" else None
+    return criar_fila(config, _criar_sessao, fontes, _agora, cliente)
 
 
 def _escolher_fontes(opcao: str | None, disponiveis: list[str]) -> list[str]:
@@ -90,98 +115,61 @@ def _escolher_fontes(opcao: str | None, disponiveis: list[str]) -> list[str]:
     return [nome for nome in disponiveis if nome in pedidas]
 
 
-def _extrair_do_retrato(
-    sessao: Session, fonte: FonteRetrato, retrato_id: int
-) -> tuple[list[dict[str, Any]], set[str]]:
-    """Normalizados e ids listados, relidos das páginas brutas do retrato.
+def _publicar(sessao: Session, fila: Fila) -> int:
+    """Relay da outbox para a fila; devolve as recusas (erro inesperado conta 1)."""
+    try:
+        resumo = publicar_outbox(sessao, fila, agora=_agora)
+    except Exception:  # a outbox continua pendente; a próxima execução publica
+        sessao.rollback()
+        logger.exception("relay_erro_inesperado")
+        typer.echo("relay: erro inesperado (veja o log)")
+        return 1
+    typer.echo(f"relay: {resumo.publicadas} publicadas, {resumo.recusadas} recusadas")
+    return resumo.recusadas
 
-    TODO Task 5: ponte temporária; o registro síncrono sai da cli e vai para o consumidor.
+
+def _falhas_da_fila(fila: Fila) -> int:
+    """Com a fila local, o que o consumidor não conseguiu também faz a execução falhar."""
+    if not isinstance(fila, FilaLocal) or not fila.falhas:
+        return 0
+    typer.echo(f"fila local: {fila.falhas} mensagens com falha (veja o log)")
+    return fila.falhas
+
+
+def _com_fila(sessao: Session, fila: Fila, coletar: Callable[[], int]) -> int:
+    """Relay, coleta, relay; devolve as falhas somadas.
+
+    O relay do começo recupera o que ficou na outbox se a execução anterior morreu entre
+    coletar e publicar. O do fim roda depois de todas as coletas soltarem a trava da fonte
+    (o consumidor local precisa dela).
     """
-    normalizados = fonte.extrair(paginas_do_retrato(sessao, retrato_id))
-    ids = {str(n["id_na_fonte"]) for n in normalizados if n.get("id_na_fonte") not in (None, "")}
-    return normalizados, ids
+    falhas = _publicar(sessao, fila)
+    falhas += coletar()
+    falhas += _publicar(sessao, fila)
+    return falhas + _falhas_da_fila(fila)
 
 
 def _rodar_retrato(sessao: Session, fonte: FonteRetrato) -> int:
-    """Retrato de uma fonte; devolve 1 se falhou. Falha de uma fonte não para as outras."""
-    retrato_id: int | None = None
+    """Coleta o retrato de uma fonte (gravar é do consumidor); devolve 1 se falhou.
+
+    Falha de uma fonte não para as outras. A trava da fonte vale durante a coleta.
+    """
     try:
-        # O lock da fonte cobre o retrato e o registro: o ciclo inteiro não se sobrepõe.
-        with trava_fonte(sessao, fonte.nome) as obtida:
-            if not obtida:
-                logger.warning("retrato_em_andamento_noutro_processo", extra={"fonte": fonte.nome})
-                typer.echo(f"retrato {fonte.nome}: já em andamento noutro processo")
-                return 0
-            with _criar_cliente_retrato(fonte) as cliente:
-                resumo = executar_retrato(sessao, fonte, cliente, _agora(), trava_mantida=True)
-            retrato_id = resumo.retrato_id
-            if resumo.status != "concluido":
-                typer.echo(f"retrato {fonte.nome}: falha: {resumo.erro}")
-                return 1
-            # Fronteira coleta -> editais: gravar e reconciliar numa transação só.
-            assert retrato_id is not None  # concluido sempre tem id
-            normalizados, vistos = _extrair_do_retrato(sessao, fonte, retrato_id)  # TODO Task 5
-            resultado = registrar_normalizados(sessao, normalizados)
-            if resultado.invalidos > FRACAO_INVALIDOS * resumo.registros:
-                sessao.rollback()  # desfaz o registro: nada gravado, nada reconciliado
-                erro = f"muitos inválidos: {resultado.invalidos} de {resumo.registros}"
-                logger.warning(
-                    "retrato_muitos_invalidos",
-                    extra={"fonte": fonte.nome, "retrato_id": retrato_id, "erro": erro},
-                )
-                marcar_retrato_falha(sessao, retrato_id, erro)
-                typer.echo(f"retrato {fonte.nome}: falha: {erro}")
-                return 1
-            if vistos:
-                encerrados = reconciliar_retrato(
-                    sessao, fonte.nome, vistos, _agora(), rotulo=fonte.rotulo_saida
-                )
-            else:
-                # Defesa extra: com `vistos` vazio a reconciliação encerraria a fonte inteira.
-                logger.warning(
-                    "reconciliacao_ignorada", extra={"fonte": fonte.nome, "retrato_id": retrato_id}
-                )
-                encerrados = 0
-            sessao.commit()
-            _limpar_brutos(sessao, fonte.nome)
-    except Exception as erro:  # Ctrl+C (BaseException) continua parando o processo
+        with _criar_cliente_retrato(fonte) as cliente:
+            resumo = executar_retrato(sessao, fonte, cliente, _agora())
+    except Exception:  # Ctrl+C (BaseException) continua parando o processo
         sessao.rollback()
-        logger.exception("retrato_erro_registro", extra={"fonte": fonte.nome})
-        if retrato_id is not None:
-            # O retrato concluiu, mas os editais não foram gravados: para a auditoria, falhou.
-            try:
-                marcar_retrato_falha(sessao, retrato_id, f"registro: {erro!r}")
-            except Exception:
-                sessao.rollback()
-                logger.exception("retrato_erro_marcar_falha", extra={"retrato_id": retrato_id})
+        logger.exception("retrato_erro_inesperado", extra={"fonte": fonte.nome})
         typer.echo(f"retrato {fonte.nome}: erro inesperado (veja o log)")
         return 1
-    logger.info(
-        "retrato_registrado",
-        extra={
-            "fonte": fonte.nome,
-            "retrato_id": resumo.retrato_id,
-            "inseridos": resultado.inseridos,
-            "atualizados": resultado.atualizados,
-            "invalidos": resultado.invalidos,
-            "encerrados": encerrados,
-        },
-    )
-    typer.echo(
-        f"retrato {fonte.nome}: {resumo.registros} registros, {resultado.inseridos} inseridos, "
-        f"{resultado.atualizados} atualizados, {resultado.invalidos} inválidos, "
-        f"{encerrados} encerrados"
-    )
+    if resumo.status == "ocupado":
+        typer.echo(f"retrato {fonte.nome}: já em andamento noutro processo")
+        return 0
+    if resumo.status != "concluido":
+        typer.echo(f"retrato {fonte.nome}: falha: {resumo.erro}")
+        return 1
+    typer.echo(f"retrato {fonte.nome}: {resumo.registros} registros coletados")
     return 0
-
-
-def _limpar_brutos(sessao: Session, fonte: str) -> None:
-    """Retenção das páginas brutas da fonte. Falhar aqui não desfaz o retrato já gravado."""
-    try:
-        limpar_brutos(sessao, fonte)
-    except Exception:
-        sessao.rollback()
-        logger.exception("brutos_erro_limpeza", extra={"fonte": fonte})
 
 
 def _rodar_pncp(sessao: Session, criterios: Criterios, hoje: date, lookback: int) -> int:
@@ -191,7 +179,7 @@ def _rodar_pncp(sessao: Session, criterios: Criterios, hoje: date, lookback: int
             sessao, "atualizacao", hoje - timedelta(days=lookback), hoje, criterios.modalidades
         )
         typer.echo(f"janelas novas: {novas}")
-        return _processar(sessao, _criar_cliente())
+        return _coletar(sessao, _criar_cliente())
     except Exception:  # Ctrl+C (BaseException) continua parando o processo
         sessao.rollback()
         logger.exception("pncp_erro_inesperado")
@@ -199,52 +187,14 @@ def _rodar_pncp(sessao: Session, criterios: Criterios, hoje: date, lookback: int
         return 1
 
 
-def _processar(sessao: Session, cliente: ClientePNCP) -> int:
-    """Coleta e processa; devolve quantas janelas e páginas falharam nesta execução."""
+def _coletar(sessao: Session, cliente: ClientePNCP) -> int:
+    """Coleta as janelas pendentes; devolve quantas falharam. Cada página vai para a outbox."""
     resumo = coletar_pendentes(sessao, cliente, _agora())
     typer.echo(
         f"coleta: {resumo.concluidas} concluídas, {resumo.falhas} falhas, "
         f"{resumo.divididas} divididas, {resumo.registros} registros"
     )
-    paginas = inseridos = atualizados = ignorados = invalidos = 0
-    falhas_pagina: set[int] = set()
-    # Fronteira coleta -> editais: é aqui que a fila do Tema 2 entra.
-    while lote := ler_paginas_nao_processadas(sessao, excluir=falhas_pagina):
-        for pagina_id, registros in lote:
-            try:
-                resultado = registrar(sessao, registros)
-                marcar_processada(sessao, pagina_id)  # commita o registro junto da marca
-            except Exception:  # Ctrl+C (BaseException) continua parando o processo
-                sessao.rollback()
-                logger.exception("pagina_erro_processamento", extra={"pagina_id": pagina_id})
-                falhas_pagina.add(pagina_id)
-                continue
-            paginas += 1
-            inseridos += resultado.inseridos
-            atualizados += resultado.atualizados
-            ignorados += resultado.ignorados
-            invalidos += resultado.invalidos
-    logger.info(
-        "processamento_concluido",
-        extra={
-            "paginas": paginas,
-            "inseridos": inseridos,
-            "atualizados": atualizados,
-            "ignorados": ignorados,
-            "invalidos": invalidos,
-        },
-    )
-    typer.echo(
-        f"processamento: {paginas} páginas, {inseridos} inseridos, {atualizados} atualizados, "
-        f"{ignorados} ignorados, {invalidos} inválidos"
-    )
-    falhas = resumo.falhas + len(falhas_pagina)
-    typer.echo(
-        f"resultado: {resumo.falhas} janelas e {len(falhas_pagina)} páginas com falha"
-        if falhas
-        else "resultado: sem falhas"
-    )
-    return falhas
+    return resumo.falhas
 
 
 def _encerrar(falhas: int) -> None:
@@ -263,17 +213,22 @@ def carga_inicial(
     dias: Annotated[int, typer.Option(min=1, help="Quantos dias anteriores a hoje coletar.")] = 30,
     config: OpcaoConfig = ARQUIVO_CONFIG,
 ) -> None:
-    """Planeja janelas de publicação dos últimos dias, coleta e processa."""
+    """Planeja janelas de publicação dos últimos dias, coleta e publica na fila."""
     configurar_logs()
     criterios = carregar_criterios(config)
     hoje = _agora().date()
+    fila = _criar_fila(fontes_retrato())
     with _criar_sessao() as sessao:
-        novas = planejar_janelas(
-            sessao, "publicacao", hoje - timedelta(days=dias), hoje - timedelta(days=1),
-            criterios.modalidades,
-        )  # fmt: skip
-        typer.echo(f"janelas novas: {novas}")
-        falhas = _processar(sessao, _criar_cliente())
+
+        def coletar() -> int:
+            novas = planejar_janelas(
+                sessao, "publicacao", hoje - timedelta(days=dias), hoje - timedelta(days=1),
+                criterios.modalidades,
+            )  # fmt: skip
+            typer.echo(f"janelas novas: {novas}")
+            return _coletar(sessao, _criar_cliente())
+
+        falhas = _com_fila(sessao, fila, coletar)
     _encerrar(falhas)
 
 
@@ -294,23 +249,68 @@ def atualizar(
     configurar_logs()
     criterios = carregar_criterios(config)
     hoje = _agora().date()
-    falhas = 0
+    fila = _criar_fila(retratos)
     with _criar_sessao() as sessao:
-        if "pncp" in escolhidas:
-            falhas += _rodar_pncp(sessao, criterios, hoje, lookback)
-        for nome in escolhidas:
-            if nome != "pncp":
-                falhas += _rodar_retrato(sessao, retratos[nome])
+
+        def coletar() -> int:
+            falhas = 0
+            if "pncp" in escolhidas:
+                falhas += _rodar_pncp(sessao, criterios, hoje, lookback)
+            for nome in escolhidas:
+                if nome != "pncp":
+                    falhas += _rodar_retrato(sessao, retratos[nome])
+            return falhas
+
+        falhas = _com_fila(sessao, fila, coletar)
     _encerrar(falhas)
 
 
 @app.command()
 def processar() -> None:
-    """Coleta as janelas pendentes e registra os editais das páginas ainda não processadas."""
+    """Coleta as janelas pendentes e publica a outbox na fila (o consumidor registra)."""
     configurar_logs()
+    fila = _criar_fila(fontes_retrato())
     with _criar_sessao() as sessao:
-        falhas = _processar(sessao, _criar_cliente())
+        falhas = _com_fila(sessao, fila, lambda: _coletar(sessao, _criar_cliente()))
     _encerrar(falhas)
+
+
+@app.command()
+def publicar() -> None:
+    """Publica a outbox pendente na fila e apaga as linhas publicadas há mais de 7 dias."""
+    configurar_logs()
+    fila = _criar_fila(fontes_retrato())
+    with _criar_sessao() as sessao:
+        falhas = _publicar(sessao, fila)
+        apagadas = limpar_outbox(sessao, _agora())
+    typer.echo(f"outbox: {apagadas} publicadas antigas apagadas")
+    _encerrar(falhas + _falhas_da_fila(fila))
+
+
+def _arn_da_fila(cliente: Any, url: str) -> str:
+    resposta = cliente.get_queue_attributes(QueueUrl=url, AttributeNames=["QueueArn"])
+    return str(resposta["Attributes"]["QueueArn"])
+
+
+@app.command("reprocessar-falhas")
+def reprocessar_falhas() -> None:
+    """Devolve as mensagens da fila de falhas (DLQ) para a fila principal. Só com SQS."""
+    configurar_logs()
+    config = obter_config()
+    if config.fila != "sqs":
+        typer.echo(
+            "reprocessar-falhas só funciona com RADAR_FILA=sqs (a fila local não tem DLQ)",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    if not config.fila_url or not config.fila_falhas_url:
+        typer.echo("defina RADAR_FILA_URL e RADAR_FILA_FALHAS_URL", err=True)
+        raise typer.Exit(code=2)
+    cliente = _criar_cliente_sqs()
+    origem = _arn_da_fila(cliente, config.fila_falhas_url)
+    destino = _arn_da_fila(cliente, config.fila_url)
+    handle = FilaSQS(config.fila_url, cliente).mover_falhas(origem, destino)
+    typer.echo(f"reprocessar-falhas: movendo da fila de falhas para a principal, tarefa {handle}")
 
 
 @app.command()
@@ -322,7 +322,7 @@ def auditar(
     ] = None,
     config: OpcaoConfig = ARQUIVO_CONFIG,
 ) -> None:
-    """Confere a cobertura do PNCP e o último retrato de cada fonte (falha ou mais de 36 h)."""
+    """Confere a cobertura do PNCP, o último retrato de cada fonte e o que está parado na fila."""
     if endpoint not in ("publicacao", "atualizacao"):
         typer.echo(f"endpoint inválido: {endpoint!r}; use publicacao ou atualizacao", err=True)
         raise typer.Exit(code=2)
@@ -337,6 +337,9 @@ def auditar(
     with _criar_sessao() as sessao:
         auditoria = auditar_cobertura(sessao, endpoint, inicio, fim, criterios.modalidades)
         retratos = [(f.nome, ultimo_retrato(sessao, f.nome)) for f in fontes_retrato().values()]
+        pendentes, mais_velha = pendencias_outbox(sessao)
+        paradas = paginas_publicadas_sem_processar(sessao, agora - ATRASO_MAXIMO_FILA)
+        sem_processar = retratos_sem_processar(sessao)
     typer.echo(f"esperadas: {auditoria.esperadas}")
     typer.echo(f"concluidas: {auditoria.concluidas}")
     typer.echo(f"faltando: {len(auditoria.faltando)}")
@@ -362,7 +365,15 @@ def auditar(
             linha += " (mais de 36 h)"
             retratos_ruins += 1
         typer.echo(linha)
-    if auditoria.faltando or auditoria.falhas or retratos_ruins:
+    linha = f"outbox pendente: {pendentes}"
+    if mais_velha is not None:
+        linha += f" (a mais velha de {mais_velha.astimezone(FUSO):%Y-%m-%d %H:%M})"
+    typer.echo(linha)
+    typer.echo(f"páginas publicadas sem processar há mais de 1 h: {paradas}")
+    if retratos or sem_processar:  # sem fontes de retrato, a saída do PNCP não muda
+        typer.echo(f"retratos concluídos sem processar: {sem_processar}")
+    fila_parada = pendentes or paradas or sem_processar
+    if auditoria.faltando or auditoria.falhas or retratos_ruins or fila_parada:
         raise typer.Exit(code=1)
 
 

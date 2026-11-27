@@ -10,6 +10,7 @@ from radar.coleta.janelas import (
     ler_pagina_para_processar,
     ler_paginas_nao_processadas,
     marcar_processada,
+    paginas_publicadas_sem_processar,
     planejar_janelas,
     ultima_atualizacao,
 )
@@ -30,6 +31,7 @@ from radar.coleta.retratos import (
     marcar_retrato_falha,
     marcar_retrato_processado,
     paginas_do_retrato,
+    retratos_sem_processar,
     trava_fonte,
     ultimo_retrato,
 )
@@ -64,7 +66,9 @@ __all__ = [
     "marcar_retrato_falha",
     "marcar_retrato_processado",
     "paginas_do_retrato",
+    "paginas_publicadas_sem_processar",
     "planejar_janelas",
+    "retratos_sem_processar",
     "trava_fonte",
     "ultima_atualizacao",
     "ultimo_retrato",

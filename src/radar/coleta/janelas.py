@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from radar.coleta.modelos import ColetaJanela, PaginaBruta
 from radar.coleta.pncp import ClientePNCP, ErroPNCP
-from radar.comum import enfileirar
+from radar.comum import Outbox, enfileirar
 
 logger = logging.getLogger(__name__)
 
@@ -185,6 +185,28 @@ def ler_pagina_para_processar(sessao: Session, pagina_id: int) -> PaginaPNCP | N
     processada_em, conteudo = linha
     return PaginaPNCP(
         processada=processada_em is not None, registros=(conteudo or {}).get("data") or []
+    )
+
+
+def paginas_publicadas_sem_processar(sessao: Session, publicadas_antes_de: datetime) -> int:
+    """Páginas do PNCP cuja mensagem saiu antes do corte e que ainda não foram processadas.
+
+    Mensagem publicada e página parada é o consumidor que não está dando conta (ou a fila de
+    falhas acumulando).
+    """
+    pagina_id = Outbox.carga["pagina_id"].as_integer()
+    return int(
+        sessao.scalar(
+            select(func.count(func.distinct(PaginaBruta.id)))
+            .join(Outbox, pagina_id == PaginaBruta.id)
+            .where(
+                Outbox.tipo == "pagina_coletada",
+                Outbox.publicada_em < publicadas_antes_de,
+                PaginaBruta.processada_em.is_(None),
+                PaginaBruta.janela_id.is_not(None),
+            )
+        )
+        or 0
     )
 
 

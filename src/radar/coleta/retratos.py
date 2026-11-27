@@ -397,6 +397,18 @@ def marcar_retrato_processado(sessao: Session, retrato_id: int, quando: datetime
     )
 
 
+def retratos_sem_processar(sessao: Session) -> int:
+    """Retratos concluídos que o consumidor ainda não gravou (sem `processado_em`)."""
+    return int(
+        sessao.scalar(
+            select(func.count())
+            .select_from(ColetaRetrato)
+            .where(ColetaRetrato.status == "concluido", ColetaRetrato.processado_em.is_(None))
+        )
+        or 0
+    )
+
+
 def marcar_retrato_falha(sessao: Session, retrato_id: int, erro: str) -> None:
     """Rebaixa um retrato para `falha` (o registro dos editais falhou depois). Com commit."""
     sessao.execute(
