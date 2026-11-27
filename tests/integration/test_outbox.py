@@ -195,3 +195,27 @@ def test_enfileirar_sem_span_grava_nulo(sessao: Session, spans: InMemorySpanExpo
 
 def traceparent_de(contexto: SpanContext) -> str:
     return f"00-{contexto.trace_id:032x}-{contexto.span_id:016x}-01"
+
+
+def test_migracao_0010_cria_e_remove_tabelas_do_historico(
+    banco_migracao: tuple[AlembicConfig, Engine],
+) -> None:
+    config, alvo = banco_migracao
+    tabelas = ("historico_carga", "resultado_item", "resultado_busca")
+    indices = ("ix_edital_orgao_cnpj", "ix_resultado_busca_situacao")
+
+    def existentes() -> set[str]:
+        with alvo.connect() as conexao:
+            nomes = conexao.scalars(
+                text("SELECT tablename FROM pg_tables WHERE schemaname = current_schema()")
+            ).all()
+            idx = conexao.scalars(
+                text("SELECT indexname FROM pg_indexes WHERE schemaname = current_schema()")
+            ).all()
+        return {n for n in nomes if n in tabelas} | {i for i in idx if i in indices}
+
+    command.upgrade(config, "head")
+    assert existentes() == {*tabelas, *indices}
+
+    command.downgrade(config, "0009")
+    assert existentes() == set()

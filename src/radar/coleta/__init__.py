@@ -26,6 +26,7 @@ from radar.coleta.janelas import (
     planejar_janelas,
     ultima_atualizacao,
 )
+from radar.coleta.modelos import HistoricoCarga
 from radar.coleta.pncp import ClientePNCP, ErroPNCP, criar_http
 from radar.coleta.retratos import (
     ClienteEducado,
@@ -63,6 +64,7 @@ __all__ = [
     "FonteCompesa",
     "FonteRetrato",
     "FonteSanepar",
+    "HistoricoCarga",
     "InfoRetrato",
     "JanelaParada",
     "PaginaColetada",
