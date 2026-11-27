@@ -1,4 +1,5 @@
 import logging
+import time
 from collections.abc import Iterator, Sequence
 from typing import Any
 
@@ -217,3 +218,68 @@ def test_importar_telemetria_nao_importa_o_sdk() -> None:
         [sys.executable, "-c", codigo], capture_output=True, text=True, check=True
     ).stdout
     assert saida.strip() == "False"
+
+
+class _ExportadorLento(SpanExporter):
+    """Exporta em 3 s e ignora o timeout (como o force_flush do SDK 1.45)."""
+
+    def export(self, spans: Sequence[ReadableSpan]) -> SpanExportResult:
+        time.sleep(3)
+        return SpanExportResult.SUCCESS
+
+    def force_flush(self, timeout_millis: int = 30000) -> bool:
+        time.sleep(3)
+        return True
+
+
+def test_descarregar_tem_teto_mesmo_com_exportador_lento(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    provedor = criar_provedor("radar-teste", 1.0, "us-east-2", _ExportadorLento())
+    t.usar_provedor(provedor)
+    with t.tracer().start_as_current_span("x"):
+        pass
+    inicio = time.monotonic()
+    with caplog.at_level(logging.WARNING):
+        t.descarregar(0.5)
+    assert time.monotonic() - inicio < 1.0
+    assert any(getattr(r, "motivo", None) == "timeout" for r in caplog.records)
+
+
+def test_encerrar_descarrega_antes_de_soltar_o_provedor(monkeypatch: pytest.MonkeyPatch) -> None:
+    vistos: list[object] = []
+    provedor = TracerProvider(shutdown_on_exit=False)
+
+    def flush(timeout_millis: int = 30000) -> bool:
+        vistos.append(t._provedor)
+        return True
+
+    monkeypatch.setattr(provedor, "force_flush", flush)
+    t.usar_provedor(provedor)
+    t.encerrar(0.5)
+    assert vistos == [provedor]
+    assert t._provedor is None
+
+
+def test_credencial_ausente_nao_fica_em_cache(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    import botocore.session
+
+    from radar.comum import telemetria_sdk
+
+    respostas: list[Credentials | None] = [None, None, Credentials("AKID", "segredo")]
+
+    class Sessao:
+        def get_credentials(self) -> Credentials | None:
+            return respostas.pop(0)
+
+    monkeypatch.setattr(botocore.session, "get_session", lambda: Sessao())
+    obter = telemetria_sdk._credenciais_padrao()
+    with caplog.at_level(logging.WARNING):
+        assert obter() is None
+        assert obter() is None
+        primeira = obter()
+        assert primeira is not None and obter() is primeira
+    avisos = [r for r in caplog.records if getattr(r, "etapa", None) == "credenciais"]
+    assert len(avisos) == 1

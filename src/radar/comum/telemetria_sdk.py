@@ -6,6 +6,7 @@ importar um handler não paga o SDK, o `requests` nem o `protobuf`.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Sequence
 from typing import Any
 
@@ -26,6 +27,8 @@ from opentelemetry.trace.span import TraceState
 from opentelemetry.util.types import Attributes
 
 from radar import __version__
+
+logger = logging.getLogger("radar.telemetria")
 
 # `botocore.credentials.Credentials` (o botocore não tem tipos): congela com
 # `get_frozen_credentials()`.
@@ -78,11 +81,20 @@ def _credenciais_padrao() -> Callable[[], Credentials | None]:
     import botocore.session  # type: ignore[import-untyped]
 
     sessao = botocore.session.get_session()
-    cache: list[Credentials | None] = []
+    cache: list[Credentials] = []
+    avisou = False
 
     def obter() -> Credentials | None:
+        # Ausência não vai para o cache: a próxima assinatura tenta de novo (avisa uma vez).
+        nonlocal avisou
         if not cache:
-            cache.append(sessao.get_credentials())
+            credenciais = sessao.get_credentials()
+            if credenciais is None:
+                if not avisou:
+                    avisou = True
+                    logger.warning("telemetria_erro", extra={"etapa": "credenciais"})
+                return None
+            cache.append(credenciais)
         return cache[0]
 
     return obter

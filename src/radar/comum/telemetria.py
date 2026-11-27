@@ -75,37 +75,50 @@ def configurar_telemetria(
             logger.warning("telemetria_erro", extra={"etapa": "configurar"}, exc_info=True)
 
 
+def _com_teto(alvo: Callable[[], object], timeout_s: float, etapa: str) -> None:
+    """Roda `alvo` numa thread daemon e espera no máximo `timeout_s`. Nunca levanta.
+
+    O `force_flush` do SDK (1.45) não respeita o timeout que recebe: um exportador lento
+    seguraria o handler ou o fim do processo. A thread fica para trás se estourar.
+    """
+    resultado: list[object] = []
+
+    def rodar() -> None:
+        try:
+            resultado.append(alvo())
+        except Exception:
+            logger.warning("telemetria_erro", extra={"etapa": etapa}, exc_info=True)
+            resultado.append(True)
+
+    linha = threading.Thread(target=rodar, name=f"radar-telemetria-{etapa}", daemon=True)
+    linha.start()
+    linha.join(timeout_s)
+    if linha.is_alive() or resultado == [False]:
+        logger.warning("telemetria_erro", extra={"etapa": etapa, "motivo": "timeout"})
+
+
+def _descarregar_provedor(provedor: TracerProvider, timeout_s: float) -> None:
+    _com_teto(lambda: provedor.force_flush(int(timeout_s * 1000)), timeout_s, "descarregar")
+
+
 def descarregar(timeout_s: float = 2.0) -> None:
     """Exporta os spans pendentes, esperando no máximo `timeout_s`. Nunca levanta."""
     provedor = _provedor
-    if provedor is None:
-        return
-    try:
-        if not provedor.force_flush(int(timeout_s * 1000)):
-            logger.warning("telemetria_erro", extra={"etapa": "descarregar", "motivo": "timeout"})
-    except Exception:
-        logger.warning("telemetria_erro", extra={"etapa": "descarregar"}, exc_info=True)
+    if provedor is not None:
+        _descarregar_provedor(provedor, timeout_s)
 
 
 def encerrar(timeout_s: float = 5.0) -> None:
-    """Descarrega e encerra o provedor (fim do processo), em no máximo ~`timeout_s`."""
+    """Descarrega e encerra o provedor (fim do processo), em no máximo ~2 × `timeout_s`.
+
+    O flush vem antes de soltar o provedor: spans que terminam durante ele ainda entram.
+    """
     provedor = _provedor
     if provedor is None:
         return
+    _descarregar_provedor(provedor, timeout_s)
     usar_provedor(None)
-    descarregar(timeout_s)
-
-    def _encerrar() -> None:
-        try:
-            provedor.shutdown()
-        except Exception:
-            logger.warning("telemetria_erro", extra={"etapa": "encerrar"}, exc_info=True)
-
-    linha = threading.Thread(target=_encerrar, name="radar-telemetria-encerrar", daemon=True)
-    linha.start()
-    linha.join(timeout_s)
-    if linha.is_alive():
-        logger.warning("telemetria_erro", extra={"etapa": "encerrar", "motivo": "timeout"})
+    _com_teto(provedor.shutdown, timeout_s, "encerrar")
 
 
 # ---------- Propagação (W3C traceparent) ----------
