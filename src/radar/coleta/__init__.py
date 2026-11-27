@@ -1,6 +1,7 @@
 """Módulo coleta."""
 
 from radar.coleta.compesa import FonteCompesa
+from radar.coleta.dae_jundiai import FonteDaeJundiai
 from radar.coleta.fatias import (
     LEASE_S,
     ORCAMENTO_LAMBDA_S,
@@ -79,6 +80,7 @@ __all__ = [
     "NumeroSemBusca",
     "EstadoRetrato",
     "FonteCompesa",
+    "FonteDaeJundiai",
     "FonteRetrato",
     "FonteSanepar",
     "HistoricoCarga",

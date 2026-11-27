@@ -371,7 +371,7 @@ def test_trava_ocupada_adia(sessao: Session) -> None:
 
 
 def test_fontes_retrato() -> None:
-    assert list(fontes_retrato()) == ["sanepar", "compesa"]
+    assert list(fontes_retrato()) == ["sanepar", "compesa", "dae_jundiai"]
 
 
 class SaneparParserQuebrado(SaneparComInvalidos):

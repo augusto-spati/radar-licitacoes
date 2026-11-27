@@ -253,7 +253,7 @@ export interface components {
          * @description Fonte do edital. Vira o enum `Fonte` do OpenAPI (uma união no TypeScript).
          * @enum {string}
          */
-        Fonte: "pncp" | "sanepar" | "compesa";
+        Fonte: "pncp" | "sanepar" | "compesa" | "dae_jundiai";
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */

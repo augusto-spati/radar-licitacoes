@@ -495,7 +495,8 @@
         "enum": [
           "pncp",
           "sanepar",
-          "compesa"
+          "compesa",
+          "dae_jundiai"
         ],
         "title": "Fonte",
         "type": "string"

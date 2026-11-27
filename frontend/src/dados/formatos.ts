@@ -146,6 +146,7 @@ export const NOMES_FONTE: Record<FonteEdital, string> = {
   pncp: 'PNCP',
   sanepar: 'Sanepar',
   compesa: 'Compesa',
+  dae_jundiai: 'DAE Jundiaí',
 };
 
 /** O id da fonte dentro do id público `<fonte>~<id>` (só o primeiro "~" separa). */

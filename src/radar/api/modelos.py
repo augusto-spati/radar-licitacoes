@@ -77,6 +77,7 @@ def link_http(link: str | None) -> str | None:
 _PNCP = re.compile(r"^(\d{14})-\d+-(\d+)/(\d{4})$")
 _SANEPAR = re.compile(r"^OE-(\d+)/(\d{2})$")
 _COMPESA = "https://servicos.compesa.com.br/licitacoes-e-contratos/"
+_DAE_JUNDIAI = "https://compraabertadae.jundiai.sp.gov.br/licitacoes/"
 
 
 def link_reserva(fonte: str, id_na_fonte: str) -> str | None:
@@ -84,7 +85,8 @@ def link_reserva(fonte: str, id_na_fonte: str) -> str | None:
 
     - PNCP: a página do edital, montada do número de controle (`cnpj-1-seq/ano`);
     - Sanepar: a página do detalhe (`OE-345/26` -> `/licitacao/detalhe/345/26`);
-    - Compesa: a página de licitações (o link direto do processo ainda não é conhecido).
+    - Compesa: a página de licitações (o link direto do processo ainda não é conhecido);
+    - DAE Jundiaí: o Compra Aberta (a coleta sempre traz o link do detalhe; isto é só reserva).
     """
     if fonte == Fonte.pncp:
         if m := _PNCP.match(id_na_fonte):
@@ -96,6 +98,8 @@ def link_reserva(fonte: str, id_na_fonte: str) -> str | None:
         return None
     if fonte == Fonte.compesa:
         return _COMPESA
+    if fonte == Fonte.dae_jundiai:
+        return _DAE_JUNDIAI
     return None
 
 

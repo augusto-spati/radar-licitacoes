@@ -450,7 +450,8 @@ def atualizar(
     fontes: Annotated[
         str | None,
         typer.Option(
-            "--fontes", help="Fontes separadas por vírgula, ex.: pncp,sanepar (padrão: todas)."
+            "--fontes",
+            help="Fontes separadas por vírgula, ex.: pncp,sanepar,dae_jundiai (padrão: todas).",
         ),
     ] = None,
 ) -> None:

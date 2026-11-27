@@ -1,0 +1,237 @@
+<!-- amostra reduzida de https://compraeletronica.jundiai.sp.gov.br/dae/aberto/ConsultaLicitacao.aspx (POST btnPesquisar exercício 2025, 2026-11-27; estado do formulário abreviado) -->
+<html><head><meta charset="utf-8"><title>
+
+</title></head><body>
+<form name="form1" method="post" action="./ConsultaLicitacao.aspx" id="form1">
+<input type="hidden" name="__VIEWSTATE" id="__VIEWSTATE" value="viewstate-y2025-p1" />
+<input type="hidden" name="__VIEWSTATEGENERATOR" id="__VIEWSTATEGENERATOR" value="1DFC8244" />
+<input type="hidden" name="__EVENTVALIDATION" id="__EVENTVALIDATION" value="eventvalidation-y2025-p1" />
+<input name="txtObjeto" type="text" id="txtObjeto" class="form-control input-md" />
+<input name="txtNrexer" type="text" value="2025" id="txtNrexer" class="form-control input-md" onKeyPress="javascript:OnlyNumber();" />
+<input name="txtnrlici" type="text" id="txtnrlici" class="form-control input-md" onKeyPress="javascript:OnlyNumber();" />
+<input type="submit" name="btnPesquisar" value="Pesquisar" id="btnPesquisar" class="btn btn-info invoca-loading-botoes" />
+<select name="ddlModalidade" id="ddlModalidade" class="form-control input-md">
+<option selected="selected" value="0">Selecione</option>
+<option value="28">ADES&#195;O ARP                    </option>
+<option value="24">ALIENACAO                     </option>
+<option value="17">CHAMADA P&#218;BLICA               </option>
+<option value="7">CONCORRENCIA                  </option>
+<option value="2">CONVITE                       </option>
+<option value="4">CONVITE-OBRAS                 </option>
+<option value="12">EDITAL DE CONVOCACAO          </option>
+<option value="16">EDITAL DE PR&#201;-QUALIFICA&#199;&#195;O    </option>
+<option value="8">LEILAO                        </option>
+<option value="20">MODO DE DISPUTA ABERTO        </option>
+<option value="21">MODO DE DISPUTA FECHADO       </option>
+<option value="29">PMI                           </option>
+<option value="14">PREG&#195;O ELETR&#212;NICO             </option>
+<option value="15">PREG&#195;O PRESENCIAL             </option>
+<option value="26">RCE                           </option>
+<option value="19">REGIME DIFERENC.CONTRAT. RDC  </option>
+<option value="3">TOMADA DE PRECOS              </option>
+</select>
+<select name="ddlUnidadeCompradora" id="ddlUnidadeCompradora" class="form-control input-md">
+<option selected="selected" value="0">Selecione</option>
+<option value="1">DAE     </option>
+</select>
+<select name="ddlSituacao" id="ddlSituacao" class="form-control input-md">
+<option selected="selected" value="0">TODAS</option>
+<option value="17">ADJUDICADO                    </option>
+<option value="2">AGENDADA                      </option>
+<option value="3">ANALISE                       </option>
+<option value="21">ANULADO/REVOGADO/CANCELADO    </option>
+<option value="4">CANCELADAS                    </option>
+<option value="28">CLASSIFICACAO DE PROPOSTAS    </option>
+<option value="19">EM ABERTURA DE PROPOSTAS      </option>
+<option value="24">EM ADJUDICA&#199;&#195;O                </option>
+<option value="10">EM DISPUTA                    </option>
+<option value="25">EM INTEN&#199;&#195;O DE RECURSO        </option>
+<option value="26">EM JULGAMENTO DE RECURSOS     </option>
+<option value="12">EM NEGOCIA&#199;&#195;O                 </option>
+<option value="20">EM PRAZO DE OBSERVA&#199;&#213;ES       </option>
+<option value="11">EM RECURSO                    </option>
+<option value="5">ENCERRADA                     </option>
+<option value="30">ENVIADA PARA ADJUDICA&#199;&#195;O      </option>
+<option value="29">JULGAMENTO DA INTENCAO DE RECU</option>
+<option value="8">RECEBENDO PROPOSTAS           </option>
+<option value="6">SUSPENSA                      </option>
+</select>
+<div id="UpdatePanel2">
+                        <div>
+		<table class="table table-striped" cellspacing="0" align="Center" border="0" id="gdvCompras" width="100%">
+			<tr>
+				<th scope="col"><a href="javascript:__doPostBack(&#39;gdvCompras&#39;,&#39;Sort$sgcliente&#39;)">Unidade</a></th><th scope="col"><a href="javascript:__doPostBack(&#39;gdvCompras&#39;,&#39;Sort$sgcliente&#39;)">Modalidade</a></th><th scope="col"><a href="javascript:__doPostBack(&#39;gdvCompras&#39;,&#39;Sort$lici&#39;)">Licitação</a></th><th scope="col"><a href="javascript:__doPostBack(&#39;gdvCompras&#39;,&#39;Sort$dslici&#39;)">Objeto</a></th><th scope="col"><a href="javascript:__doPostBack(&#39;gdvCompras&#39;,&#39;Sort$dtini&#39;)">Data/Hora inicial</a></th><th scope="col"><a href="javascript:__doPostBack(&#39;gdvCompras&#39;,&#39;Sort$dtfim&#39;)">Data/Hora Final</a></th><th scope="col">Situação</th>
+			</tr><tr>
+				<td>
+                                        <span id="gdvCompras_ctl02_lblsgcliente">DAE</span>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl02_lbldsmodal">ALIENACAO</span>
+                                    </td><td>
+                                        <a id="gdvCompras_ctl02_lnkMural" href="CompraNEWeb.aspx?cdcompra=804">2025/00001</a>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl02_lblObjeto">Alienação de 06 veículos leves da frota da DAE S/A</span>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl02_lblDTInic">17/01/2025 00:00:00</span>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl02_lblDTFim"></span>
+                                    </td><td>
+                                        <img id="gdvCompras_ctl02_imgSituacao" src="../Imagens/Icones/cp_negociacao.gif" border="0" />
+                                    </td>
+			</tr><tr>
+				<td>
+                                        <span id="gdvCompras_ctl03_lblsgcliente">DAE</span>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl03_lbldsmodal">CHAMADA PÚBLICA</span>
+                                    </td><td>
+                                        <a id="gdvCompras_ctl03_lnkMural" href="CompraNEWeb.aspx?cdcompra=821">2025/00003</a>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl03_lblObjeto">CONTRAT. DE EMPRESA P. FORNECIMENTO DE VALE ALIMENTACAO</span>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl03_lblDTInic">31/10/2025 00:00:00</span>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl03_lblDTFim"></span>
+                                    </td><td>
+                                        <img id="gdvCompras_ctl03_imgSituacao" src="../Imagens/Icones/cp_configuracao.gif" border="0" />
+                                    </td>
+			</tr><tr>
+				<td>
+                                        <span id="gdvCompras_ctl04_lblsgcliente">DAE</span>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl04_lbldsmodal">CHAMADA PÚBLICA</span>
+                                    </td><td>
+                                        <a id="gdvCompras_ctl04_lnkMural" href="CompraNEWeb.aspx?cdcompra=817">2025/00002</a>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl04_lblObjeto">CREDENCIAMENTO DE EMPRESAS PARA PROMOCAO DE LEILOES</span>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl04_lblDTInic">01/10/2025 00:00:00</span>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl04_lblDTFim"></span>
+                                    </td><td>
+                                        <img id="gdvCompras_ctl04_imgSituacao" src="../Imagens/Icones/cp_configuracao.gif" border="0" />
+                                    </td>
+			</tr><tr>
+				<td>
+                                        <span id="gdvCompras_ctl05_lblsgcliente">DAE</span>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl05_lbldsmodal">CHAMADA PÚBLICA</span>
+                                    </td><td>
+                                        <a id="gdvCompras_ctl05_lnkMural" href="CompraNEWeb.aspx?cdcompra=818">2025/00001</a>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl05_lblObjeto">CONTRAT. DE EMPRESA P. FORNECIMENTO DE VALE ALIMENTACAO</span>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl05_lblDTInic">30/09/2025 00:00:00</span>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl05_lblDTFim"></span>
+                                    </td><td>
+                                        <img id="gdvCompras_ctl05_imgSituacao" src="../Imagens/Icones/cp_cancelada.gif" border="0" />
+                                    </td>
+			</tr><tr>
+				<td>
+                                        <span id="gdvCompras_ctl06_lblsgcliente">DAE</span>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl06_lbldsmodal">MODO DE DISPUTA ABERTO</span>
+                                    </td><td>
+                                        <a id="gdvCompras_ctl06_lnkMural" href="CompraNEWeb.aspx?cdcompra=827">2025/00009</a>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl06_lblObjeto">OUTORGA DE PERMISSAO DE USO DAS DEPEND DESTINADAS A ALIMENTA</span>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl06_lblDTInic">23/12/2025 00:00:00</span>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl06_lblDTFim"></span>
+                                    </td><td>
+                                        <img id="gdvCompras_ctl06_imgSituacao" src="../Imagens/Icones/cp_configuracao.gif" border="0" />
+                                    </td>
+			</tr><tr>
+				<td>
+                                        <span id="gdvCompras_ctl07_lblsgcliente">DAE</span>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl07_lbldsmodal">MODO DE DISPUTA ABERTO</span>
+                                    </td><td>
+                                        <a id="gdvCompras_ctl07_lnkMural" href="CompraNEWeb.aspx?cdcompra=824">2025/00008</a>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl07_lblObjeto">EXECUCAO E MANUTENCAO DE RESTAURACAO ECOLOGICA</span>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl07_lblDTInic">15/12/2025 00:00:00</span>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl07_lblDTFim"></span>
+                                    </td><td>
+                                        <img id="gdvCompras_ctl07_imgSituacao" src="../Imagens/Icones/cp_configuracao.gif" border="0" />
+                                    </td>
+			</tr><tr>
+				<td>
+                                        <span id="gdvCompras_ctl08_lblsgcliente">DAE</span>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl08_lbldsmodal">MODO DE DISPUTA ABERTO</span>
+                                    </td><td>
+                                        <a id="gdvCompras_ctl08_lnkMural" href="CompraNEWeb.aspx?cdcompra=822">2025/00007</a>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl08_lblObjeto">FORNECIMENTO DE REFEICOES PARA FUNCIONARIOS DA DAE</span>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl08_lblDTInic">07/11/2025 00:00:00</span>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl08_lblDTFim"></span>
+                                    </td><td>
+                                        <img id="gdvCompras_ctl08_imgSituacao" src="../Imagens/Icones/cp_configuracao.gif" border="0" />
+                                    </td>
+			</tr><tr>
+				<td>
+                                        <span id="gdvCompras_ctl09_lblsgcliente">DAE</span>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl09_lbldsmodal">MODO DE DISPUTA ABERTO</span>
+                                    </td><td>
+                                        <a id="gdvCompras_ctl09_lnkMural" href="CompraNEWeb.aspx?cdcompra=819">2025/00006</a>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl09_lblObjeto">LOCACAO DE CAMINHAO LIMPA FOSSA</span>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl09_lblDTInic">07/10/2025 00:00:00</span>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl09_lblDTFim"></span>
+                                    </td><td>
+                                        <img id="gdvCompras_ctl09_imgSituacao" src="../Imagens/Icones/cp_configuracao.gif" border="0" />
+                                    </td>
+			</tr><tr>
+				<td>
+                                        <span id="gdvCompras_ctl10_lblsgcliente">DAE</span>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl10_lbldsmodal">MODO DE DISPUTA ABERTO</span>
+                                    </td><td>
+                                        <a id="gdvCompras_ctl10_lnkMural" href="CompraNEWeb.aspx?cdcompra=815">2025/00005</a>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl10_lblObjeto">pesquisa de vazamentos não visíveis em redes e ramais do sistema de abastecimento de água da DAE S/A e execução de serviço de reabilitação de infraestrutura de redes e ramais de distribuição de água com reparo de vazamentos não visíveis, no município</span>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl10_lblDTInic">13/08/2025 00:00:00</span>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl10_lblDTFim"></span>
+                                    </td><td>
+                                        <img id="gdvCompras_ctl10_imgSituacao" src="../Imagens/Icones/cp_configuracao.gif" border="0" />
+                                    </td>
+			</tr><tr>
+				<td>
+                                        <span id="gdvCompras_ctl11_lblsgcliente">DAE</span>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl11_lbldsmodal">MODO DE DISPUTA ABERTO</span>
+                                    </td><td>
+                                        <a id="gdvCompras_ctl11_lnkMural" href="CompraNEWeb.aspx?cdcompra=814">2025/00004</a>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl11_lblObjeto">Levantamento topográfico e cadastral de redes coletoras, interceptores de esgotamento sanitário e levantamento planialtimétrico cadastral de áreas para implantação de barramentos e reservação de água</span>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl11_lblDTInic">24/07/2025 00:00:00</span>
+                                    </td><td>
+                                        <span id="gdvCompras_ctl11_lblDTFim"></span>
+                                    </td><td>
+                                        <img id="gdvCompras_ctl11_imgSituacao" src="../Imagens/Icones/cp_configuracao.gif" border="0" />
+                                    </td>
+			</tr><tr class="pagination-ys">
+				<td colspan="7"><table border="0">
+					<tr>
+						<td><span>1</span></td><td><a href="javascript:__doPostBack(&#39;gdvCompras&#39;,&#39;Page$2&#39;)">2</a></td><td><a href="javascript:__doPostBack(&#39;gdvCompras&#39;,&#39;Page$3&#39;)">3</a></td><td><a href="javascript:__doPostBack(&#39;gdvCompras&#39;,&#39;Page$4&#39;)">4</a></td><td><a href="javascript:__doPostBack(&#39;gdvCompras&#39;,&#39;Page$5&#39;)">5</a></td><td><a href="javascript:__doPostBack(&#39;gdvCompras&#39;,&#39;Page$6&#39;)">6</a></td><td><a href="javascript:__doPostBack(&#39;gdvCompras&#39;,&#39;Page$7&#39;)">7</a></td><td><a href="javascript:__doPostBack(&#39;gdvCompras&#39;,&#39;Page$8&#39;)">8</a></td><td><a href="javascript:__doPostBack(&#39;gdvCompras&#39;,&#39;Page$9&#39;)">9</a></td><td><a href="javascript:__doPostBack(&#39;gdvCompras&#39;,&#39;Page$10&#39;)">10</a></td>
+					</tr>
+				</table></td>
+			</tr>
+		</table>
+	</div>
+</div>
+            </div>
+        </div>
+        
+</form></body></html>

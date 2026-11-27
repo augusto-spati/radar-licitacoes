@@ -161,7 +161,7 @@ resource "aws_ecs_task_definition" "coletor" {
     # ENTRYPOINT ["radar"] vem da imagem; o deploy registra revisoes a partir da ultima,
     # entao este command (so os retratos) e preservado. O schedule repete o mesmo command
     # no override.
-    command     = ["atualizar", "--fontes", "sanepar,compesa"]
+    command     = ["atualizar", "--fontes", "sanepar,compesa,dae_jundiai"]
     stopTimeout = 30
 
     environment = [
@@ -269,11 +269,11 @@ resource "aws_scheduler_schedule" "atualizar_diario" {
     role_arn = aws_iam_role.scheduler_coletor.arn
 
     # So retratos: o PNCP vai pelo planejador e pelas Lambdas coletoras (janelas.tf). A Compesa
-    # voltou com a regra de saida da porta 8743 (coletor_compesa).
+    # voltou com a regra de saida da porta 8743 (coletor_compesa). A DAE Jundiai usa HTTPS 443.
     input = jsonencode({
       containerOverrides = [{
         name    = "coletor"
-        command = ["atualizar", "--fontes", "sanepar,compesa"]
+        command = ["atualizar", "--fontes", "sanepar,compesa,dae_jundiai"]
       }]
     })
 
