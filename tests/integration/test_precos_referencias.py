@@ -75,7 +75,7 @@ def test_mediana_com_numeros_conhecidos_e_suspeito_fora(sessao: Session) -> None
         _item(sessao, "ligacao_agua", preco, contratado=contratado, data_base=date(2025, 3, 1))
     _item(sessao, "ligacao_agua", "10000", contratado="5", suspeito=True)
     # Planilha entra no estimado, nunca no contratado.
-    _item(sessao, "ligacao_agua", "600", origem="planilha_edital", contratado="999")
+    _item(sessao, "ligacao_agua", "600", origem="pncp_planilha", contratado="999")
 
     ref = _so(referencias(sessao, ["redes"], "PE"), "ligacao_agua")
 

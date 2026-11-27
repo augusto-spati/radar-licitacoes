@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from radar.precos import PrecoItem
+from radar.precos import PlanilhaEdital, PrecoItem
 
 
 def _item(
@@ -47,7 +47,7 @@ def test_grava_com_padroes(sessao: Session) -> None:
 
 def test_chave_unica_por_origem(sessao: Session) -> None:
     sessao.add(_item())
-    sessao.add(_item(origem="planilha_edital"))
+    sessao.add(_item(origem="pncp_planilha"))
     sessao.flush()
 
     sessao.add(_item())
@@ -88,5 +88,40 @@ def test_faixa_desconhecida_viola_check(sessao: Session) -> None:
     item = _item(escopo=None)
     item.faixa = "ate_2m"
     sessao.add(item)
+    with pytest.raises(IntegrityError):
+        sessao.flush()
+
+
+def test_origem_reservada_antiga_viola_check(sessao: Session) -> None:
+    """`planilha_edital` era o nome reservado na 7b.1; a 7b.2 grava `pncp_planilha`."""
+    sessao.add(_item(origem="planilha_edital"))
+    with pytest.raises(IntegrityError):
+        sessao.flush()
+
+
+def test_observacao_adutora(sessao: Session) -> None:
+    item = _item(origem="pncp_planilha")
+    item.observacao = "adutora"
+    sessao.add(item)
+    sessao.flush()
+
+    assert sessao.query(PrecoItem).one().observacao == "adutora"
+
+
+def test_planilha_edital_padroes_e_status(sessao: Session) -> None:
+    sessao.add(PlanilhaEdital(id_pncp="1-1-000001/2026", status="sem_planilha"))
+    sessao.flush()
+    linha = sessao.query(PlanilhaEdital).one()
+    sessao.refresh(linha)
+    assert (linha.linhas_lidas, linha.linhas_gravadas, linha.custo_usd) == (0, 0, Decimal(0))
+    assert linha.processada_em is not None
+
+    sessao.add(PlanilhaEdital(id_pncp="1-1-000002/2026", status="lida"))
+    with pytest.raises(IntegrityError):
+        sessao.flush()
+
+
+def test_planilha_edital_metodo_desconhecido_viola_check(sessao: Session) -> None:
+    sessao.add(PlanilhaEdital(id_pncp="1-1-000003/2026", status="extraida", metodo="ocr"))
     with pytest.raises(IntegrityError):
         sessao.flush()

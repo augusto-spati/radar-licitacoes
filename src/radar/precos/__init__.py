@@ -8,7 +8,15 @@ from radar.precos.consulta import (
     Referencia,
     referencias,
 )
-from radar.precos.modelos import ORIGENS, Origem, PrecoItem, PrecoItemNovo
+from radar.precos.modelos import (
+    ORIGENS,
+    STATUS_PLANILHA,
+    Origem,
+    PlanilhaEdital,
+    PrecoItem,
+    PrecoItemNovo,
+    StatusPlanilha,
+)
 from radar.precos.servicos import (
     ESCOPOS,
     FAIXAS,
@@ -62,7 +70,10 @@ __all__ = [
     "Faixa",
     "Material",
     "Origem",
+    "PlanilhaEdital",
     "PrecoItem",
+    "STATUS_PLANILHA",
+    "StatusPlanilha",
     "PrecoItemNovo",
     "Servico",
     "apagar_processos",

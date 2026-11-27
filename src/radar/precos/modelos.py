@@ -23,7 +23,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 from radar.comum import Base
 from radar.precos.servicos import ESCOPOS, FAIXAS
 
-Origem = Literal["tce_pe", "planilha_edital"]
+# `pncp_planilha`: preço estimado da planilha orçamentária de um edital do PNCP (7b.2).
+Origem = Literal["tce_pe", "pncp_planilha"]
 ORIGENS: tuple[str, ...] = get_args(Origem)
 
 
@@ -50,6 +51,7 @@ class PrecoItem(Base):
             name="ck_preco_item_faixa",
         ),
         Index("ix_preco_item_servico_uf", "servico", "uf"),
+        Index("ix_preco_item_origem_processo", "origem", "processo"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -87,6 +89,8 @@ class PrecoItem(Base):
     escopo: Mapped[str | None] = mapped_column(Text)
     # Só em escavação: faixa de profundidade (ate_1_5m, 1_5_a_3m, 3_a_6m).
     faixa: Mapped[str | None] = mapped_column(Text)
+    # Marca que não muda a chave de comparação: "adutora" na rede de água de adutora (7b.2).
+    observacao: Mapped[str | None] = mapped_column(Text)
     unidade_canonica: Mapped[str] = mapped_column(Text)
     fator_unidade: Mapped[Decimal] = mapped_column(Numeric)
     suspeito: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
@@ -128,3 +132,51 @@ class PrecoItemNovo:
     fator_unidade: Decimal
     suspeito: bool
     valor_homologado: Decimal | None = None
+    observacao: str | None = None
+
+
+StatusPlanilha = Literal["extraida", "sem_planilha", "pulado_teto", "falhou", "republicada"]
+STATUS_PLANILHA: tuple[str, ...] = get_args(StatusPlanilha)
+MetodoPlanilha = Literal["deterministico", "ia"]
+METODOS_PLANILHA: tuple[str, ...] = get_args(MetodoPlanilha)
+
+
+class PlanilhaEdital(Base):
+    """Estado da planilha orçamentária de um edital do PNCP (7b.2), um por edital.
+
+    `extraida`: linhas lidas (determinístico ou IA) e as com serviço gravadas em `preco_item`;
+    `sem_planilha`: nada achado (não reprocessa); `pulado_teto`: a IA passaria do teto (tenta
+    de novo no mês seguinte); `falhou`: erro (tenta de novo depois de uma semana);
+    `republicada`: a mesma planilha saiu num edital mais novo (`republicada_em`), onde as
+    linhas ficaram.
+    """
+
+    __tablename__ = "planilha_edital"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN (" + ", ".join(f"'{s}'" for s in STATUS_PLANILHA) + ")",
+            name="ck_planilha_edital_status",
+        ),
+        CheckConstraint(
+            "metodo IN (" + ", ".join(f"'{m}'" for m in METODOS_PLANILHA) + ")",
+            name="ck_planilha_edital_metodo",
+        ),
+        Index("ix_planilha_edital_sha256", "sha256"),
+    )
+
+    # `id_na_fonte` do edital do PNCP ("<cnpj>-1-<sequencial>/<ano>").
+    id_pncp: Mapped[str] = mapped_column(Text, primary_key=True)
+    status: Mapped[str] = mapped_column(Text)
+    metodo: Mapped[str | None] = mapped_column(Text)
+    sha256: Mapped[str | None] = mapped_column(Text)
+    # Nome do arquivo (ou "edital: <nome>, p. 39-42") de onde as linhas vieram.
+    documento: Mapped[str | None] = mapped_column(Text)
+    orgao_cnpj: Mapped[str | None] = mapped_column(Text)
+    linhas_lidas: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    linhas_gravadas: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    custo_usd: Mapped[Decimal] = mapped_column(Numeric, default=Decimal(0), server_default="0")
+    republicada_em: Mapped[str | None] = mapped_column(Text)
+    motivo: Mapped[str | None] = mapped_column(Text)
+    processada_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
