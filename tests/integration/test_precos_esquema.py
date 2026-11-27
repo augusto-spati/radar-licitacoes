@@ -1,4 +1,4 @@
-"""Tabela `preco_item`: chave por origem e origem restrita."""
+"""Tabela `preco_item`: chave por origem, origem e escopo restritos."""
 
 from decimal import Decimal
 
@@ -9,7 +9,9 @@ from sqlalchemy.orm import Session
 from radar.precos import PrecoItem
 
 
-def _item(origem: str = "tce_pe", chave: str = "compesa~1/2026~7") -> PrecoItem:
+def _item(
+    origem: str = "tce_pe", chave: str = "compesa~1/2026~7", escopo: str | None = "material"
+) -> PrecoItem:
     return PrecoItem(
         origem=origem,
         chave_origem=chave,
@@ -23,7 +25,7 @@ def _item(origem: str = "tce_pe", chave: str = "compesa~1/2026~7") -> PrecoItem:
         servico="rede_agua",
         material="pvc",
         dn=150,
-        com_fornecimento=True,
+        escopo=escopo,
         unidade_canonica="m",
         fator_unidade=Decimal("1"),
     )
@@ -56,3 +58,16 @@ def test_origem_desconhecida_viola_check(sessao: Session) -> None:
     sessao.add(_item(origem="pncp"))
     with pytest.raises(IntegrityError):
         sessao.flush()
+
+
+def test_escopo_desconhecido_viola_check(sessao: Session) -> None:
+    sessao.add(_item(escopo="com_fornecimento"))
+    with pytest.raises(IntegrityError):
+        sessao.flush()
+
+
+def test_escopo_nulo_fora_de_rede(sessao: Session) -> None:
+    sessao.add(_item(escopo=None))
+    sessao.flush()
+
+    assert sessao.query(PrecoItem).one().escopo is None

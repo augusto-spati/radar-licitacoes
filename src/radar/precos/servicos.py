@@ -12,11 +12,15 @@ from dataclasses import dataclass
 from decimal import Decimal
 from functools import cache
 from pathlib import Path
+from typing import Literal, get_args
 
 from radar.comum import RAIZ_REPOSITORIO
 
 CAMINHO_PADRAO = RAIZ_REPOSITORIO / "config" / "servicos.toml"
 CURINGA = "�"
+
+Escopo = Literal["material", "assentamento", "completo"]
+ESCOPOS: tuple[str, ...] = get_args(Escopo)
 
 _ESPACOS = re.compile(r"\s+")
 
@@ -52,7 +56,8 @@ class Classificacao:
     servico: str
     material: str | None
     dn: int | None
-    com_fornecimento: bool | None
+    # Só em rede: "material" (só o tubo), "assentamento" (só o serviço) ou "completo" (os dois).
+    escopo: Escopo | None
     unidade_canonica: str
     # Quantidade na unidade canônica = quantidade × fator; preço canônico = preço ÷ fator.
     fator: Decimal
@@ -114,22 +119,39 @@ def extrair_dn(texto: str) -> int | None:
     return achados.pop() if len(achados) == 1 else None
 
 
-_SEM_FORNECIMENTO = ("sem fornecimento", "exclusive fornecimento", "exceto fornecimento")
-_FORNECIMENTO = ("fornecimento", "aquisicao", "inclusive tubo", "inclusive o tubo")
-_SO_SERVICO = ("assentamento", "assentar", "montagem", "instalacao")
+_SEM_FORNECIMENTO = (
+    "sem fornecimento",
+    "exclusive fornecimento",
+    "exceto fornecimento",
+    "nao inclui fornecimento",
+)
+_FORNECIMENTO = ("fornecimento", "aquisicao")
+_INCLUSIVE = ("inclusive fornecimento", "inclusive o fornecimento", "inclusive tubo")
+_SERVICO = (
+    "assentamento",
+    "assentar",
+    "montagem",
+    "instalacao",
+    "execucao",
+    "implantacao",
+    "lancamento",
+)
 
 
-def com_fornecimento(texto: str) -> bool:
-    """Item de rede inclui o tubo? Só "assentamento" (ou "sem fornecimento") é serviço sem tubo.
+def escopo_de_rede(texto: str) -> Escopo:
+    """O que o item de rede cobre: só o tubo, só o assentamento ou os dois.
 
-    "Fornecimento e assentamento" e o tubo sozinho ("TUBO PVC ... DN 150") contam como com
-    fornecimento.
+    "TUBO PVC ... DN 150" e "FORNECIMENTO DE TUBO ..." → material; "ASSENTAMENTO DE TUBO ..."
+    (ou com "sem fornecimento") → assentamento; "FORNECIMENTO E ASSENTAMENTO ..." e
+    "EXECUCAO DE REDE ... INCLUSIVE FORNECIMENTO" → completo.
     """
     if _algum(texto, _SEM_FORNECIMENTO):
-        return False
-    if _algum(texto, _FORNECIMENTO):
-        return True
-    return not _algum(texto, _SO_SERVICO)
+        return "assentamento"
+    if _algum(texto, _INCLUSIVE):
+        return "completo"
+    if _algum(texto, _SERVICO):
+        return "completo" if _algum(texto, _FORNECIMENTO) else "assentamento"
+    return "material"
 
 
 def _casa_termos(servico: Servico, texto: str) -> bool:
@@ -154,9 +176,7 @@ def _classificar_em(servico: Servico, texto: str, unidade: str) -> Classificacao
         servico.dn_max is not None and dn > servico.dn_max
     ):
         return None
-    return Classificacao(
-        servico.nome, material, dn, com_fornecimento(texto), servico.unidade, fator
-    )
+    return Classificacao(servico.nome, material, dn, escopo_de_rede(texto), servico.unidade, fator)
 
 
 def _termos(valor: object) -> tuple[str, ...]:

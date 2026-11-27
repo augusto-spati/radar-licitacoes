@@ -7,8 +7,10 @@ import pytest
 
 from radar.precos import (
     Classificacao,
+    Escopo,
     carregar_servicos,
     classificar,
+    escopo_de_rede,
     extrair_dn,
     normalizar_unidade,
     sem_acento,
@@ -84,8 +86,8 @@ def test_extrair_dn(descricao: str, dn: int | None) -> None:
     assert extrair_dn(sem_acento(descricao)) == dn
 
 
-def _rede(servico: str, material: str, dn: int, forn: bool, fator: str = "1") -> Classificacao:
-    return Classificacao(servico, material, dn, forn, "m", Decimal(fator))
+def _rede(servico: str, material: str, dn: int, escopo: Escopo, fator: str = "1") -> Classificacao:
+    return Classificacao(servico, material, dn, escopo, "m", Decimal(fator))
 
 
 @pytest.mark.parametrize(
@@ -94,37 +96,52 @@ def _rede(servico: str, material: str, dn: int, forn: bool, fator: str = "1") ->
         (
             f"TUBO PVC P/ REDE DE {FFFD}GUA DN 150",
             "M",
-            _rede("rede_agua", "pvc", 150, True),
+            _rede("rede_agua", "pvc", 150, "material"),
         ),
         (
             "TUBO PVC P/ REDE DE ÁGUA DN 150",
             "m",
-            _rede("rede_agua", "pvc", 150, True),
+            _rede("rede_agua", "pvc", 150, "material"),
+        ),
+        (
+            "FORNECIMENTO DE TUBO PVC PBA JE P/ REDE DE AGUA DN 100",
+            "M",
+            _rede("rede_agua", "pvc", 100, "material"),
         ),
         (
             "FORNECIMENTO E ASSENTAMENTO DE TUBO PVC DEFOFO JE PARA REDE DE AGUA DN 200",
             "m",
-            _rede("rede_agua", "pvc", 200, True),
+            _rede("rede_agua", "pvc", 200, "completo"),
         ),
         (
             "ASSENTAMENTO DE TUBO DE PVC DEFOFO P/ AGUA, DN 300",
             "M",
-            _rede("rede_agua", "pvc", 300, False),
+            _rede("rede_agua", "pvc", 300, "assentamento"),
         ),
         (
             f"ASSENTAMENTO DE TUBO DE FERRO FUNDIDO P/ REDE DE {FFFD}GUA DN 400",
             "M",
-            _rede("rede_agua", "fofo", 400, False),
+            _rede("rede_agua", "fofo", 400, "assentamento"),
         ),
         (
-            "REDE DE AGUA EM TUBO PEAD PE 100 DN 110",
+            "INSTALACAO DE REDE DE AGUA EM PEAD DN 90",
+            "m",
+            _rede("rede_agua", "pead", 90, "assentamento"),
+        ),
+        (
+            "ASSENTAMENTO DE TUBO PVC P/ REDE DE AGUA DN 150, SEM FORNECIMENTO DO TUBO",
+            "M",
+            _rede("rede_agua", "pvc", 150, "assentamento"),
+        ),
+        (
+            "EXECUCAO DE REDE DE AGUA EM TUBO PEAD PE 100 DN 110, INCLUSIVE FORNECIMENTO",
             "KM",
-            _rede("rede_agua", "pead", 110, True, "1000"),
+            _rede("rede_agua", "pead", 110, "completo", "1000"),
         ),
         (
             "TUBO PVC OCRE JEI P/ REDE COLETORA DE ESGOTO DN 150",
             "M",
-            _rede("rede_esgoto", "pvc", 150, True),
+            _rede("rede_esgoto", "pvc", 150, "material"),
         ),
         (
             "LIGACAO PREDIAL DE AGUA EM PEAD DN 20, INCLUSIVE HIDROMETRO",
@@ -217,3 +234,21 @@ def test_classifica_descricoes_reais(descricao: str, unidade: str, esperado: Cla
 )
 def test_nao_casa(descricao: str, unidade: str) -> None:
     assert classificar(descricao, unidade) is None
+
+
+@pytest.mark.parametrize(
+    ("descricao", "escopo"),
+    [
+        ("TUBO PVC P/ REDE DE AGUA DN 150", "material"),
+        ("FORNECIMENTO DE TUBO PEAD DN 110", "material"),
+        ("AQUISICAO DE TUBO DE FERRO FUNDIDO DN 300", "material"),
+        ("ASSENTAMENTO DE TUBO PVC DN 150", "assentamento"),
+        ("INSTALACAO DE REDE DE AGUA DN 100", "assentamento"),
+        ("FORNECIMENTO E ASSENTAMENTO DE TUBO PVC DN 150", "completo"),
+        ("EXECUCAO DE REDE DE AGUA DN 100 INCLUSIVE FORNECIMENTO", "completo"),
+        ("ASSENTAMENTO DE TUBO PVC DN 150 EXCLUSIVE FORNECIMENTO", "assentamento"),
+        (f"FORNECIMENTO E INSTALA{FFFD}{FFFD}O DE TUBO PVC DN 150", "completo"),
+    ],
+)
+def test_escopo_de_rede(descricao: str, escopo: str) -> None:
+    assert escopo_de_rede(sem_acento(descricao)) == escopo

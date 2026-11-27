@@ -20,6 +20,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from radar.comum import Base
+from radar.precos.servicos import ESCOPOS
 
 Origem = Literal["tce_pe", "planilha_edital"]
 ORIGENS: tuple[str, ...] = get_args(Origem)
@@ -38,6 +39,10 @@ class PrecoItem(Base):
         CheckConstraint(
             "origem IN (" + ", ".join(f"'{o}'" for o in ORIGENS) + ")",
             name="ck_preco_item_origem",
+        ),
+        CheckConstraint(
+            "escopo IN (" + ", ".join(f"'{e}'" for e in ESCOPOS) + ")",
+            name="ck_preco_item_escopo",
         ),
         Index("ix_preco_item_servico_uf", "servico", "uf"),
     )
@@ -64,7 +69,8 @@ class PrecoItem(Base):
     servico: Mapped[str] = mapped_column(Text)
     material: Mapped[str | None] = mapped_column(Text)
     dn: Mapped[int | None] = mapped_column(Integer)
-    com_fornecimento: Mapped[bool | None] = mapped_column(Boolean)
+    # Só em rede: material, assentamento ou completo (ver servicos.escopo_de_rede).
+    escopo: Mapped[str | None] = mapped_column(Text)
     unidade_canonica: Mapped[str] = mapped_column(Text)
     fator_unidade: Mapped[Decimal] = mapped_column(Numeric)
     suspeito: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())

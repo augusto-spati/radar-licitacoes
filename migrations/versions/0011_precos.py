@@ -45,7 +45,7 @@ def upgrade() -> None:
         sa.Column("servico", sa.Text(), nullable=False),
         sa.Column("material", sa.Text(), nullable=True),
         sa.Column("dn", sa.Integer(), nullable=True),
-        sa.Column("com_fornecimento", sa.Boolean(), nullable=True),
+        sa.Column("escopo", sa.Text(), nullable=True),
         sa.Column("unidade_canonica", sa.Text(), nullable=False),
         sa.Column("fator_unidade", sa.Numeric(), nullable=False),
         sa.Column("suspeito", sa.Boolean(), server_default=sa.false(), nullable=False),
@@ -54,6 +54,9 @@ def upgrade() -> None:
         ),
         sa.UniqueConstraint("origem", "chave_origem", name="uq_preco_item_origem"),
         sa.CheckConstraint("origem IN ('tce_pe', 'planilha_edital')", name="ck_preco_item_origem"),
+        sa.CheckConstraint(
+            "escopo IN ('material', 'assentamento', 'completo')", name="ck_preco_item_escopo"
+        ),
     )
     op.create_index("ix_preco_item_servico_uf", "preco_item", ["servico", "uf"])
 
