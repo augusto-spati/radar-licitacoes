@@ -80,6 +80,7 @@ type = "forbidden"
 source_modules = ["radar.api", "radar.cli", "radar.processador"]
 forbidden_modules = [
     "radar.coleta.janelas",
+    "radar.coleta.fatias",
     "radar.coleta.pncp",
     "radar.coleta.sanepar",
     "radar.coleta.compesa",

@@ -1,6 +1,13 @@
 """Módulo coleta."""
 
 from radar.coleta.compesa import FonteCompesa
+from radar.coleta.fatias import (
+    LEASE_S,
+    ORCAMENTO_LAMBDA_S,
+    DesfechoFatia,
+    ResultadoFatia,
+    coletar_fatia,
+)
 from radar.coleta.janelas import (
     Auditoria,
     PaginaPNCP,
@@ -38,9 +45,12 @@ from radar.coleta.retratos import (
 from radar.coleta.sanepar import FonteSanepar
 
 __all__ = [
+    "LEASE_S",
+    "ORCAMENTO_LAMBDA_S",
     "Auditoria",
     "ClienteEducado",
     "ClientePNCP",
+    "DesfechoFatia",
     "ErroFonte",
     "ErroPNCP",
     "EstadoRetrato",
@@ -50,9 +60,11 @@ __all__ = [
     "InfoRetrato",
     "PaginaColetada",
     "PaginaPNCP",
+    "ResultadoFatia",
     "ResumoColeta",
     "ResumoRetrato",
     "auditar",
+    "coletar_fatia",
     "coletar_pendentes",
     "criar_http",
     "criar_http_educado",

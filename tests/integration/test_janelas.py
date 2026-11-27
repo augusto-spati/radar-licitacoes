@@ -1,8 +1,8 @@
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from fakes import VAZIA, Chave, ClienteFalso, como_cliente, pagina
-from sqlalchemy import Engine, func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from radar.coleta import (
@@ -13,7 +13,7 @@ from radar.coleta import (
     marcar_processada,
     planejar_janelas,
 )
-from radar.coleta.janelas import CHAVE_COLETOR, ResumoColeta
+from radar.coleta.janelas import ResumoColeta
 from radar.coleta.modelos import ColetaJanela, PaginaBruta
 from radar.comum import Outbox
 
@@ -279,17 +279,19 @@ def test_excecao_inesperada_marca_so_aquela_janela(sessao: Session) -> None:
     assert (resumo.concluidas, resumo.falhas) == (1, 1)
 
 
-def test_coletor_ja_ativo_noutro_processo_nao_coleta(sessao: Session, engine: Engine) -> None:
-    planejar_janelas(sessao, "publicacao", D1, D1, [6])
+def test_janela_com_lease_vivo_noutro_processo_nao_coleta(sessao: Session) -> None:
+    # Antes era o advisory lock global; agora o lease de cada janela (Lambda viva ou outro
+    # processo local) faz o laço pular a janela.
+    viva = datetime.now(UTC) + timedelta(hours=1)
+    j = janela(sessao, status="em_andamento", travada_por="lambda", travada_ate=viva)
     falso = ClienteFalso({_chave(1): pagina(1, 1)})
-    with engine.connect() as outra:
-        assert outra.scalar(text("select pg_try_advisory_lock(:k)"), {"k": CHAVE_COLETOR})
-        resumo = coletar_pendentes(sessao, como_cliente(falso), AGORA)
-        outra.scalar(text("select pg_advisory_unlock(:k)"), {"k": CHAVE_COLETOR})
+    resumo = coletar_pendentes(sessao, como_cliente(falso), AGORA)
     assert falso.chamadas == []
     assert resumo == ResumoColeta()
-    assert _unica(sessao).status == "pendente"
-    coletar_pendentes(sessao, como_cliente(falso), AGORA)  # lock liberado: coleta normal
+    assert _unica(sessao).status == "em_andamento"
+    j.travada_ate = datetime.now(UTC) - timedelta(hours=1)  # lease vencido: sobra retomada
+    sessao.commit()
+    coletar_pendentes(sessao, como_cliente(falso), AGORA)
     assert _unica(sessao).status == "concluida"
 
 

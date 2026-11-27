@@ -5,29 +5,25 @@ Invariante central: uma janela que falha fica com status "falha" (e o erro), nun
 """
 
 import logging
-import time
 from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
+from uuid import uuid4
 
-from sqlalchemy import DateTime, Engine, and_, cast, delete, func, or_, select, update
+from sqlalchemy import DateTime, and_, cast, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
+from radar.coleta.fatias import coletar_fatia, lease_livre
 from radar.coleta.modelos import ColetaJanela, PaginaBruta
-from radar.coleta.pncp import ClientePNCP, ErroPNCP
-from radar.comum import Outbox, enfileirar
+from radar.coleta.pncp import ClientePNCP
+from radar.comum import Outbox
 
 logger = logging.getLogger(__name__)
 
 FUSO = "America/Sao_Paulo"  # as datas do PNCP são em horário de Brasília
-CHAVE_COLETOR = 7_240_001  # chave do advisory lock que garante um único coletor por vez
-LIMITE_ERRO = 500
-
-
-def _agora_real() -> datetime:
-    return datetime.now(UTC)
 
 
 @dataclass
@@ -89,61 +85,41 @@ def coletar_pendentes(
     agora: datetime,
     relogio: Callable[[], datetime] | None = None,
 ) -> ResumoColeta:
-    """Coleta todas as janelas elegíveis e devolve o resumo.
+    """Coleta no próprio processo todas as janelas elegíveis e devolve o resumo.
 
-    `agora` é o instante de referência da execução (regra de elegibilidade das janelas de
-    atualização, que é por data); os carimbos iniciada_em, concluida_em e coletada_em usam
-    o relógio real (`relogio`, injetável nos testes).
+    Cada janela é uma fatia sem `lote` e sem orçamento (vai até o fim). Duas execuções em
+    paralelo, ou uma Lambda viva, não coletam a mesma janela: o lease decide, e a sobra de
+    uma execução interrompida volta quando o lease dela vence. `agora` fica pela assinatura;
+    os carimbos usam `relogio` (injetável nos testes) ou o relógio do banco.
     """
-    relogio = relogio or _agora_real
-    bind = sessao.get_bind()
-    # Conexão dedicada: o lock pertence à conexão do banco, e a sessão devolve a dela ao
-    # pool a cada commit.
-    conexao = bind.connect() if isinstance(bind, Engine) else bind
-    try:
-        if not conexao.scalar(select(func.pg_try_advisory_lock(CHAVE_COLETOR))):
-            logger.warning("coleta_em_andamento_noutro_processo")
-            return ResumoColeta()
-        try:
-            return _coletar_todas(sessao, cliente, relogio)
-        finally:
-            conexao.scalar(select(func.pg_advisory_unlock(CHAVE_COLETOR)))
-    finally:
-        if conexao is not bind:
-            conexao.close()
-
-
-def _coletar_todas(
-    sessao: Session, cliente: ClientePNCP, relogio: Callable[[], datetime]
-) -> ResumoColeta:
-    # Um único coletor por vez, garantido pelo advisory lock em coletar_pendentes; por isso
-    # uma janela em_andamento só pode ser sobra de uma execução interrompida.
-    sessao.execute(
-        update(ColetaJanela).where(ColetaJanela.status == "em_andamento").values(status="pendente")
-    )
-    sessao.commit()
-
     resumo = ResumoColeta()
     tentadas: set[int] = set()  # uma janela que falhou não é repetida na mesma chamada
     while True:
-        janela = _proxima_janela(sessao, tentadas)
-        if janela is None:
+        janela_id = _proxima_janela(sessao, tentadas)
+        if janela_id is None:
             return resumo
-        tentadas.add(janela.id)
-        janela_id = janela.id
-        dados = _dados_log(janela, time.monotonic())
+        tentadas.add(janela_id)
+        _reabrir(sessao, ColetaJanela.id == janela_id)
         try:
-            _coletar_janela(sessao, cliente, janela, relogio, resumo)
-        except Exception as erro:  # Ctrl+C (BaseException) continua parando o processo
-            sessao.rollback()
-            logger.exception("janela_erro_inesperado", extra=dados)
-            sessao.execute(
-                update(ColetaJanela)
-                .where(ColetaJanela.id == janela_id)
-                .values(status="falha", erro=repr(erro)[:LIMITE_ERRO])
+            resultado = coletar_fatia(
+                sessao,
+                cliente,
+                janela_id,
+                lote=None,
+                token=uuid4().hex,
+                orcamento_s=None,
+                relogio=relogio,
             )
-            sessao.commit()
+        except Exception:  # já marcada como falha; Ctrl+C (BaseException) continua parando
             resumo.falhas += 1
+            continue
+        if resultado.desfecho == "concluida":
+            resumo.concluidas += 1
+            resumo.registros += resultado.registros
+        elif resultado.desfecho == "falha":
+            resumo.falhas += 1
+        elif resultado.desfecho == "dividida":
+            resumo.divididas += 1
 
 
 def ler_paginas_nao_processadas(
@@ -260,171 +236,51 @@ def _dias(inicio: date, fim: date) -> list[date]:
     return [inicio + timedelta(days=n) for n in range((fim - inicio).days + 1)]
 
 
-def _proxima_janela(sessao: Session, tentadas: set[int]) -> ColetaJanela | None:
-    # Janelas de atualizacao concluídas antes de o dia acabar (em Brasília) ficaram
-    # incompletas: o PNCP ainda podia alterar editais naquele dia.
+def _concluida_cedo() -> ColumnElement[bool]:
+    """Janela de atualizacao concluída antes de o dia dela acabar (em Brasília).
+
+    Ficou incompleta: o PNCP ainda podia alterar editais naquele dia.
+    """
     fim_do_dia = func.timezone(FUSO, cast(ColetaJanela.data_fim, DateTime) + timedelta(days=1))
-    elegivel = or_(
-        ColetaJanela.status.in_(("pendente", "falha")),
-        and_(
-            ColetaJanela.status == "concluida",
-            ColetaJanela.endpoint == "atualizacao",
-            ColetaJanela.concluida_em < fim_do_dia,
-        ),
+    return and_(
+        ColetaJanela.status == "concluida",
+        ColetaJanela.endpoint == "atualizacao",
+        ColetaJanela.concluida_em < fim_do_dia,
     )
-    return sessao.scalars(
-        select(ColetaJanela)
-        .where(elegivel, ColetaJanela.id.not_in(tentadas))
+
+
+def _reabrir(sessao: Session, *filtros: ColumnElement[bool]) -> list[int]:
+    """Concluída cedo demais e sem lease vira pendente do zero, num lote novo; commita.
+
+    O lote novo invalida qualquer mensagem velha da janela (sai `obsoleta`).
+    """
+    reabertas = sessao.scalars(
+        update(ColetaJanela)
+        .where(_concluida_cedo(), lease_livre(), *filtros)
+        .values(
+            status="pendente",
+            proxima_pagina=1,
+            total_paginas=None,
+            esperados=None,
+            lote=ColetaJanela.lote + 1,
+        )
+        .returning(ColetaJanela.id)
+    ).all()
+    sessao.commit()
+    return list(reabertas)
+
+
+def _proxima_janela(sessao: Session, tentadas: set[int]) -> int | None:
+    elegivel = or_(
+        ColetaJanela.status.in_(("pendente", "falha", "em_andamento")),
+        _concluida_cedo(),
+    )
+    janela_id = sessao.scalars(
+        select(ColetaJanela.id)
+        .where(elegivel, lease_livre(), ColetaJanela.id.not_in(tentadas))
         .order_by(
             ColetaJanela.data_ini, ColetaJanela.modalidade, ColetaJanela.endpoint, ColetaJanela.id
         )
         .limit(1)
     ).first()
-
-
-def _dados_log(janela: ColetaJanela, inicio: float) -> dict[str, Any]:
-    return {
-        "janela_id": janela.id,
-        "endpoint": janela.endpoint,
-        "data_ini": janela.data_ini.isoformat(),
-        "modalidade": janela.modalidade,
-        "duracao_s": round(time.monotonic() - inicio, 3),
-    }
-
-
-def _falhar(
-    sessao: Session, janela: ColetaJanela, erro: str, inicio: float, resumo: ResumoColeta
-) -> None:
-    # As páginas já gravadas ficam; a janela volta na próxima execução.
-    janela.status = "falha"
-    janela.erro = erro
-    sessao.commit()
-    resumo.falhas += 1
-    logger.warning("janela_falhou", extra={**_dados_log(janela, inicio), "erro": erro})
-
-
-def _coletar_janela(
-    sessao: Session,
-    cliente: ClientePNCP,
-    janela: ColetaJanela,
-    relogio: Callable[[], datetime],
-    resumo: ResumoColeta,
-) -> None:
-    inicio = time.monotonic()
-    janela.status = "em_andamento"
-    janela.tentativas += 1
-    janela.erro = None
-    janela.iniciada_em = relogio()
-    sessao.commit()
-    logger.info("janela_iniciada", extra=_dados_log(janela, inicio))
-
-    numero = 1
-    total = 1  # o total vale o da página 1; as seguintes só o confirmam
-    esperados: int | None = None
-    paginas = 0
-    registros = 0
-    vistos: set[str] = set()
-    while numero <= total:
-        try:
-            pagina = cliente.buscar(
-                janela.endpoint, janela.data_ini, janela.data_fim, janela.modalidade, numero
-            )
-        except ErroPNCP as erro:
-            if numero == 1 and janela.data_ini < janela.data_fim and _sem_paginas(sessao, janela):
-                _dividir(sessao, janela, str(erro), inicio)
-                resumo.divididas += 1
-            else:
-                _falhar(sessao, janela, str(erro), inicio, resumo)
-            return
-        if numero == 1:
-            total = pagina.total_paginas
-            bruto_total = pagina.bruto.get("totalRegistros")
-            esperados = bruto_total if isinstance(bruto_total, int) else None
-        elif pagina.total_paginas != total:
-            _falhar(
-                sessao,
-                janela,
-                f"pagina {numero} inconsistente: total_paginas={pagina.total_paginas}, "
-                f"esperado {total}",
-                inicio,
-                resumo,
-            )
-            return
-        if total > 0:
-            # total_paginas == 0 é dia sem registros: nada a guardar, paginas=0.
-            _gravar_pagina(sessao, janela, numero, pagina.bruto, relogio())
-            paginas += 1
-            registros += len(pagina.registros)
-            vistos.update(
-                str(r["numeroControlePNCP"]) for r in pagina.registros if "numeroControlePNCP" in r
-            )
-        numero += 1
-
-    if esperados is not None and len(vistos) < esperados:
-        mensagem = f"incompleta: {len(vistos)} de {esperados} registros"
-        _falhar(sessao, janela, mensagem, inicio, resumo)
-        return
-
-    janela.status = "concluida"
-    janela.paginas = paginas
-    janela.registros = registros
-    janela.concluida_em = relogio()
-    sessao.commit()
-    resumo.concluidas += 1
-    resumo.registros += registros
-    logger.info(
-        "janela_concluida",
-        extra={**_dados_log(janela, inicio), "paginas": paginas, "registros": registros},
-    )
-
-
-def _gravar_pagina(
-    sessao: Session, janela: ColetaJanela, numero: int, bruto: dict[str, Any], agora: datetime
-) -> None:
-    comando = pg_insert(PaginaBruta).values(
-        janela_id=janela.id, numero_pagina=numero, conteudo=bruto, coletada_em=agora
-    )
-    pagina_id: int = sessao.execute(
-        comando.on_conflict_do_update(
-            constraint="uq_pagina_bruta_janela_numero",
-            set_={
-                "conteudo": comando.excluded.conteudo,
-                "coletada_em": agora,
-                "processada_em": None,
-            },
-        ).returning(PaginaBruta.id)
-    ).scalar_one()
-    # Regravada também volta à fila: processada_em voltou a NULL.
-    enfileirar(sessao, "pagina_coletada", {"pagina_id": pagina_id})
-    sessao.commit()  # checkpoint: a página (e a mensagem) sobrevive a uma falha posterior
-
-
-def _sem_paginas(sessao: Session, janela: ColetaJanela) -> bool:
-    quantas = sessao.scalar(select(func.count()).where(PaginaBruta.janela_id == janela.id))
-    return not quantas
-
-
-def _dividir(sessao: Session, janela: ColetaJanela, erro: str, inicio: float) -> None:
-    """Troca a janela por duas metades; só é chamada para janelas de mais de um dia."""
-    dados = {**_dados_log(janela, inicio), "erro": erro, "data_fim": janela.data_fim.isoformat()}
-    dias = (janela.data_fim - janela.data_ini).days + 1
-    fim_primeira = janela.data_ini + timedelta(days=(dias - 1) // 2)
-    metades = [
-        (janela.data_ini, fim_primeira),
-        (fim_primeira + timedelta(days=1), janela.data_fim),
-    ]
-    base = {
-        "endpoint": janela.endpoint,
-        "modalidade": janela.modalidade,
-        "status": "pendente",
-        "paginas": 0,
-        "registros": 0,
-    }
-    sessao.execute(delete(ColetaJanela).where(ColetaJanela.id == janela.id))
-    sessao.execute(
-        pg_insert(ColetaJanela)
-        .values([{**base, "data_ini": ini, "data_fim": fim} for ini, fim in metades])
-        .on_conflict_do_nothing(constraint="uq_coleta_janela_chave")
-    )
-    sessao.commit()
-    logger.warning("janela_dividida", extra=dados)
+    return janela_id
