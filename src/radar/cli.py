@@ -6,6 +6,7 @@ import json
 import logging
 import time
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -60,6 +61,7 @@ from radar.comum.telemetria import telemetria_do_processo, tracer
 from radar.editais import (
     Criterios,
     EditalResumo,
+    bruto_do_edital,
     carregar_criterios,
     obter_edital,
     separar_id_publico,
@@ -613,6 +615,12 @@ def _criar_provedor_ia(config: "ConfigIA") -> "Provedor":
     return ProvedorBedrock(config)
 
 
+def _criar_cliente_sanepar() -> "ClienteArquivosPNCP":
+    from radar.analise import criar_cliente_sanepar
+
+    return criar_cliente_sanepar()
+
+
 def _criar_cliente_arquivos() -> "ClienteArquivosPNCP":
     from radar.analise import ClienteArquivosPNCP, criar_http_arquivos
 
@@ -629,6 +637,21 @@ ORCAMENTO_RODADA_S = 30 * 60
 TRAVA_ANALISE = "analise"
 DURACAO_TRAVA_ANALISE = timedelta(minutes=60)
 _relogio_rodada = time.monotonic
+
+
+# Vagas da rodada reservadas para a Sanepar: os editais de obra dela ficam abertos por semanas e,
+# na ordem por encerramento, perderiam sempre para os pregões do PNCP que fecham antes.
+RESERVA_SANEPAR = 3
+
+
+def _candidatos_por_fonte(abertos: list[EditalResumo]) -> list[EditalResumo]:
+    """Até RESERVA_SANEPAR da Sanepar primeiro, depois o resto (PNCP e Sanepar) por encerramento."""
+    from radar.analise import FONTES_ANALISADAS
+
+    analisaveis = [e for e in abertos if e.fonte in FONTES_ANALISADAS]
+    reservados = [e for e in analisaveis if e.fonte == "sanepar"][:RESERVA_SANEPAR]
+    ja = {(e.fonte, e.id_na_fonte) for e in reservados}
+    return reservados + [e for e in analisaveis if (e.fonte, e.id_na_fonte) not in ja]
 
 
 def _alvos_analise(
@@ -654,7 +677,7 @@ def _alvos_analise(
         abertos = filtrar_editais(
             sessao, criterios, _agora(), somente_abertos=True, limite=CANDIDATOS_ANALISE
         )
-        candidatos = [e for e in abertos if e.fonte == "pncp"]
+        candidatos = _candidatos_por_fonte(abertos)
     alvos: list[AlvoAnalise] = []
     pulados = 0
     for candidato in candidatos:
@@ -664,6 +687,10 @@ def _alvos_analise(
         if not refazer and ja_analisado(sessao, alvo, modelo, versao):
             pulados += 1
             continue
+        if alvo.fonte == "sanepar":
+            # Os documentos da Sanepar saem dos anexos que a coleta guardou no bruto.
+            bruto = bruto_do_edital(sessao, alvo.fonte, alvo.id_na_fonte)
+            alvo = replace(alvo, bruto=bruto)
         alvos.append(alvo)
     return alvos, pulados
 
@@ -682,7 +709,7 @@ def analisar(
     refazer: Annotated[bool, typer.Option("--refazer", help="Ignora a análise existente.")] = False,
     config: OpcaoConfig = ARQUIVO_CONFIG,
 ) -> None:
-    """Extrai as exigências dos editais abertos do PNCP com IA e compara com o perfil."""
+    """Extrai as exigências dos editais abertos (PNCP e Sanepar) com IA e compara com o perfil."""
     from radar.analise import (
         CacheBanco,
         Dependencias,
@@ -750,8 +777,10 @@ def analisar(
                         guarda_teto(sessao, config_ia, _agora, lambda: Decimal(0)),
                     )
                     cliente = _criar_cliente_arquivos()
+                    cliente_sanepar = _criar_cliente_sanepar()
                     dep = Dependencias(
                         cliente_arquivos=cliente,
+                        cliente_sanepar=cliente_sanepar,
                         armazem=criar_armazem(ambiente.documentos),
                         provedor=provedor,
                         config=config_ia,
@@ -808,6 +837,7 @@ def analisar(
                             analisados += 1
                     finally:
                         cliente.fechar()
+                        cliente_sanepar.fechar()
                 finally:
                     liberar_trava(sessao, TRAVA_ANALISE, dono)
             rodada.set_attributes(

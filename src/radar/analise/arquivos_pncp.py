@@ -66,9 +66,11 @@ class _FalhaTransitoria(Exception):
     pass
 
 
-def _exigir_pncp(url: httpx.URL) -> None:
-    if (url.scheme, url.host) != ORIGEM_PERMITIDA or url.userinfo:
-        raise ErroArquivos(f"documento fora do PNCP recusado: {url.scheme}://{url.host}")
+def _exigir_origem(url: httpx.URL, origem: tuple[str, str]) -> None:
+    if (url.scheme, url.host) != origem or url.userinfo:
+        raise ErroArquivos(
+            f"documento fora de {origem[0]}://{origem[1]} recusado: {url.scheme}://{url.host}"
+        )
 
 
 def criar_http_arquivos() -> httpx.Client:
@@ -89,7 +91,11 @@ def escolher_documentos(arquivos: list[ArquivoPNCP]) -> list[ArquivoPNCP]:
 
 
 class ClienteArquivosPNCP:
-    """Lista e baixa documentos com cortesia: pausa entre requisições e poucas tentativas."""
+    """Lista e baixa documentos com cortesia: pausa entre requisições e poucas tentativas.
+
+    Só baixa da `origem` (esquema, host), inclusive em cada redirect: o PNCP por padrão; a
+    análise da Sanepar usa outra instância presa a www.sanepar.com.br (`arquivos_sanepar`).
+    """
 
     def __init__(
         self,
@@ -99,8 +105,10 @@ class ClienteArquivosPNCP:
         espera_base: float = 5.0,
         prazo_download_s: float = PRAZO_DOWNLOAD_S,
         relogio: Callable[[], float] = time.monotonic,
+        origem: tuple[str, str] = ORIGEM_PERMITIDA,
     ) -> None:
         self._http = http
+        self._origem = origem
         self._pausa = pausa_s
         self._tentativas = tentativas
         self._espera = wait_exponential(multiplier=espera_base, max=60)
@@ -188,13 +196,13 @@ class ClienteArquivosPNCP:
             raise ErroArquivos(f"resposta não é JSON: {resposta.text[:200]!r}") from erro
 
     def _baixar(self, url: str, limite_bytes: int) -> bytes:
-        """Só de https://pncp.gov.br/, inclusive cada redirect (seguido à mão, até 5)."""
+        """Só da origem do cliente, inclusive cada redirect (seguido à mão, até 5)."""
         self._pausar()
         inicio = self._relogio()
         atual = httpx.URL(url)
         try:
             for _ in range(MAX_REDIRECTS + 1):
-                _exigir_pncp(atual)
+                _exigir_origem(atual, self._origem)
                 with self._http.stream("GET", atual, follow_redirects=False) as resposta:
                     if resposta.is_redirect:
                         destino = resposta.headers.get("Location", "")

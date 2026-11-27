@@ -193,6 +193,13 @@ def obter_edital(
     return None if linha is None else _detalhe(linha, criterios)
 
 
+def bruto_do_edital(sessao: Session, fonte: str, id_na_fonte: str) -> dict[str, Any] | None:
+    """O registro bruto da fonte (anexos da Sanepar, por exemplo); None se o edital não existe."""
+    return sessao.scalar(
+        select(Edital.bruto).where(Edital.fonte == fonte, Edital.id_na_fonte == id_na_fonte)
+    )
+
+
 def listar_abertos(
     sessao: Session, criterios: Criterios, agora: datetime, limite: int
 ) -> list[EditalDetalhe]:

@@ -10,6 +10,7 @@ from radar.analise.arquivos_pncp import (
     criar_http_arquivos,
     escolher_documentos,
 )
+from radar.analise.arquivos_sanepar import arquivos_sanepar, criar_cliente_sanepar
 from radar.analise.cache import (
     CacheArquivos,
     CacheBanco,
@@ -58,6 +59,7 @@ from radar.analise.modelos import (
 )
 from radar.analise.perfil import Perfil, carregar_perfil
 from radar.analise.pipeline import (
+    FONTES_ANALISADAS,
     AlvoAnalise,
     AnaliseLida,
     Dependencias,
@@ -77,6 +79,9 @@ from radar.analise.provedor import (
 )
 
 __all__ = [
+    "FONTES_ANALISADAS",
+    "arquivos_sanepar",
+    "criar_cliente_sanepar",
     "CAMPOS",
     "DOCUMENTOS",
     "INSTRUCAO_GRAVAR",
