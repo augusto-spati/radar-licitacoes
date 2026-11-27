@@ -7,8 +7,8 @@ chave; senão, de todas as UFs com dados. Item `suspeito` nunca entra.
 
 Caso é processo, não item: a mediana de cada chave é a mediana das medianas de cada processo
 (um orçamento grande com muitos itens iguais não domina), e todo corte conta processos. `ufs`
-diz de onde vieram os números (hoje só PE: a base é o TCE-PE); `abrangencia` é `uf` quando
-todos são da UF do edital e `outras_ufs` quando não.
+diz de onde vieram os números e `origens` de que fonte (TCE-PE, planilhas do PNCP); `abrangencia`
+é `uf` quando todos são da UF do edital e `outras_ufs` quando não.
 """
 
 import statistics
@@ -58,6 +58,8 @@ class Referencia:
     abrangencia: Abrangencia
     # UFs de onde vieram os números, em ordem.
     ufs: tuple[str, ...]
+    # Origens do estimado ("tce_pe", "pncp_planilha"), em ordem; o contratado é só do TCE-PE.
+    origens: tuple[str, ...]
     processos_estimado: int
     itens_estimado: int
     # Mediana das medianas por processo.
@@ -143,6 +145,7 @@ def _referencia(
         unidade=servico.unidade,
         abrangencia=abrangencia,
         ufs=ufs,
+        origens=tuple(sorted({c.origem for c in estimados})),
         processos_estimado=processos_estimado,
         itens_estimado=len(estimados),
         mediana_estimado=_mediana_por_processo(

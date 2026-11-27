@@ -17,6 +17,23 @@ from radar.precos.modelos import (
     PrecoItemNovo,
     StatusPlanilha,
 )
+from radar.precos.planilha_leitura import (
+    LinhaPlanilha,
+    coerente,
+    ler_planilha,
+    linhas_da_ia,
+    pagina_de_composicao,
+)
+from radar.precos.planilhas import (
+    EditalPlanilha,
+    Gravacao,
+    apagar_planilha,
+    gasto_planilhas_do_mes,
+    gravar_planilha,
+    itens_da_planilha,
+    planilhas_a_ignorar,
+    registrar_planilha,
+)
 from radar.precos.servicos import (
     ESCOPOS,
     FAIXAS,
@@ -54,6 +71,19 @@ from radar.precos.tcepe import (
 )
 
 __all__ = [
+    "EditalPlanilha",
+    "Gravacao",
+    "LinhaPlanilha",
+    "apagar_planilha",
+    "coerente",
+    "gasto_planilhas_do_mes",
+    "gravar_planilha",
+    "itens_da_planilha",
+    "ler_planilha",
+    "linhas_da_ia",
+    "pagina_de_composicao",
+    "planilhas_a_ignorar",
+    "registrar_planilha",
     "CASOS_MINIMOS",
     "CASOS_REDE",
     "CASOS_UF",

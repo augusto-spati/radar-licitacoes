@@ -117,6 +117,8 @@ forbidden_modules = [
     "radar.precos.servicos",
     "radar.precos.consulta",
     "radar.precos.tcepe",
+    "radar.precos.planilha_leitura",
+    "radar.precos.planilhas",
 ]
 allow_indirect_imports = true
 

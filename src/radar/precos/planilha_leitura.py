@@ -392,3 +392,100 @@ def ler_planilha(paginas: list[str]) -> list[LinhaPlanilha]:
             vistas.add(chave)
             linhas.append(nova)
     return linhas
+
+
+# --- Linhas vindas da IA (texto picotado): a conta e o texto são a ancoragem ---
+
+TOLERANCIA_TOTAL_PLANILHA = Decimal("0.02")
+_SEM_ESPACO = re.compile(r"\s+")
+
+
+def _decimal_ia(valor: object) -> Decimal | None:
+    if valor is None or isinstance(valor, bool):
+        return None
+    if isinstance(valor, (int, float)):
+        numero = Decimal(str(valor))
+    else:
+        texto = str(valor).strip()
+        numero_lido = numero_br(texto)
+        if numero_lido is None:
+            try:
+                numero_lido = Decimal(texto)
+            except InvalidOperation:
+                return None
+        numero = numero_lido
+    return numero if numero.is_finite() and numero > 0 else None
+
+
+def formato_br(valor: Decimal) -> str:
+    """2142.5 → "2.142,50" (duas casas)."""
+    inteiro, _, decimais = f"{valor.quantize(Decimal('0.01')):f}".partition(".")
+    grupos = f"{int(inteiro):,}".replace(",", ".")
+    return f"{grupos},{decimais or '00'}"
+
+
+def _no_texto(valor: Decimal, texto_sem_espaco: str) -> bool:
+    return formato_br(valor) in texto_sem_espaco
+
+
+def linhas_da_ia(
+    brutas: list[dict[str, object]], texto: str, total_planilha: object = None
+) -> list[LinhaPlanilha]:
+    """Linhas que a IA devolveu e que passam na guarda; vazia se a soma não bate com o total.
+
+    Cada linha precisa de quantidade, preço com BDI e total com `quantidade × preço ≈ total`,
+    e o preço e o total precisam estar no texto (sem espaços: o texto vem picotado, "1.08\n8,69").
+    Com `total_planilha` presente no texto, a soma dos totais das linhas válidas tem de ficar
+    a ±2% dele; senão nenhuma linha vale (a IA pulou ou inventou linhas).
+    """
+    corrido = _SEM_ESPACO.sub("", texto).replace("R$", "")
+    validas: list[LinhaPlanilha] = []
+    for bruta in brutas:
+        descricao = str(bruta.get("descricao") or "").strip()
+        unidade = str(bruta.get("unidade") or "").strip()
+        quantidade = _decimal_ia(bruta.get("quantidade"))
+        com = _decimal_ia(bruta.get("preco_com_bdi"))
+        sem = _decimal_ia(bruta.get("preco_sem_bdi"))
+        total = _decimal_ia(bruta.get("total"))
+        if com is None and sem is not None and total is not None and quantidade is not None:
+            if coerente(quantidade, sem, total):
+                com, sem = sem, None
+        if (
+            len(descricao) < 3
+            or not unidade
+            or quantidade is None
+            or com is None
+            or total is None
+            or not coerente(quantidade, com, total)
+            or not (_no_texto(com, corrido) and _no_texto(total, corrido))
+        ):
+            continue
+        if sem is not None and not sem < com:
+            sem = None
+        item = str(bruta.get("item") or "").strip() or None
+        codigo = str(bruta.get("codigo") or "").strip() or None
+        fonte_bruta = sem_acento(str(bruta.get("fonte") or "")).strip()
+        fonte = next((f for f in FONTES if fonte_bruta.startswith(f)), None)
+        validas.append(
+            LinhaPlanilha(
+                item=item,
+                codigo=codigo,
+                fonte=fonte,
+                descricao=descricao,
+                unidade=unidade,
+                quantidade=quantidade,
+                preco_sem_bdi=sem,
+                preco_com_bdi=com,
+                total=total,
+                bdi=None,
+                data_base=data_de_token(str(bruta.get("data_base") or "")),
+                secao=str(bruta.get("secao") or "").strip() or None,
+                pagina=0,  # a IA não diz a página
+            )
+        )
+    declarado = _decimal_ia(total_planilha)
+    if declarado is not None and _no_texto(declarado, corrido):
+        soma = sum((linha.total for linha in validas), Decimal(0))
+        if abs(soma - declarado) > declarado * TOLERANCIA_TOTAL_PLANILHA:
+            return []
+    return validas
