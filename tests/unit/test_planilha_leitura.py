@@ -422,3 +422,76 @@ def test_numero_de_pagina_no_topo_nao_abre_item() -> None:
     (linha,) = ler_planilha([pagina])
     assert linha.item is None
     assert linha.descricao == "automático/manual"
+
+
+# --- Revisão 2: número de continuação, seção com traço, código na linha, topo de página ---
+
+
+@pytest.mark.parametrize(
+    ("pagina", "item", "descricao"),
+    [
+        (
+            "1.1 TUBO PVC PBA JE DN\n100 MM PARA REDE DE AGUA m 10,00 5,00 50,00\n",
+            "1.1",
+            "TUBO PVC PBA JE DN 100 MM PARA REDE DE AGUA",
+        ),
+        (
+            "1.2 FORNECIMENTO E ASSENTAMENTO DE TUBO PEAD\n110 MM m 10,00 5,00 50,00\n",
+            "1.2",
+            "FORNECIMENTO E ASSENTAMENTO DE TUBO PEAD 110 MM",
+        ),
+    ],
+)
+def test_numero_no_comeco_da_continuacao_nao_e_item(pagina: str, item: str, descricao: str) -> None:
+    (linha,) = ler_planilha([pagina])
+    assert (linha.item, linha.descricao) == (item, descricao)
+
+
+def test_item_seguinte_ao_aberto_e_da_propria_linha() -> None:
+    """ "18" aberto e sem preço lido; "19 ..." é o item seguinte, não continuação do 18."""
+    pagina = (
+        "18\nServiço de instalação de conjunto motobomba\n"
+        "19 Hidrometro medidor de vazão com capacidade de 16m3 h. Un 8  R$   1.216,92  "
+        "R$ 9.735,36\n"
+    )
+    (linha,) = ler_planilha([pagina])
+    assert (linha.item, linha.descricao) == (
+        "19",
+        "Hidrometro medidor de vazão com capacidade de 16m3 h.",
+    )
+
+
+@pytest.mark.parametrize(
+    ("titulo", "secao"),
+    [
+        ("1 - SERVIÇOS PRELIMINARES", "SERVIÇOS PRELIMINARES"),
+        ("4 – RAMAIS PREDIAIS", "RAMAIS PREDIAIS"),
+        ("4. RAMAL.", "RAMAL"),
+    ],
+)
+def test_secao_com_traco_ou_ponto(titulo: str, secao: str) -> None:
+    (linha,) = ler_planilha([f"{titulo}\n4.1 TUBO PVC DN 100 m 10,00 5,00 50,00\n"])
+    assert linha.secao == secao
+
+
+def test_codigo_depois_do_item_inteiro_na_mesma_linha() -> None:
+    """PNCP 25269069000146-1-000045/2026, item 45."""
+    (linha,) = ler_planilha(["45 81797 PARAFUSO COM PORCA UNIDADE 96 R$ 19,72 R$ 1.893,12\n"])
+    assert (linha.item, linha.codigo, linha.descricao) == ("45", "81797", "PARAFUSO COM PORCA")
+
+
+def test_item_sozinho_no_topo_da_pagina_continua_item() -> None:
+    pagina = "12\nTUBO PVC PBA JE\nDN 100 MM PARA AGUA\nm 10,00 5,00 50,00\n"
+    (linha,) = ler_planilha([pagina])
+    assert (linha.item, linha.descricao) == ("12", "TUBO PVC PBA JE DN 100 MM PARA AGUA")
+
+
+def test_metros_como_unidade_continua() -> None:
+    pagina = (
+        "1.1 CABO PP 3X10 METROS 900 R$ 9,54 R$ 8.586,00\n"
+        "1.2 TUBO PEAD DN 50 METROS 100 R$ 10,00 R$ 1.000,00\n"
+    )
+    assert [(lin.item, lin.unidade) for lin in ler_planilha([pagina])] == [
+        ("1.1", "METROS"),
+        ("1.2", "METROS"),
+    ]
