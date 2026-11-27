@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from fakes import ClienteFalso, como_cliente
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from sqlalchemy import Engine, func, select, text
+from sqlalchemy import Engine, func, select, text, update
 from sqlalchemy.orm import Session, sessionmaker
 from typer.testing import CliRunner
 
@@ -1008,6 +1008,13 @@ def test_atualizar_registra_execucao_ok(
     monkeypatch.setattr(cli, "fontes_retrato", lambda: {})
     assert _atualizar_pncp(config_filtro, monkeypatch).exit_code == 0
     assert metricas.valores("ExecucaoOk") == [1.0]
+    # As datas das janelas vêm do relógio congelado (`cli._agora`), mas `concluida_em` vem do
+    # now() do banco (relógio real). A segunda execução só recoleta a janela de hoje se ela
+    # foi concluída antes do fim do dia: ancorar a conclusão em AGORA tira a dependência da
+    # hora real (com o relógio real já depois de 27/11 00:00 BRT, nada seria reaberto).
+    with fabrica() as s:
+        s.execute(update(ColetaJanela).values(concluida_em=AGORA))
+        s.commit()
     assert _atualizar_pncp(config_filtro, monkeypatch, roteiro={}).exit_code == 1
     assert metricas.valores("ExecucaoOk") == [1.0, 0.0]
 
