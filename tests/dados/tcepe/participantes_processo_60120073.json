@@ -1,0 +1,23 @@
+[
+ {
+  "tipoParticipanteId": "PJ",
+  "participanteNome": "C P M CONSTRUTORA LTDA",
+  "participanteDocumento": "05545366000160",
+  "statusHabilitacaoId": "2",
+  "statusHabilitacaoNome": "Não habilitado",
+  "participanteId": "60394338",
+  "processoContratacaoId": "60120073",
+  "tipoParticipanteNome": "Pessoa Jurídica"
+ },
+ {
+  "tipoParticipanteId": "PJ",
+  "participanteNome": "EMCOSA EMPRESA DE CONSTRUCOES E SANEAMENTO LTDA",
+  "valorHomologado": "40690703.5600",
+  "participanteDocumento": "10514594000102",
+  "statusHabilitacaoId": "1",
+  "statusHabilitacaoNome": "Habilitado",
+  "participanteId": "60394341",
+  "processoContratacaoId": "60120073",
+  "tipoParticipanteNome": "Pessoa Jurídica"
+ }
+]

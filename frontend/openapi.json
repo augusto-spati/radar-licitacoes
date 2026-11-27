@@ -104,6 +104,14 @@
             "title": "Objeto",
             "type": "string"
           },
+          "origem": {
+            "enum": [
+              "PNCP",
+              "TCE-PE"
+            ],
+            "title": "Origem",
+            "type": "string"
+          },
           "parcial": {
             "title": "Parcial",
             "type": "boolean"
@@ -167,7 +175,8 @@
           "desconto",
           "parcial",
           "vencedor_nome",
-          "vencedor_porte"
+          "vencedor_porte",
+          "origem"
         ],
         "title": "ContratacaoPassadaOut",
         "type": "object"

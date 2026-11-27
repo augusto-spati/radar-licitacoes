@@ -27,7 +27,7 @@ O preço unitário (R$/m de rede, R$/ligação, R$/m³ de escavação) é o núm
 ## O que fica para depois
 
 - **7b.2**: preço estimado das planilhas dos editais do PNCP (fora de PE), com IA.
-- Ligar os processos da Compesa ao "Histórico do órgão" da 7a.
+- ~~Ligar os processos da Compesa ao "Histórico do órgão" da 7a~~: feito na 7a.3 (`docs/etapas/07-historico.md`, seção "Compesa pelo TCE-PE"), na mesma rodada semanal.
 - Rever as listas de termos com mais dados reais (a primeira rodada semanal).
 
 ## Perguntas de entrevista

@@ -22,6 +22,13 @@ Nomes confirmados com chamadas reais em 2026-11-27 (e no catálogo do pacote R `
 - ``Remessa_InstrumentoJuridicoItens``, filtro ``instrumentoJuridicoId``. Campos por item:
   ``itemContratoId``, ``itemDescricao``, ``UnidadeMedida``, ``Quantidade``, ``ValorUnitario``,
   ``ValorTotal``, ``BDI``, ``MaterialServico``.
+- ``Remessa_InstrumentoJuridicoParticipantes``, filtro ``instrumentoJuridicoIdId`` (sic, com
+  "IdId"; ``instrumentoJuridicoId`` é ignorado e devolve 100 mil). A empresa contratada:
+  ``participanteNome``, ``participanteDocumento`` (CNPJ; CPF vem mascarado, "***094194**"),
+  ``tipoParticipanteId`` ("PJ"/"PF"). Confirmado em 2026-11-28 (contrato 60314628 da Compesa:
+  LEENNE CONSTRUCOES LTDA).
+- ``Remessa_ProcessoContratacaoParticipantes``, filtro ``processoContratacaoId``. Participantes
+  do processo com ``valorHomologado`` por participante (a lista costuma ter só o vencedor).
 
 Formato: ``{"resposta": {"status": "OK", "tamanhoResultado": "N", "limiteResultado": "100000",
 "conteudo": [...]}}``, todos os valores como texto. O ``BDI`` vem em escalas diferentes conforme
@@ -70,6 +77,8 @@ PROCESSOS = "Remessa_ProcessoContratacao"
 ORCAMENTO = "Remessa_ProcessoContratacaoOrcamento"
 INSTRUMENTOS = "Remessa_InstrumentoJuridico"
 ITENS_INSTRUMENTO = "Remessa_InstrumentoJuridicoItens"
+PARTICIPANTES_INSTRUMENTO = "Remessa_InstrumentoJuridicoParticipantes"
+PARTICIPANTES_PROCESSO = "Remessa_ProcessoContratacaoParticipantes"
 
 
 class ErroTcepe(Exception):
@@ -183,6 +192,19 @@ class ClienteTcepe:
     def itens_instrumento(self, instrumento_id: int | str) -> list[dict[str, Any]]:
         return self._consultar(
             ITENS_INSTRUMENTO, {"instrumentoJuridicoId": _id(instrumento_id, "instrumento")}
+        )
+
+    def participantes_instrumento(self, instrumento_id: int | str) -> list[dict[str, Any]]:
+        """Contratado(s) do instrumento jurídico (CNPJ e razão social)."""
+        return self._consultar(
+            PARTICIPANTES_INSTRUMENTO,
+            {"instrumentoJuridicoIdId": _id(instrumento_id, "instrumento")},
+        )
+
+    def participantes_processo(self, processo_id: int | str) -> list[dict[str, Any]]:
+        """Participantes do processo, com o valor homologado de cada um."""
+        return self._consultar(
+            PARTICIPANTES_PROCESSO, {"processoContratacaoId": _id(processo_id, "processo")}
         )
 
     def _consultar(self, entidade: str, filtros: dict[str, str]) -> list[dict[str, Any]]:

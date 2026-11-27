@@ -420,11 +420,71 @@ def test_historico_do_orgao(cliente: TestClient, sessao: Session) -> None:
     assert passada["desconto"] == "0.2"
     assert passada["valor_estimado"] == "100"
     assert passada["vencedor_nome"] == "Acme Ltda"
+    assert passada["origem"] == "PNCP"
     assert corpo["vencedores"][0]["nome"] == "Acme Ltda"
     assert corpo["vencedores"][0]["vitorias"] == 1
     assert corpo["reguas"][0]["poucos_casos"] is True
     codificado = cliente.get("/api/historicos/pncp~alvo%2F2026")
     assert codificado.json() == corpo
+
+
+def test_historico_da_compesa_vem_do_tcepe(cliente: TestClient, sessao: Session) -> None:
+    from radar.editais import ResultadoExterno
+    from radar.editais.modelos import Edital
+
+    compesa = "09769035000164"
+    sessao.add(
+        Edital(
+            fonte="compesa",
+            id_na_fonte="2026LC213CEL-1",
+            objeto="Implantacao de rede de agua",
+            orgao_cnpj=compesa,
+            orgao_nome="COMPESA",
+            uf="PE",
+            modalidade_nome="Licitação",
+            situacao_original="Em andamento",
+            situacao_normalizada="aberta",
+            valor_estimado=Decimal("3000000"),
+            data_encerramento_proposta=datetime(2026, 12, 11, 10, 0),
+            data_atualizacao=datetime(2026, 11, 26, 10, 0),
+            bruto={"numero": "LC 213/2026 CEL-1"},
+        )
+    )
+    sessao.add(
+        ResultadoExterno(
+            fonte="tce_pe",
+            id_na_fonte="60120073",
+            orgao_cnpj=compesa,
+            orgao_nome="COMPESA",
+            uf="PE",
+            objeto="EXECUÇÃO DAS OBRAS E SERVIÇOS DA ADUTORA DO AGRESTE",
+            numero="68/2026",
+            linhas=["redes"],
+            data=datetime(2026, 4, 15),
+            data_resultado=datetime(2026, 7, 1, tzinfo=ZoneInfo("America/Sao_Paulo")),
+            situacao="homologada",
+            valor_estimado=Decimal("21883600.48"),
+            valor_homologado=Decimal("20345351.99"),
+            desconto=Decimal("0.0703"),
+            vencedor_ni="10514594000102",
+            vencedor_nome="EMCOSA EMPRESA DE CONSTRUCOES E SANEAMENTO LTDA",
+        )
+    )
+    sessao.flush()
+
+    corpo = cliente.get("/api/historicos/compesa~2026LC213CEL-1").json()
+
+    assert (corpo["total"], corpo["contagens"]) == (1, {"homologada": 1})
+    [passada] = corpo["ultimas"]
+    assert passada["origem"] == "TCE-PE"
+    assert passada["id_publico"] == "tce_pe~60120073"
+    assert passada["data"] == "2026-04-15T00:00:00-03:00"
+    assert passada["desconto"] == "0.0703"
+    assert corpo["vencedores"][0]["nome"].startswith("EMCOSA")
+    assert corpo["limite_inexequivel"] == "0.70"
+    # Régua redes × PE × acima de 5 mi? O edital vale 3 mi: faixa 1–5 mi, sem o caso de 21 mi;
+    # com poucos casos vem a régua só da linha, que tem o caso do TCE-PE.
+    assert [r["casos"] for r in corpo["reguas"]] == [0, 1]
 
 
 def test_historico_vazio_devolve_200(cliente: TestClient, sessao: Session) -> None:

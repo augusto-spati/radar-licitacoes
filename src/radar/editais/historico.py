@@ -1,9 +1,12 @@
 """Histórico do órgão de um edital: contagens, últimas contratações, vencedores e régua.
 
 Recorte: editais do PNCP que casam alguma linha do filtro, com resumo em `resultado_busca` e
-encerramento nos últimos 24 meses. Contagens, últimas e vencedores ficam no mesmo CNPJ do
-órgão; a régua usa todos os órgãos. Um edital de retrato (Sanepar, Compesa) usa o próprio
-`orgao_cnpj` e enxerga os pregões que o órgão publica no PNCP.
+encerramento nos últimos 24 meses, mais os casos de fora do PNCP em `resultado_externo`
+(processos da Compesa no TCE-PE, com sessão de abertura nos últimos 24 meses e alguma linha).
+Os dois viram uma subconsulta só (`_casos`), com as mesmas colunas. Contagens, últimas e
+vencedores ficam no mesmo CNPJ do órgão; a régua usa todos os órgãos. Um edital de retrato
+(Sanepar, Compesa) usa o próprio `orgao_cnpj`: enxerga os pregões que o órgão publica no PNCP e
+os processos dele no TCE-PE.
 """
 
 import statistics
@@ -13,11 +16,27 @@ from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import ColumnElement, and_, case, false, func, or_, select
+from sqlalchemy import (
+    ColumnElement,
+    Subquery,
+    Text,
+    and_,
+    any_,
+    case,
+    false,
+    func,
+    literal,
+    null,
+    or_,
+    select,
+    union_all,
+)
+from sqlalchemy.dialects.postgresql import ARRAY, array
 from sqlalchemy.orm import Session
 
-from radar.editais.filtro import Criterios, _casa_termos, _casamentos, id_publico, obter_edital
-from radar.editais.modelos import Edital, Fonte, ResultadoBusca, ResultadoItem
+from radar.editais.externos import FONTE_TCEPE, ROTULOS_FONTE, numero_licitacao
+from radar.editais.filtro import Criterios, _casamentos, bruto_do_edital, id_publico, obter_edital
+from radar.editais.modelos import Edital, Fonte, ResultadoBusca, ResultadoExterno, ResultadoItem
 from radar.editais.resultados import PESSOA_FISICA
 
 FUSO = ZoneInfo("America/Sao_Paulo")
@@ -46,6 +65,7 @@ class ContratacaoPassada:
     parcial: bool
     vencedor_nome: str | None
     vencedor_porte: str | None
+    origem: str = "PNCP"  # de onde veio o resultado: "PNCP" ou "TCE-PE" (ROTULOS_FONTE)
 
 
 @dataclass(frozen=True)
@@ -96,12 +116,12 @@ def faixa_de_valor(valor: Decimal | None) -> str | None:
     return "acima_5m"
 
 
-def _faixa_sql() -> ColumnElement[Any]:
+def _faixa_sql(valor: Any) -> ColumnElement[Any]:
     return case(
-        (Edital.valor_estimado <= 0, None),
-        (Edital.valor_estimado <= UM_MILHAO, "ate_1m"),
-        (Edital.valor_estimado <= CINCO_MILHOES, "1m_a_5m"),
-        (Edital.valor_estimado > CINCO_MILHOES, "acima_5m"),
+        (valor <= 0, None),
+        (valor <= UM_MILHAO, "ate_1m"),
+        (valor <= CINCO_MILHOES, "1m_a_5m"),
+        (valor > CINCO_MILHOES, "acima_5m"),
         else_=None,
     )
 
@@ -117,35 +137,13 @@ def _meses_atras(data: datetime, meses: int) -> datetime:
     raise AssertionError("inalcançável")
 
 
-def _recorte(criterios: Criterios, agora: datetime) -> list[ColumnElement[bool]]:
-    """Contratações do PNCP que casam alguma linha, encerradas nos últimos 24 meses."""
-    agora_brasilia = agora.astimezone(FUSO).replace(tzinfo=None)
-    casamentos = _casamentos(criterios)
-    return [
-        Edital.fonte == Fonte.pncp.value,
-        or_(*casamentos) if casamentos else false(),
-        Edital.data_encerramento_proposta > _meses_atras(agora_brasilia, MESES_RECORTE),
-    ]
-
-
 def _juncao() -> ColumnElement[bool]:
     return and_(
         ResultadoBusca.fonte == Edital.fonte, ResultadoBusca.id_na_fonte == Edital.id_na_fonte
     )
 
 
-def _contagens(sessao: Session, filtro: list[ColumnElement[bool]]) -> dict[str, int]:
-    consulta = (
-        select(ResultadoBusca.situacao, func.count())
-        .join(Edital, _juncao())
-        .where(*filtro)
-        .group_by(ResultadoBusca.situacao)
-        .order_by(ResultadoBusca.situacao)
-    )
-    return {situacao: int(n) for situacao, n in sessao.execute(consulta)}
-
-
-def _referencia() -> ColumnElement[Any]:
+def _referencia_pncp() -> ColumnElement[Any]:
     """Data do resultado mais recente da contratação; sem ela, o encerramento."""
     data_resultado = (
         select(func.max(ResultadoItem.data_resultado))
@@ -160,48 +158,120 @@ def _referencia() -> ColumnElement[Any]:
     return func.coalesce(data_resultado, func.timezone(FUSO.key, Edital.data_encerramento_proposta))
 
 
+def _casos(criterios: Criterios, agora: datetime) -> Subquery:
+    """Casos do PNCP (edital + resumo) e de fora dele, dos últimos 24 meses, com alguma linha.
+
+    Colunas: fonte, id_na_fonte, orgao_cnpj, uf, objeto, data, valor_edital (o estimado do
+    edital, que dá a faixa), referencia (ordem das últimas), numero (só os externos), o resumo
+    (situacao, desconto, estimado e homologado considerados, vencedor) e um `linha_<i>`
+    booleano por linha do filtro, na ordem de `criterios.linhas`.
+    """
+    agora_brasilia = agora.astimezone(FUSO).replace(tzinfo=None)
+    inicio = _meses_atras(agora_brasilia, MESES_RECORTE)
+    casamentos = _casamentos(criterios)
+    nomes = list(criterios.linhas)
+    pncp = (
+        select(
+            Edital.fonte.label("fonte"),
+            Edital.id_na_fonte.label("id_na_fonte"),
+            Edital.orgao_cnpj.label("orgao_cnpj"),
+            Edital.uf.label("uf"),
+            Edital.objeto.label("objeto"),
+            Edital.data_encerramento_proposta.label("data"),
+            Edital.valor_estimado.label("valor_edital"),
+            _referencia_pncp().label("referencia"),
+            null().cast(Text).label("numero"),
+            ResultadoBusca.situacao.label("situacao"),
+            ResultadoBusca.desconto.label("desconto"),
+            ResultadoBusca.valor_estimado_considerado.label("estimado_considerado"),
+            ResultadoBusca.valor_homologado_considerado.label("homologado_considerado"),
+            ResultadoBusca.vencedor_ni.label("vencedor_ni"),
+            ResultadoBusca.vencedor_nome.label("vencedor_nome"),
+            ResultadoBusca.vencedor_porte.label("vencedor_porte"),
+            *(c.label(f"linha_{i}") for i, c in enumerate(casamentos)),
+        )
+        .join(ResultadoBusca, _juncao())
+        .where(
+            Edital.fonte == Fonte.pncp.value,
+            or_(*casamentos) if casamentos else false(),
+            Edital.data_encerramento_proposta > inicio,
+        )
+    )
+    externo = ResultadoExterno
+    # As linhas do caso externo foram decididas na gravação; vale só o que ainda é linha.
+    tem_linha = (
+        externo.linhas.op("&&")(array(nomes, type_=Text).cast(ARRAY(Text))) if nomes else false()
+    )
+    externos = select(
+        externo.fonte.label("fonte"),
+        externo.id_na_fonte.label("id_na_fonte"),
+        externo.orgao_cnpj.label("orgao_cnpj"),
+        externo.uf.label("uf"),
+        externo.objeto.label("objeto"),
+        externo.data.label("data"),
+        externo.valor_estimado.label("valor_edital"),
+        func.coalesce(externo.data_resultado, func.timezone(FUSO.key, externo.data)).label(
+            "referencia"
+        ),
+        externo.numero.label("numero"),
+        externo.situacao.label("situacao"),
+        externo.desconto.label("desconto"),
+        externo.valor_estimado.label("estimado_considerado"),
+        externo.valor_homologado.label("homologado_considerado"),
+        externo.vencedor_ni.label("vencedor_ni"),
+        externo.vencedor_nome.label("vencedor_nome"),
+        externo.vencedor_porte.label("vencedor_porte"),
+        *(
+            (literal(nome, Text) == any_(externo.linhas)).label(f"linha_{i}")
+            for i, nome in enumerate(nomes)
+        ),
+    ).where(externo.data > inicio, tem_linha)
+    return union_all(pncp, externos).subquery("caso")
+
+
+def _ordem(casos: Subquery) -> list[Any]:
+    return [casos.c.referencia.desc().nulls_last(), casos.c.id_na_fonte.desc()]
+
+
+def _contagens(
+    sessao: Session, casos: Subquery, filtro: list[ColumnElement[bool]]
+) -> dict[str, int]:
+    consulta = (
+        select(casos.c.situacao, func.count())
+        .where(*filtro)
+        .group_by(casos.c.situacao)
+        .order_by(casos.c.situacao)
+    )
+    return {situacao: int(n) for situacao, n in sessao.execute(consulta)}
+
+
 def _positivo(valor: Decimal | None) -> Decimal | None:
     """Estimado ≤ 0 é "sem estimado" (a tela trata nulo)."""
     return valor if valor is not None and valor > 0 else None
 
 
-def _ultimas(sessao: Session, filtro: list[ColumnElement[bool]]) -> list[ContratacaoPassada]:
-    consulta = (
-        select(
-            Edital.fonte,
-            Edital.id_na_fonte,
-            Edital.objeto,
-            Edital.data_encerramento_proposta,
-            Edital.valor_estimado,
-            ResultadoBusca.situacao,
-            ResultadoBusca.valor_estimado_considerado,
-            ResultadoBusca.valor_homologado_considerado,
-            ResultadoBusca.desconto,
-            ResultadoBusca.vencedor_nome,
-            ResultadoBusca.vencedor_porte,
-        )
-        .join(ResultadoBusca, _juncao())
-        .where(*filtro)
-        .order_by(_referencia().desc().nulls_last(), Edital.id_na_fonte.desc())
-        .limit(ULTIMAS)
-    )
+def _ultimas(
+    sessao: Session, casos: Subquery, filtro: list[ColumnElement[bool]]
+) -> list[ContratacaoPassada]:
+    consulta = select(casos).where(*filtro).order_by(*_ordem(casos)).limit(ULTIMAS)
     return [
         ContratacaoPassada(
             id_publico=id_publico(linha.fonte, linha.id_na_fonte),
             objeto=linha.objeto,
-            data=linha.data_encerramento_proposta,
+            data=linha.data,
             situacao=linha.situacao,
             # O par considerado é o que dá o desconto; sem ele, o estimado do edital.
             valor_estimado=_positivo(
-                linha.valor_estimado_considerado
-                if linha.valor_estimado_considerado is not None
-                else linha.valor_estimado
+                linha.estimado_considerado
+                if linha.estimado_considerado is not None
+                else linha.valor_edital
             ),
-            valor_homologado=linha.valor_homologado_considerado,
+            valor_homologado=linha.homologado_considerado,
             desconto=linha.desconto,
             parcial=linha.situacao == "parcial",
             vencedor_nome=linha.vencedor_nome,
             vencedor_porte=linha.vencedor_porte,
+            origem=ROTULOS_FONTE.get(linha.fonte, linha.fonte),
         )
         for linha in sessao.execute(consulta)
     ]
@@ -213,32 +283,35 @@ def _mediana(valores: list[Decimal]) -> Decimal | None:
     return Decimal(statistics.median(valores)).quantize(_QUATRO_CASAS)
 
 
-def _vencedores(sessao: Session, filtro: list[ColumnElement[bool]]) -> list[Vencedor]:
+def _vencedores(
+    sessao: Session, casos: Subquery, filtro: list[ColumnElement[bool]]
+) -> list[Vencedor]:
     """Uma vitória por contratação (o vencedor do resumo). Pessoa física conta à parte.
 
     `parcial` conta vitória, mas o desconto provisório não entra na mediana (regra da régua).
+    O mesmo CNPJ no PNCP e no TCE-PE soma as vitórias.
     """
     consulta = (
         select(
-            Edital.id_na_fonte,
-            ResultadoBusca.vencedor_ni,
-            ResultadoBusca.vencedor_nome,
-            ResultadoBusca.vencedor_porte,
-            ResultadoBusca.valor_homologado_considerado,
-            ResultadoBusca.desconto,
-            ResultadoBusca.situacao,
+            casos.c.fonte,
+            casos.c.id_na_fonte,
+            casos.c.vencedor_ni,
+            casos.c.vencedor_nome,
+            casos.c.vencedor_porte,
+            casos.c.homologado_considerado,
+            casos.c.desconto,
+            casos.c.situacao,
         )
-        .join(Edital, _juncao())
         .where(*filtro)
-        .where(ResultadoBusca.vencedor_nome.is_not(None))
-        .order_by(_referencia().desc().nulls_last(), Edital.id_na_fonte.desc())
+        .where(casos.c.vencedor_nome.is_not(None))
+        .order_by(*_ordem(casos))
     )
     grupos: dict[tuple[str, str], dict[str, Any]] = {}
     for linha in sessao.execute(consulta):
         if linha.vencedor_ni:
             chave = ("ni", linha.vencedor_ni)
         elif linha.vencedor_nome == PESSOA_FISICA:
-            chave = ("pf", linha.id_na_fonte)
+            chave = ("pf", id_publico(linha.fonte, linha.id_na_fonte))
         else:
             chave = ("nome", linha.vencedor_nome)
         # Mesma ordem de `_ultimas`: nome e porte vêm do resultado mais recente.
@@ -253,7 +326,9 @@ def _vencedores(sessao: Session, filtro: list[ColumnElement[bool]]) -> list[Venc
             },
         )
         grupo["vitorias"] += 1
-        grupo["soma"] += linha.valor_homologado_considerado or Decimal(0)
+        grupo["soma"] += linha.homologado_considerado or Decimal(0)
+        if grupo["porte"] is None:
+            grupo["porte"] = linha.vencedor_porte  # o TCE-PE não tem porte; o PNCP pode ter
         if linha.situacao == "homologada" and linha.desconto is not None:
             grupo["descontos"].append(linha.desconto)
     ordenados = sorted(grupos.values(), key=lambda g: (-g["vitorias"], -g["soma"]))
@@ -273,29 +348,50 @@ def _quartis(valores: list[Decimal]) -> tuple[Decimal | None, Decimal | None, De
     return p25, mediana, p75
 
 
+def _proprios(
+    sessao: Session, casos: Subquery, fonte: str, id_na_fonte: str, orgao_cnpj: str | None
+) -> list[ColumnElement[bool]]:
+    """Casos que são o próprio edital: ele mesmo e, para um edital do portal da Compesa, o
+    processo do TCE-PE do mesmo órgão com o mesmo número de licitação ("LC 213/2026 CEL-1" ↔
+    `numeroModalidade` 213 de 2026)."""
+    proprios = [and_(casos.c.fonte == fonte, casos.c.id_na_fonte == id_na_fonte)]
+    if fonte == Fonte.compesa.value and orgao_cnpj:
+        bruto = bruto_do_edital(sessao, fonte, id_na_fonte) or {}
+        numero = numero_licitacao(bruto.get("numero"))
+        if numero is not None:
+            proprios.append(
+                and_(
+                    casos.c.fonte == FONTE_TCEPE,
+                    casos.c.orgao_cnpj == orgao_cnpj,
+                    casos.c.numero == numero,
+                )
+            )
+    return proprios
+
+
 def _regua(
     sessao: Session,
-    filtro: list[ColumnElement[bool]],
+    casos: Subquery,
     criterios: Criterios,
-    proprio: tuple[str, str],
+    proprios: list[ColumnElement[bool]],
     linha: str | None,
     uf: str | None,
     faixa: str | None,
 ) -> Regua:
     condicoes = [
-        *filtro,
-        ResultadoBusca.situacao == "homologada",
-        ResultadoBusca.desconto.is_not(None),
+        casos.c.situacao == "homologada",
+        casos.c.desconto.is_not(None),
         # O próprio edital não mede a si mesmo.
-        ~and_(Edital.fonte == proprio[0], Edital.id_na_fonte == proprio[1]),
+        # coalesce: com `numero` nulo a comparação é NULL, e NOT NULL tiraria o caso.
+        *(~func.coalesce(proprio, false()) for proprio in proprios),
     ]
     if linha is not None:
-        condicoes.append(_casa_termos(criterios.linhas[linha]))
+        condicoes.append(casos.c[f"linha_{list(criterios.linhas).index(linha)}"])
     if uf is not None:
-        condicoes.append(Edital.uf == uf)
+        condicoes.append(casos.c.uf == uf)
     if faixa is not None:
-        condicoes.append(_faixa_sql() == faixa)
-    consulta = select(ResultadoBusca.desconto).join(Edital, _juncao()).where(*condicoes)
+        condicoes.append(_faixa_sql(casos.c.valor_edital) == faixa)
+    consulta = select(casos.c.desconto).where(*condicoes)
     descontos = [d for d in sessao.scalars(consulta) if d is not None]
     p25, mediana, p75 = _quartis(descontos)
     return Regua(
@@ -315,39 +411,39 @@ def historico_do_edital(
 ) -> HistoricoOrgao | None:
     """Histórico do órgão do edital; None só se o edital não existe.
 
-    O próprio edital fica fora das réguas, mas entra nas contagens, últimas e vencedores.
+    O próprio edital fica fora das réguas, mas entra nas contagens, últimas e vencedores (o
+    edital do portal da Compesa também deixa de fora o processo do TCE-PE de mesmo número).
     `agora` sem fuso → ValueError.
     Órgão sem nada no recorte (ou edital sem CNPJ) → contagens, últimas e vencedores vazios.
     Régua: uma por linha do edital (sem linha → uma de todas as linhas), na UF e faixa de valor
     do edital (sem faixa se o valor é nulo ou ≤ 0), só contratações `homologada` com desconto,
-    de todos os órgãos; com menos de 5 casos, vem também a régua da mesma linha sem UF e sem
-    faixa. Edital sem CNPJ tem histórico vazio, mas régua.
+    de todos os órgãos e das duas origens (PNCP e TCE-PE); com menos de 5 casos, vem também a
+    régua da mesma linha sem UF e sem faixa. Edital sem CNPJ tem histórico vazio, mas régua.
     """
     if agora.tzinfo is None or agora.utcoffset() is None:
         raise ValueError("agora precisa ter fuso horário")
     edital = obter_edital(sessao, fonte, id_na_fonte, criterios)
     if edital is None:
         return None
-    recorte = _recorte(criterios, agora)
-    do_orgao = Edital.orgao_cnpj == edital.orgao_cnpj if edital.orgao_cnpj else false()
-    filtro = [*recorte, do_orgao]
-    contagens = _contagens(sessao, filtro)
+    casos = _casos(criterios, agora)
+    filtro = [casos.c.orgao_cnpj == edital.orgao_cnpj if edital.orgao_cnpj else false()]
+    contagens = _contagens(sessao, casos, filtro)
     faixa = faixa_de_valor(edital.valor_estimado)
-    proprio = (fonte, id_na_fonte)
+    proprios = _proprios(sessao, casos, fonte, id_na_fonte, edital.orgao_cnpj)
     reguas: list[Regua] = []
     linhas: list[str | None] = [*edital.linhas] or [None]
     for linha in linhas:
-        regua = _regua(sessao, recorte, criterios, proprio, linha, edital.uf, faixa)
+        regua = _regua(sessao, casos, criterios, proprios, linha, edital.uf, faixa)
         reguas.append(regua)
         if regua.poucos_casos and (regua.uf is not None or regua.faixa is not None):
-            reguas.append(_regua(sessao, recorte, criterios, proprio, linha, None, None))
+            reguas.append(_regua(sessao, casos, criterios, proprios, linha, None, None))
     return HistoricoOrgao(
         orgao_cnpj=edital.orgao_cnpj,
         orgao_nome=edital.orgao_nome,
         contagens=contagens,
         total=sum(contagens.values()),
-        ultimas=_ultimas(sessao, filtro),
-        vencedores=_vencedores(sessao, filtro),
+        ultimas=_ultimas(sessao, casos, filtro),
+        vencedores=_vencedores(sessao, casos, filtro),
         reguas=reguas,
         limite_inexequivel=limite_inexequivel(edital.orgao_cnpj),
     )

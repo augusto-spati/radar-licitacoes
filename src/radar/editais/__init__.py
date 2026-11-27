@@ -1,5 +1,19 @@
 """Módulo editais."""
 
+from radar.editais.externos import (
+    FONTE_TCEPE,
+    ORGAOS_TCEPE,
+    CasoExterno,
+    VencedorExterno,
+    alvo_historico_tcepe,
+    apagar_casos_externos,
+    caso_tcepe,
+    casos_externos_gravados,
+    contratos_do_processo,
+    gravar_casos_externos,
+    vencedor_gravado,
+    vencedor_tcepe,
+)
 from radar.editais.filtro import (
     Criterios,
     EditalDetalhe,
@@ -21,7 +35,13 @@ from radar.editais.historico import (
     historico_do_edital,
     limite_inexequivel,
 )
-from radar.editais.modelos import Fonte, ResultadoBusca, ResultadoItem, Situacao
+from radar.editais.modelos import (
+    Fonte,
+    ResultadoBusca,
+    ResultadoExterno,
+    ResultadoItem,
+    Situacao,
+)
 from radar.editais.registro import (
     ResultadoRegistro,
     reconciliar_retrato,
@@ -39,6 +59,19 @@ from radar.editais.resultados import (
 )
 
 __all__ = [
+    "FONTE_TCEPE",
+    "ORGAOS_TCEPE",
+    "CasoExterno",
+    "ResultadoExterno",
+    "VencedorExterno",
+    "alvo_historico_tcepe",
+    "apagar_casos_externos",
+    "caso_tcepe",
+    "casos_externos_gravados",
+    "contratos_do_processo",
+    "gravar_casos_externos",
+    "vencedor_gravado",
+    "vencedor_tcepe",
     "ContratacaoPassada",
     "HistoricoOrgao",
     "Regua",

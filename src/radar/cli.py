@@ -68,16 +68,26 @@ from radar.comum import (
 )
 from radar.comum.telemetria import telemetria_do_processo, tracer
 from radar.editais import (
+    FONTE_TCEPE,
     Criterios,
     EditalResumo,
+    VencedorExterno,
+    alvo_historico_tcepe,
     alvos_resultado,
+    apagar_casos_externos,
     bruto_do_edital,
     carregar_criterios,
+    caso_tcepe,
+    casos_externos_gravados,
+    contratos_do_processo,
+    gravar_casos_externos,
     gravar_resultados,
     interpretar_itens,
     obter_edital,
     registrar,
     separar_id_publico,
+    vencedor_gravado,
+    vencedor_tcepe,
 )
 from radar.editais import filtrar as filtrar_editais
 from radar.precos import (
@@ -1226,17 +1236,101 @@ def _limpar_fora_do_alvo(sessao: Session, brutos: list[dict[str, Any]], alvos: s
     return len(saiu)
 
 
+def _linhas_tcepe(processo: dict[str, Any], criterios: Criterios) -> list[str]:
+    """Linhas do `filtro.toml` cujo termo está no objeto (sem acento, U+FFFD vale uma letra)."""
+    return [
+        nome
+        for nome, termos in criterios.linhas.items()
+        if processo_de_saneamento(processo, termos)
+    ]
+
+
+def _alvos_historico_tcepe(
+    brutos: list[dict[str, Any]], criterios: Criterios
+) -> list[tuple[dict[str, Any], list[str]]]:
+    """Processos do histórico do órgão: Compesa, homologado, com alguma linha (etapa 7a.3)."""
+    alvos = []
+    for processo in brutos:
+        if alvo_historico_tcepe(processo) and (linhas := _linhas_tcepe(processo, criterios)):
+            alvos.append((processo, linhas))
+    return alvos
+
+
+def _vencedor_de_um_processo(
+    cliente: ClienteTcepe, processo: dict[str, Any]
+) -> VencedorExterno | None:
+    """Contratada do contrato que bate com o homologado; sem ele, o participante do processo."""
+    try:
+        instrumentos = cliente.instrumentos(
+            str(processo["unidadeJurisdicionadaId"]),
+            str(processo.get("numeroContratacao") or ""),
+            int(processo["anoContratacao"]),
+        )
+    except NumeroSemBusca:
+        instrumentos = []
+    contratos = [
+        (instrumento, cliente.participantes_instrumento(str(instrumento["instrumentoJuridicoId"])))
+        for instrumento in contratos_do_processo(processo, instrumentos)
+    ]
+    vencedor = vencedor_tcepe(contratos)
+    if vencedor is None:
+        participantes = cliente.participantes_processo(str(processo["processoContratacaoId"]))
+        vencedor = vencedor_tcepe([], participantes)
+    return vencedor
+
+
+def _historico_de_um_processo(
+    sessao: Session, cliente: ClienteTcepe, processo: dict[str, Any], linhas: list[str]
+) -> bool:
+    """Grava o caso do processo no histórico do órgão e faz o commit; True se tem vencedor.
+
+    Caso já gravado com vencedor e o mesmo homologado não busca o vencedor de novo.
+    """
+    processo_id = str(processo["processoContratacaoId"]).strip()
+    vencedor = vencedor_gravado(sessao, FONTE_TCEPE, processo_id, processo.get("valorHomologado"))
+    sessao.rollback()  # fecha a leitura antes da rede (o Neon derruba transação ociosa)
+    if vencedor is None:
+        vencedor = _vencedor_de_um_processo(cliente, processo)
+    caso = caso_tcepe(processo, linhas, vencedor)
+    if caso is None:  # sem data: não dá para pôr no recorte de 24 meses
+        apagar_casos_externos(sessao, FONTE_TCEPE, [processo_id])
+    else:
+        gravar_casos_externos(sessao, [caso])
+    sessao.commit()
+    return caso is not None and caso.vencedor_nome is not None
+
+
+def _limpar_historico_fora_do_alvo(
+    sessao: Session, brutos: list[dict[str, Any]], alvos: set[str]
+) -> int:
+    """Apaga do histórico os processos da listagem que saíram do alvo (revogado, anulado, não
+    mais homologado, sem linha). Processo fora da listagem (outro ano) fica."""
+    na_listagem = {str(p.get("processoContratacaoId") or "").strip() for p in brutos}
+    saiu = (na_listagem - alvos) & casos_externos_gravados(sessao, FONTE_TCEPE)
+    if not saiu:
+        sessao.rollback()
+        return 0
+    apagar_casos_externos(sessao, FONTE_TCEPE, saiu)
+    sessao.commit()
+    logger.info("tcepe_historico_removidos", extra={"processos": len(saiu)})
+    return len(saiu)
+
+
 @app_tcepe.command("atualizar")
 def tcepe_atualizar(
     anos: Annotated[
         str | None,
         typer.Option(help="Anos de contratação, separados por vírgula (padrão: atual e anterior)."),
     ] = None,
+    config: OpcaoConfig = ARQUIVO_CONFIG,
 ) -> None:
-    """Grava preços unitários (estimado e contratado) dos processos de saneamento do TCE-PE."""
+    """Grava preços unitários (estimado e contratado) dos processos de saneamento do TCE-PE e
+    os processos da Compesa no histórico do órgão (ela não publica no PNCP)."""
     configurar_logs()
     lista_anos = _anos_tcepe(anos)
+    criterios = carregar_criterios(config)
     processos_total = itens_total = falhas = seguidas = removidos = 0
+    casos_historico = com_vencedor = removidos_historico = 0
     interrompida = False
     with telemetria_do_processo("radar-tcepe"), _criar_sessao() as sessao:
         cliente = _criar_cliente_tcepe()
@@ -1278,11 +1372,40 @@ def tcepe_atualizar(
                     itens_total += gravados
                 if interrompida:
                     break
+                # Histórico do órgão (7a.3): mesmos processos já baixados, outro recorte.
+                alvos_historico = _alvos_historico_tcepe(brutos, criterios)
+                removidos_historico += _limpar_historico_fora_do_alvo(
+                    sessao,
+                    brutos,
+                    {str(p["processoContratacaoId"]).strip() for p, _ in alvos_historico},
+                )
+                for processo, linhas in alvos_historico:
+                    try:
+                        vencedor = _historico_de_um_processo(sessao, cliente, processo, linhas)
+                    except Exception as erro:  # um processo ruim não para a rodada
+                        sessao.rollback()
+                        logger.exception(
+                            "tcepe_historico_falhou",
+                            extra={"processo": processo.get("processoContratacaoId")},
+                        )
+                        falhas += 1
+                        seguidas = seguidas + 1 if isinstance(erro, ErroTcepe) else 0
+                        if seguidas >= FALHAS_SEGUIDAS_TCEPE:
+                            interrompida = True
+                            break
+                        continue
+                    seguidas = 0
+                    casos_historico += 1
+                    com_vencedor += int(vencedor)
+                if interrompida:
+                    break
         finally:
             cliente.fechar()
     typer.echo(
         f"tcepe: {processos_total} processos de saneamento, {itens_total} itens gravados, "
-        f"{falhas} falhas, {removidos} processos removidos"
+        f"{falhas} falhas, {removidos} processos removidos; histórico do órgão: "
+        f"{casos_historico} casos ({com_vencedor} com vencedor), "
+        f"{removidos_historico} removidos"
         + (
             f" (interrompida após {FALHAS_SEGUIDAS_TCEPE} falhas seguidas do TCE-PE)"
             if interrompida
