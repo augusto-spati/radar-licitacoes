@@ -91,9 +91,31 @@ describe('Entrar (login real, Cognito)', () => {
     await pedirCodigo('tio@fr.com.br');
     await digitarCodigo('000000');
 
-    expect(await screen.findByText('Código incorreto. Confira o e-mail e tente de novo.')).toBeTruthy();
+    const alerta = await screen.findByRole('alert');
+    expect(alerta.textContent).toContain('Código incorreto. Confira o e-mail e tente de novo.');
     expect(endereco()).toBe('/entrar');
     expect(sessionStorage.getItem('radar.sessao')).toBeNull();
+  });
+
+  it('Enter envia o e-mail e o código; os campos pedem o preenchimento automático certo', async () => {
+    vi.stubEnv('VITE_FONTE', 'api');
+    const mock = simularFetch(respostaJson(desafioCognito), respostaJson(tokensCognito));
+    abrir();
+
+    const email = screen.getByLabelText('E-mail');
+    expect(email.getAttribute('autocomplete')).toBe('email');
+    fireEvent.change(email, {target: {value: 'tio@fr.com.br'}});
+    fireEvent.keyDown(email, {key: 'Enter'});
+
+    const codigo = await screen.findByLabelText('Código');
+    expect(codigo.getAttribute('autocomplete')).toBe('one-time-code');
+    expect(codigo.getAttribute('inputmode')).toBe('numeric');
+    expect(document.activeElement).toBe(codigo);
+    fireEvent.change(codigo, {target: {value: '654321'}});
+    fireEvent.keyDown(codigo, {key: 'Enter'});
+
+    await vi.waitFor(() => expect(endereco()).toBe('/'));
+    expect(mock).toHaveBeenCalledTimes(2);
   });
 
   it('"Pedir outro código" fica ocupado enquanto o pedido não volta', async () => {
