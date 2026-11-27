@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from radar.coleta.modelos import ColetaJanela, PaginaBruta
 from radar.coleta.pncp import ClientePNCP, ErroPNCP
+from radar.comum import Outbox, enfileirar
 
 logger = logging.getLogger(__name__)
 
@@ -151,8 +152,7 @@ def ler_paginas_nao_processadas(
     """Pares (pagina_id, registros) das páginas do PNCP ainda não processadas, em ordem de id.
 
     `excluir` são ids a pular (páginas que falharam nesta execução). As páginas de retrato
-    ficam de fora: o fluxo do retrato as marca como processadas ao concluir, e nem as de um
-    retrato em falha são JSON do PNCP.
+    ficam de fora: não são JSON do PNCP, e quem as processa é o consumidor do retrato.
     """
     consulta = select(PaginaBruta.id, PaginaBruta.conteudo).where(
         PaginaBruta.processada_em.is_(None), PaginaBruta.janela_id.is_not(None)
@@ -161,6 +161,53 @@ def ler_paginas_nao_processadas(
         consulta = consulta.where(PaginaBruta.id.not_in(excluir))
     linhas = sessao.execute(consulta.order_by(PaginaBruta.id).limit(limite)).all()
     return [(pagina_id, (conteudo or {}).get("data") or []) for pagina_id, conteudo in linhas]
+
+
+@dataclass(frozen=True)
+class PaginaPNCP:
+    processada: bool
+    registros: list[dict[str, Any]]
+
+
+def ler_pagina_para_processar(sessao: Session, pagina_id: int) -> PaginaPNCP | None:
+    """A página do PNCP, travada (`FOR UPDATE`) até o commit; None se não existe.
+
+    A trava serializa duas entregas da mesma mensagem: a segunda espera a primeira commitar
+    e então vê `processada`.
+    """
+    linha = sessao.execute(
+        select(PaginaBruta.processada_em, PaginaBruta.conteudo)
+        .where(PaginaBruta.id == pagina_id, PaginaBruta.janela_id.is_not(None))
+        .with_for_update()
+    ).first()
+    if linha is None:
+        return None
+    processada_em, conteudo = linha
+    return PaginaPNCP(
+        processada=processada_em is not None, registros=(conteudo or {}).get("data") or []
+    )
+
+
+def paginas_publicadas_sem_processar(sessao: Session, publicadas_antes_de: datetime) -> int:
+    """Páginas do PNCP cuja mensagem saiu antes do corte e que ainda não foram processadas.
+
+    Mensagem publicada e página parada é o consumidor que não está dando conta (ou a fila de
+    falhas acumulando).
+    """
+    pagina_id = Outbox.carga["pagina_id"].as_integer()
+    return int(
+        sessao.scalar(
+            select(func.count(func.distinct(PaginaBruta.id)))
+            .join(Outbox, pagina_id == PaginaBruta.id)
+            .where(
+                Outbox.tipo == "pagina_coletada",
+                Outbox.publicada_em < publicadas_antes_de,
+                PaginaBruta.processada_em.is_(None),
+                PaginaBruta.janela_id.is_not(None),
+            )
+        )
+        or 0
+    )
 
 
 def marcar_processada(sessao: Session, pagina_id: int) -> None:
@@ -337,7 +384,7 @@ def _gravar_pagina(
     comando = pg_insert(PaginaBruta).values(
         janela_id=janela.id, numero_pagina=numero, conteudo=bruto, coletada_em=agora
     )
-    sessao.execute(
+    pagina_id: int = sessao.execute(
         comando.on_conflict_do_update(
             constraint="uq_pagina_bruta_janela_numero",
             set_={
@@ -345,9 +392,11 @@ def _gravar_pagina(
                 "coletada_em": agora,
                 "processada_em": None,
             },
-        )
-    )
-    sessao.commit()  # checkpoint: a página sobrevive a uma falha posterior
+        ).returning(PaginaBruta.id)
+    ).scalar_one()
+    # Regravada também volta à fila: processada_em voltou a NULL.
+    enfileirar(sessao, "pagina_coletada", {"pagina_id": pagina_id})
+    sessao.commit()  # checkpoint: a página (e a mensagem) sobrevive a uma falha posterior
 
 
 def _sem_paginas(sessao: Session, janela: ColetaJanela) -> bool:

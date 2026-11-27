@@ -8,6 +8,7 @@ MODULOS = [
     "radar.analise",
     "radar.comum",
     "radar.cli",
+    "radar.processador",
 ]
 
 

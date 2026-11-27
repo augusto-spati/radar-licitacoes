@@ -2,14 +2,14 @@
 
 Invariante central: um retrato só vale como "a lista completa" quando termina `concluido`.
 Qualquer página em falha, ou menos registros que o mínimo da fonte, deixa o retrato em
-`falha`, e quem chama (a cli) não grava editais nem reconcilia. Este módulo não conhece
-`editais`: devolve dicionários normalizados e os ids listados.
+`falha`, e nada é gravado em editais nem reconciliado. Este módulo não conhece `editais`:
+o retrato concluído vira uma mensagem `retrato_coletado` na outbox, no mesmo commit, e o
+consumidor relê as páginas (`paginas_do_retrato`), extrai, grava e reconcilia.
 
 Um único retrato por fonte de cada vez: um advisory lock por fonte (chave dupla
 `CHAVE_RETRATOS`, `chave_da_fonte(nome)`), separado do lock do coletor do PNCP. Assim uma
 rodada agendada e uma manual não se sobrepõem na mesma fonte, mas fontes diferentes (e o
-PNCP) não se bloqueiam. A cli segura o lock (`trava_fonte`) durante o retrato e o registro
-dos editais, então o ciclo inteiro da fonte é exclusivo.
+PNCP) não se bloqueiam. A cli segura o lock (`trava_fonte`) durante a coleta do retrato.
 """
 
 import json
@@ -19,15 +19,16 @@ import time
 import zlib
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, cast
 
 import httpx
-from sqlalchemy import Engine, delete, desc, func, select, update
+from sqlalchemy import Engine, delete, desc, func, literal, select, tuple_, update
 from sqlalchemy.orm import Session
 
 from radar.coleta.modelos import ColetaRetrato, PaginaBruta
+from radar.comum import enfileirar
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,7 @@ TIMEOUT_SEGUNDOS = 60.0
 CHAVE_RETRATOS = 7_240_002  # primeira metade do advisory lock; a segunda é a fonte
 FRACAO_ENCOLHEU = 0.5
 LIMITE_ERRO = 500
-MANTER_CONCLUIDOS = 3  # retratos concluídos cujas páginas brutas ficam guardadas
+MANTER_CONCLUIDOS = 3  # retratos processados cujas páginas brutas ficam guardadas
 MANTER_FALHAS = 10  # retratos em falha idem (para diagnóstico)
 
 Formato = Literal["json", "html", "js"]
@@ -152,10 +153,6 @@ class ResumoRetrato:
     status: StatusRetrato
     registros: int = 0
     erro: str | None = None
-    normalizados: list[dict[str, Any]] = field(default_factory=list)
-    # Todos os ids que a fonte listou, inclusive os que depois falham na validação: é o que
-    # a reconciliação considera "ainda na lista".
-    ids_listados: set[str] = field(default_factory=set)
 
 
 @dataclass(frozen=True)
@@ -175,10 +172,6 @@ def _agora_real() -> datetime:
 def chave_da_fonte(nome: str) -> int:
     """Segunda metade do advisory lock: um int4 estável derivado do nome da fonte."""
     return zlib.crc32(nome.encode("utf-8")) & 0x7FFFFFFF
-
-
-def ids_do_retrato(resumo: ResumoRetrato) -> set[str]:
-    return set(resumo.ids_listados)
 
 
 def ultimo_retrato(sessao: Session, fonte: str) -> InfoRetrato | None:
@@ -228,10 +221,9 @@ def executar_retrato(
     relogio: Callable[[], datetime] | None = None,
     trava_mantida: bool = False,
 ) -> ResumoRetrato:
-    """Lê a lista inteira da fonte e devolve o resumo. Não grava editais (isso é da cli).
+    """Lê a lista inteira da fonte e devolve o resumo. Não grava editais (é do consumidor).
 
-    Com `trava_mantida=True` quem chama já segura `trava_fonte` (a cli segura durante o
-    retrato e o registro, para que o ciclo inteiro da fonte não se sobreponha).
+    Com `trava_mantida=True` quem chama já segura `trava_fonte`.
     `agora` é o carimbo `iniciado_em` (o que a auditoria compara); `concluido_em` e
     `coletada_em` usam o relógio real (`relogio`, injetável nos testes).
     """
@@ -315,13 +307,11 @@ def _executar(
         )
 
     quando = relogio()
-    # As páginas do retrato já foram "processadas" por ele: fora da fila do PNCP.
-    sessao.execute(
-        update(PaginaBruta).where(PaginaBruta.retrato_id == retrato_id).values(processada_em=quando)
-    )
     retrato.status = "concluido"
     retrato.registros = registros
     retrato.concluido_em = quando
+    # Mesmo commit que conclui: ou o retrato fica concluído com a mensagem, ou nenhum dos dois.
+    enfileirar(sessao, "retrato_coletado", {"retrato_id": retrato_id})
     sessao.commit()
     logger.info(
         "retrato_concluido",
@@ -332,12 +322,92 @@ def _executar(
             "duracao_s": round(time.monotonic() - inicio, 3),
         },
     )
-    return ResumoRetrato(
-        retrato_id=retrato_id,
-        status="concluido",
-        registros=registros,
-        normalizados=normalizados,
-        ids_listados=ids_listados,
+    return ResumoRetrato(retrato_id=retrato_id, status="concluido", registros=registros)
+
+
+def paginas_do_retrato(sessao: Session, retrato_id: int) -> list[PaginaColetada]:
+    """As páginas brutas do retrato, em ordem, como a fonte as entregou a `extrair`.
+
+    O JSON volta re-serializado (`json.dumps`): o texto pode diferir do original em espaços
+    e escapes, mas `extrair` lê o mesmo conteúdo.
+    """
+    paginas = sessao.scalars(
+        select(PaginaBruta)
+        .where(PaginaBruta.retrato_id == retrato_id)
+        .order_by(PaginaBruta.numero_pagina)
+    )
+    return [_reconstruir(pagina) for pagina in paginas]
+
+
+def _reconstruir(pagina: PaginaBruta) -> PaginaColetada:
+    # O CHECK da tabela garante o formato e o conteúdo certo para cada um.
+    formato = cast(Formato, pagina.formato)
+    if formato == "json":
+        texto = json.dumps(pagina.conteudo, ensure_ascii=False)
+    else:
+        texto = pagina.conteudo_texto or ""
+    return PaginaColetada(url=pagina.url or "", formato=formato, texto=texto)
+
+
+@dataclass(frozen=True)
+class EstadoRetrato:
+    id: int
+    fonte: str
+    status: str
+    iniciado_em: datetime
+    processado_em: datetime | None
+    paginas: int
+
+
+def estado_retrato(sessao: Session, retrato_id: int) -> EstadoRetrato | None:
+    """O que o consumidor precisa saber do retrato (None se o id não existe)."""
+    retrato = sessao.get(ColetaRetrato, retrato_id, populate_existing=True)
+    if retrato is None:
+        return None
+    return EstadoRetrato(
+        id=retrato.id,
+        fonte=retrato.fonte,
+        status=retrato.status,
+        iniciado_em=retrato.iniciado_em,
+        processado_em=retrato.processado_em,
+        paginas=retrato.paginas,
+    )
+
+
+def ha_retrato_mais_novo_processado(sessao: Session, retrato: EstadoRetrato) -> bool:
+    """Existe retrato da mesma fonte, mais novo e já processado? Mesma ordem de `limpar_brutos`."""
+    mais_novo = sessao.scalar(
+        select(ColetaRetrato.id)
+        .where(
+            ColetaRetrato.fonte == retrato.fonte,
+            ColetaRetrato.processado_em.is_not(None),
+            tuple_(ColetaRetrato.iniciado_em, ColetaRetrato.id)
+            > tuple_(literal(retrato.iniciado_em), literal(retrato.id)),
+        )
+        .limit(1)
+    )
+    return mais_novo is not None
+
+
+def marcar_retrato_processado(sessao: Session, retrato_id: int, quando: datetime) -> None:
+    """`processado_em` no retrato e `processada_em` nas páginas dele. Sem commit."""
+    sessao.execute(
+        update(ColetaRetrato).where(ColetaRetrato.id == retrato_id).values(processado_em=quando)
+    )
+    sessao.execute(
+        update(PaginaBruta).where(PaginaBruta.retrato_id == retrato_id).values(processada_em=quando)
+    )
+
+
+def retratos_sem_processar(sessao: Session) -> int:
+    """Retratos concluídos que o consumidor ainda não gravou (sem `processado_em`)."""
+    return int(
+        sessao.scalar(
+            select(func.count())
+            .select_from(ColetaRetrato)
+            .where(ColetaRetrato.status == "concluido", ColetaRetrato.processado_em.is_(None))
+        )
+        or 0
     )
 
 
@@ -359,23 +429,30 @@ def limpar_brutos(
 ) -> int:
     """Apaga as páginas brutas dos retratos antigos da fonte; devolve quantas. Com commit.
 
-    Ficam as páginas dos `manter_concluidos` retratos concluídos mais novos e dos
-    `manter_falhas` em falha mais novos (a falha é o que se quer diagnosticar). As linhas de
-    `coleta_retrato` ficam todas: a auditoria e o histórico de contagens continuam valendo.
-    Um retrato em andamento nunca é tocado.
+    Ficam as páginas dos `manter_concluidos` retratos processados (`processado_em`) mais
+    novos e dos `manter_falhas` em falha mais novos (a falha é o que se quer diagnosticar).
+    Um retrato concluído ainda não processado nunca perde as páginas (o consumidor vai
+    lê-las), nem conta entre os mantidos. As linhas de `coleta_retrato` ficam todas: a
+    auditoria e o histórico de contagens continuam valendo. Um retrato em andamento nunca é
+    tocado.
     """
 
-    def excedentes(status: str, manter: int) -> Any:
+    def excedentes(manter: int, *condicoes: Any) -> Any:
         return (
             select(ColetaRetrato.id)
-            .where(ColetaRetrato.fonte == fonte, ColetaRetrato.status == status)
+            .where(ColetaRetrato.fonte == fonte, *condicoes)
             .order_by(desc(ColetaRetrato.iniciado_em), desc(ColetaRetrato.id))
             .offset(manter)
         )
 
+    processados = excedentes(
+        manter_concluidos,
+        ColetaRetrato.status == "concluido",
+        ColetaRetrato.processado_em.is_not(None),
+    )
+    falhas = excedentes(manter_falhas, ColetaRetrato.status == "falha")
     comando = delete(PaginaBruta).where(
-        PaginaBruta.retrato_id.in_(excedentes("concluido", manter_concluidos))
-        | PaginaBruta.retrato_id.in_(excedentes("falha", manter_falhas))
+        PaginaBruta.retrato_id.in_(processados) | PaginaBruta.retrato_id.in_(falhas)
     )
     removidas: int = sessao.execute(comando).rowcount  # type: ignore[attr-defined]
     sessao.commit()

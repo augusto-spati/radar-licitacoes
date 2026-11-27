@@ -1,5 +1,5 @@
 # Imagem da API na Lambda. Build a partir da raiz: docker build -f docker/api-lambda.Dockerfile .
-# boto3 não é dependência do projeto: vem na imagem base da Lambda (lido só no SSM).
+# boto3 é dependência do projeto (SSM e SQS): entra pelo requirements exportado do uv.lock.
 FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim AS requisitos
 WORKDIR /app
 COPY pyproject.toml uv.lock ./

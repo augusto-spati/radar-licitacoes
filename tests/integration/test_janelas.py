@@ -15,6 +15,7 @@ from radar.coleta import (
 )
 from radar.coleta.janelas import CHAVE_COLETOR, ResumoColeta
 from radar.coleta.modelos import ColetaJanela, PaginaBruta
+from radar.comum import Outbox
 
 BRT = ZoneInfo("America/Sao_Paulo")
 D1 = date(2026, 11, 1)
@@ -174,6 +175,31 @@ def test_paginas_nao_processadas_e_marcacao(sessao: Session) -> None:
     sessao.commit()
     coletar_pendentes(sessao, como_cliente(falso), AGORA)
     assert len(ler_paginas_nao_processadas(sessao)) == 2
+
+
+def _mensagens(sessao: Session) -> list[tuple[str, dict[str, int]]]:
+    return [(m.tipo, m.carga) for m in sessao.scalars(select(Outbox).order_by(Outbox.id))]
+
+
+def _ids_das_paginas(sessao: Session) -> list[int]:
+    return list(sessao.scalars(select(PaginaBruta.id).order_by(PaginaBruta.numero_pagina)))
+
+
+def test_pagina_gravada_enfileira_mensagem(sessao: Session) -> None:
+    planejar_janelas(sessao, "publicacao", D1, D1, [6])
+    falso = ClienteFalso({("publicacao", D1, D1, 6, n): pagina(n, 2) for n in (1, 2)})
+    coletar_pendentes(sessao, como_cliente(falso), AGORA)
+    ids = _ids_das_paginas(sessao)
+    assert _mensagens(sessao) == [("pagina_coletada", {"pagina_id": i}) for i in ids]
+
+    # Regravar a mesma página (upsert) volta processada_em a NULL e enfileira de novo.
+    marcar_processada(sessao, ids[0])
+    j = sessao.scalars(select(ColetaJanela)).one()
+    j.status = "pendente"
+    sessao.commit()
+    coletar_pendentes(sessao, como_cliente(falso), AGORA)
+    assert _ids_das_paginas(sessao) == ids
+    assert _mensagens(sessao) == [("pagina_coletada", {"pagina_id": i}) for i in ids * 2]
 
 
 def test_auditoria_lista_faltando(sessao: Session) -> None:

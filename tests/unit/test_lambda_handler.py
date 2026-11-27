@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from radar.comum import segredos
 from radar.comum.config import RAIZ_REPOSITORIO
 
 
@@ -113,8 +114,8 @@ class _SsmFalso:
 def test_le_ssm_quando_sem_env(modulo: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
     falso = _SsmFalso()
     monkeypatch.delenv("RADAR_DATABASE_URL", raising=False)
-    monkeypatch.setattr(modulo, "_cliente_ssm", lambda: falso)
-    modulo._garantir_url_do_banco()
+    monkeypatch.setattr(segredos, "_cliente_ssm", lambda: falso)
+    segredos.garantir_url_do_banco()
     import os
 
     assert os.environ["RADAR_DATABASE_URL"] == "postgresql+psycopg://do-ssm"
@@ -126,8 +127,8 @@ def test_nao_le_ssm_com_env(modulo: ModuleType, monkeypatch: pytest.MonkeyPatch)
         raise AssertionError("não deveria consultar o SSM")
 
     monkeypatch.setenv("RADAR_DATABASE_URL", "postgresql+psycopg://local")
-    monkeypatch.setattr(modulo, "_cliente_ssm", explode)
-    modulo._garantir_url_do_banco()
+    monkeypatch.setattr(segredos, "_cliente_ssm", explode)
+    segredos.garantir_url_do_banco()
 
 
 def test_falha_do_ssm_nao_vaza_valor(modulo: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -136,7 +137,7 @@ def test_falha_do_ssm_nao_vaza_valor(modulo: ModuleType, monkeypatch: pytest.Mon
             raise ValueError("segredo-postgresql://u:p@h")
 
     monkeypatch.delenv("RADAR_DATABASE_URL", raising=False)
-    monkeypatch.setattr(modulo, "_cliente_ssm", lambda: Quebrado())
+    monkeypatch.setattr(segredos, "_cliente_ssm", lambda: Quebrado())
     with pytest.raises(RuntimeError, match="/radar/prod/database_url") as info:
-        modulo._garantir_url_do_banco()
+        segredos.garantir_url_do_banco()
     assert "segredo" not in str(info.value)

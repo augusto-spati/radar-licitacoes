@@ -21,16 +21,19 @@ from radar.coleta import (
     ErroFonte,
     PaginaColetada,
     executar_retrato,
-    ids_do_retrato,
     ler_paginas_nao_processadas,
     limpar_brutos,
+    paginas_do_retrato,
     ultimo_retrato,
 )
+from radar.coleta.compesa import URL_GRADE, URL_PAGINA, FonteCompesa
 from radar.coleta.modelos import ColetaJanela, ColetaRetrato, PaginaBruta
 from radar.coleta.retratos import CHAVE_RETRATOS, USER_AGENT, chave_da_fonte
-from radar.comum import Base, fabrica_sessao
+from radar.coleta.sanepar import FonteSanepar
+from radar.comum import Base, Outbox, fabrica_sessao
 from radar.editais import registrar_normalizados
 from radar.editais.modelos import Edital
+from radar.processador import consumidor
 
 FUSO = ZoneInfo("America/Sao_Paulo")
 AGORA = datetime(2026, 11, 26, 12, 0, tzinfo=FUSO)
@@ -228,7 +231,11 @@ def _retratos(sessao: Session, fonte: str) -> list[ColetaRetrato]:
     )
 
 
-def test_retrato_concluido_grava_paginas_e_devolve_normalizados(sessao: Session) -> None:
+def _mensagens(sessao: Session) -> list[tuple[str, dict[str, int]]]:
+    return [(m.tipo, m.carga) for m in sessao.scalars(select(Outbox).order_by(Outbox.id))]
+
+
+def test_retrato_concluido_grava_paginas(sessao: Session) -> None:
     fonte = FonteFalsa("sanepar", paginas=2)
     cliente = _cliente(_rotas("sanepar", _lista("OE-1/26", "OE-2/26"), _lista("OE-3/26")))
 
@@ -236,15 +243,127 @@ def test_retrato_concluido_grava_paginas_e_devolve_normalizados(sessao: Session)
 
     assert resumo.status == "concluido"
     assert resumo.registros == 3
-    assert ids_do_retrato(resumo) == {"OE-1/26", "OE-2/26", "OE-3/26"}
     retrato = _retratos(sessao, "sanepar")[-1]
     assert (retrato.status, retrato.paginas, retrato.registros) == ("concluido", 2, 3)
     assert retrato.concluido_em is not None
     paginas = sessao.scalars(select(PaginaBruta).where(PaginaBruta.retrato_id == retrato.id)).all()
     assert [p.numero_pagina for p in paginas] == [1, 2]
     assert all(p.formato == "html" and p.conteudo_texto for p in paginas)
-    assert all(p.janela_id is None and p.processada_em is not None for p in paginas)
-    assert sessao.scalar(select(func.count()).select_from(Edital)) == 0  # papel da cli
+    assert all(p.janela_id is None for p in paginas)
+    assert sessao.scalar(select(func.count()).select_from(Edital)) == 0  # papel do consumidor
+
+
+def test_retrato_concluido_enfileira_uma_mensagem(sessao: Session) -> None:
+    fonte = FonteFalsa("sanepar", paginas=2)
+    cliente = _cliente(_rotas("sanepar", _lista("OE-1/26", "OE-2/26"), _lista("OE-3/26")))
+
+    resumo = executar_retrato(sessao, fonte, cliente, AGORA)
+
+    assert resumo.status == "concluido" and resumo.retrato_id is not None
+    # Só o retrato vai para a fila; as páginas dele não viram mensagens próprias.
+    assert _mensagens(sessao) == [("retrato_coletado", {"retrato_id": resumo.retrato_id})]
+    paginas = sessao.scalars(select(PaginaBruta).where(PaginaBruta.retrato_id == resumo.retrato_id))
+    assert [p.processada_em for p in paginas] == [None, None]  # quem marca é o consumidor
+    retrato = sessao.get(ColetaRetrato, resumo.retrato_id)
+    assert retrato is not None and retrato.processado_em is None
+
+
+def test_retrato_em_falha_nao_enfileira(sessao: Session) -> None:
+    fonte = FonteFalsa("sanepar", paginas=2)
+    rotas = _rotas("sanepar", _lista("OE-1/26"), httpx.Response(500))
+
+    resumo = executar_retrato(sessao, fonte, _cliente(rotas), AGORA)
+    abaixo = executar_retrato(
+        sessao,
+        FonteFalsa("sanepar", paginas=1, minimo_registros=5),
+        _cliente(_rotas("sanepar", _lista("OE-1/26"))),
+        AGORA,
+    )
+
+    assert (resumo.status, abaixo.status) == ("falha", "falha")
+    assert _mensagens(sessao) == []
+
+
+class FonteAmostra:
+    """Devolve páginas fixas (sem rede) e delega `extrair` a outra função."""
+
+    marcador_bloqueio: str | None = None
+    minimo_registros = 1
+    rotulo_saida = "saiu da lista"
+
+    def __init__(
+        self,
+        nome: str,
+        paginas: list[PaginaColetada],
+        extrair: Callable[[list[PaginaColetada]], list[dict[str, Any]]],
+    ) -> None:
+        self.nome = nome
+        self.paginas = paginas
+        self._extrair = extrair
+
+    def coletar(self, cliente: ClienteEducado) -> Iterator[PaginaColetada]:
+        yield from self.paginas
+
+    def extrair(self, paginas: list[PaginaColetada]) -> list[dict[str, Any]]:
+        return self._extrair(paginas)
+
+
+DADOS = Path(__file__).resolve().parent.parent / "dados" / "fontes"
+SANEPAR = "https://www.sanepar.com.br"
+
+
+def test_paginas_do_retrato_reconstroi_json_e_html(sessao: Session) -> None:
+    lista = (DADOS / "lista-oe-abertura-p1.html").read_text(encoding="utf-8")
+    detalhe = (DADOS / "detalhe-345-26-vazamentos.html").read_text(encoding="utf-8")
+    html = [
+        PaginaColetada(f"{SANEPAR}/licitacoes?Tipo=OE&Situacao=Abertura&page=0", "html", lista),
+        PaginaColetada(f"{SANEPAR}/licitacao/detalhe/352/26", "html", detalhe),
+    ]
+    # O JSON volta re-serializado (espaços e escapes mudam); o que vale é o extrair igual.
+    texto_json = '{ "ids" : ["OE-1/26", "OE-2/26"],\n "ufs": {"OE-2/26": "S\\u00c3O"} }'
+    json_ = [PaginaColetada("https://json.test/p1", "json", texto_json)]
+    js = [
+        PaginaColetada(
+            URL_GRADE, "js", (DADOS / "compesa-p1-ptbr-reduzida.js.txt").read_text("utf-8")
+        ),
+        PaginaColetada(
+            URL_PAGINA, "js", (DADOS / "compesa-p2-ptbr-reduzida.js.txt").read_text("utf-8")
+        ),
+    ]
+    compesa = FonteCompesa(relogio=lambda: datetime(2026, 11, 26, 15, 0, tzinfo=ZoneInfo("UTC")))
+    casos = [
+        FonteAmostra("sanepar", html, FonteSanepar().extrair),
+        FonteAmostra("compesa", js, compesa.extrair),
+        FonteAmostra("json", json_, FonteFalsa("json", paginas=1).extrair),
+    ]
+
+    reconstruidas: list[PaginaColetada] = []
+    for fonte in casos:
+        resumo = executar_retrato(sessao, fonte, _cliente({}), AGORA)
+        assert resumo.status == "concluido" and resumo.retrato_id is not None
+
+        reconstruidas = paginas_do_retrato(sessao, resumo.retrato_id)
+
+        assert [(p.url, p.formato) for p in reconstruidas] == [
+            (p.url, p.formato) for p in fonte.paginas
+        ]
+        assert fonte.extrair(reconstruidas) == fonte.extrair(fonte.paginas)
+        assert len(fonte.extrair(reconstruidas)) > 0
+    # A última é a JSON: re-serializada sem escapar o não-ASCII.
+    assert "SÃO" in reconstruidas[0].texto
+    assert json.loads(reconstruidas[0].texto) == json.loads(texto_json)
+
+
+def test_paginas_do_retrato_em_ordem_de_numero(sessao: Session) -> None:
+    fonte = FonteFalsa("sanepar", paginas=3)
+    rotas = _rotas("sanepar", _lista("OE-1/26"), _lista("OE-2/26"), _lista("OE-3/26"))
+    resumo = executar_retrato(sessao, fonte, _cliente(rotas), AGORA)
+    assert resumo.retrato_id is not None
+
+    paginas = paginas_do_retrato(sessao, resumo.retrato_id)
+
+    assert [p.url for p in paginas] == [f"https://sanepar.test/p{n}" for n in (1, 2, 3)]
+    assert paginas_do_retrato(sessao, resumo.retrato_id + 999) == []
 
 
 def test_retrato_abaixo_do_minimo_e_falha(sessao: Session) -> None:
@@ -255,8 +374,6 @@ def test_retrato_abaixo_do_minimo_e_falha(sessao: Session) -> None:
 
     assert resumo.status == "falha"
     assert resumo.erro == "abaixo do minimo: 2 < 5"
-    assert resumo.normalizados == []
-    assert ids_do_retrato(resumo) == set()
     assert _retratos(sessao, "sanepar")[-1].status == "falha"
 
 
@@ -368,7 +485,7 @@ def test_ultimo_retrato_ignora_o_em_andamento(sessao: Session) -> None:
 
 
 def test_paginas_de_retrato_nao_entram_na_fila_do_pncp(sessao: Session) -> None:
-    # Uma de retrato concluído (marcada processada) e uma de retrato em falha (não marcada).
+    # Páginas de retrato (concluído ou em falha) nunca são JSON do PNCP, processadas ou não.
     fonte = FonteFalsa("sanepar", paginas=2)
     executar_retrato(
         sessao, fonte, _cliente(_rotas("sanepar", _lista("OE-1/26"), _lista("OE-2/26"))), AGORA
@@ -384,11 +501,20 @@ def test_paginas_de_retrato_nao_entram_na_fila_do_pncp(sessao: Session) -> None:
 
 
 def _retrato_com_paginas(
-    sessao: Session, fonte: str, status: str, horas_atras: float, paginas: int = 2
+    sessao: Session,
+    fonte: str,
+    status: str,
+    horas_atras: float,
+    paginas: int = 2,
+    processado: bool | None = None,
 ) -> int:
+    """`processado` None: o concluído sai processado (o caso normal); os outros, não."""
+    if processado is None:
+        processado = status == "concluido"
+    iniciado = AGORA - timedelta(hours=horas_atras)
     retrato = ColetaRetrato(
-        fonte=fonte, status=status, iniciado_em=AGORA - timedelta(hours=horas_atras),
-        paginas=paginas, registros=paginas,
+        fonte=fonte, status=status, iniciado_em=iniciado, paginas=paginas, registros=paginas,
+        processado_em=iniciado + timedelta(minutes=5) if processado else None,
     )  # fmt: skip
     sessao.add(retrato)
     sessao.flush()
@@ -426,6 +552,28 @@ def test_limpar_brutos_mantem_os_3_ultimos_concluidos_e_10_falhas(
     assert len(_retratos(sessao, "sanepar")) == 18  # os retratos ficam, só as páginas saem
     registro = next(r for r in caplog.records if r.getMessage() == "brutos_removidos")
     assert (registro.__dict__["fonte"], registro.__dict__["paginas"]) == ("sanepar", 8)
+
+
+def test_limpar_brutos_preserva_concluido_nao_processado(sessao: Session) -> None:
+    # Review Focus 5: o concluído ainda na fila, mais velho que todos, não perde as páginas.
+    pendente = _retrato_com_paginas(sessao, "sanepar", "concluido", 10, processado=False)
+    processados = [_retrato_com_paginas(sessao, "sanepar", "concluido", h) for h in (5, 4, 3, 2, 1)]
+
+    removidas = limpar_brutos(sessao, "sanepar")
+
+    assert removidas == 4  # os 2 processados mais velhos, 2 páginas cada
+    assert _com_paginas(sessao) == set(processados[2:]) | {pendente}
+
+
+def test_limpar_brutos_conta_so_processados_para_os_3_mantidos(sessao: Session) -> None:
+    # Concluídos novos ainda não processados não empurram os processados para fora.
+    processados = [_retrato_com_paginas(sessao, "sanepar", "concluido", h) for h in (9, 8, 7)]
+    pendentes = [
+        _retrato_com_paginas(sessao, "sanepar", "concluido", h, processado=False) for h in (2, 1)
+    ]
+
+    assert limpar_brutos(sessao, "sanepar") == 0
+    assert _com_paginas(sessao) == set(processados) | set(pendentes)
 
 
 def test_limpar_brutos_sem_excesso_nao_remove_nada(sessao: Session) -> None:
@@ -536,7 +684,7 @@ def _registrar_fontes(
     monkeypatch: pytest.MonkeyPatch, fontes: list[FonteFalsa], rotas: Rota
 ) -> list[str]:
     chamadas: list[str] = []
-    monkeypatch.setattr(cli, "_fontes_retrato", lambda: fontes)
+    monkeypatch.setattr(cli, "fontes_retrato", lambda: {f.nome: f for f in fontes})
     monkeypatch.setattr(cli, "_criar_cliente_retrato", lambda _fonte: _cliente(rotas, chamadas))
     return chamadas
 
@@ -660,14 +808,14 @@ def test_erro_inesperado_no_registro_e_isolado(
     _ja_abertos(fabrica, "sanepar", "OE-9/26")
     rotas = _rotas("sanepar", _lista("OE-1/26")) | _rotas("compesa", _lista("2026LC1"))
     _registrar_fontes(monkeypatch, [FonteFalsa("sanepar", 1), FonteFalsa("compesa", 1)], rotas)
-    original = cli.registrar_normalizados
+    original = consumidor.registrar_normalizados
 
     def registrar_com_erro(sessao: Session, registros: list[dict[str, Any]]) -> Any:
         if registros[0]["fonte"] == "sanepar":
             raise RuntimeError("boom")
         return original(sessao, registros)
 
-    monkeypatch.setattr(cli, "registrar_normalizados", registrar_com_erro)
+    monkeypatch.setattr(consumidor, "registrar_normalizados", registrar_com_erro)
 
     resultado = _atualizar(config_filtro, "sanepar,compesa")
 
@@ -675,20 +823,25 @@ def test_erro_inesperado_no_registro_e_isolado(
     assert _situacoes(fabrica, "sanepar") == {"OE-9/26": "aberta"}
     assert _situacoes(fabrica, "compesa") == {"2026LC1": "aberta"}
     with fabrica() as sessao:
-        sanepar = ultimo_retrato(sessao, "sanepar")
-        compesa = ultimo_retrato(sessao, "compesa")
-    assert sanepar is not None and sanepar.status == "falha"
-    assert sanepar.erro == "registro: RuntimeError('boom')"
-    assert compesa is not None and compesa.status == "concluido"
+        retratos = {
+            r.fonte: (r.status, r.processado_em is not None)
+            for r in sessao.scalars(select(ColetaRetrato))
+        }
+        recusada = sessao.scalars(
+            select(Outbox).where(Outbox.publicada_em.is_(None), Outbox.tipo == "retrato_coletado")
+        ).one()
+    # Erro inesperado é transitório: o retrato continua concluído, à espera de nova tentativa.
+    assert retratos == {"sanepar": ("concluido", False), "compesa": ("concluido", True)}
+    assert recusada.erro == "RuntimeError('boom')"
 
 
 def test_segunda_rodada_durante_o_registro_e_ocupado(
     fabrica: sessionmaker[Session], config_filtro: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # O lock da fonte vale até o fim do registro, não só durante a leitura das páginas.
+    # O consumidor segura o lock da fonte até o fim do registro.
     fonte = FonteFalsa("sanepar", 1)
     _registrar_fontes(monkeypatch, [fonte], _rotas("sanepar", _lista("OE-1/26")))
-    original = cli.registrar_normalizados
+    original = consumidor.registrar_normalizados
     concorrentes: list[str] = []
 
     def registrar_com_concorrente(sessao: Session, registros: list[dict[str, Any]]) -> Any:
@@ -697,7 +850,7 @@ def test_segunda_rodada_durante_o_registro_e_ocupado(
             concorrentes.append(executar_retrato(outra, fonte, cliente, AGORA).status)
         return original(sessao, registros)
 
-    monkeypatch.setattr(cli, "registrar_normalizados", registrar_com_concorrente)
+    monkeypatch.setattr(consumidor, "registrar_normalizados", registrar_com_concorrente)
 
     resultado = _atualizar(config_filtro, "sanepar")
 
@@ -718,7 +871,6 @@ def test_muitos_invalidos_e_falha_sem_gravar_nem_reconciliar(
     resultado = _atualizar(config_filtro, "sanepar")
 
     assert resultado.exit_code == 1
-    assert "muitos inválidos: 1 de 3" in resultado.output
     assert _situacoes(fabrica, "sanepar") == {"OE-9/26": "aberta"}
     with fabrica() as sessao:
         info = ultimo_retrato(sessao, "sanepar")
@@ -799,7 +951,7 @@ def test_processar_ignora_paginas_de_retrato(
     _registrar_fontes(monkeypatch, [FonteFalsa("sanepar", 1)], _rotas("sanepar", _lista("OE-1/26")))
     assert _atualizar(config_filtro, "sanepar").exit_code == 0
     registrar = []
-    monkeypatch.setattr(cli, "registrar", lambda _s, r: registrar.append(r))
+    monkeypatch.setattr(consumidor, "registrar", lambda _s, r: registrar.append(r))
 
     resultado = runner.invoke(cli.app, ["processar"])
 
@@ -826,6 +978,7 @@ def _retrato(fabrica: sessionmaker[Session], fonte: str, status: str, horas_atra
             ColetaRetrato(
                 fonte=fonte, status=status, iniciado_em=AGORA - timedelta(hours=horas_atras),
                 paginas=1, registros=7, erro="HTTP 403" if status == "falha" else None,
+                processado_em=AGORA if status == "concluido" else None,
             )
         )  # fmt: skip
         sessao.commit()
@@ -893,7 +1046,7 @@ def test_auditar_sem_fontes_de_retrato_nao_muda(
     fabrica: sessionmaker[Session], config_filtro: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _cobrir_pncp(fabrica)
-    monkeypatch.setattr(cli, "_fontes_retrato", lambda: [])
+    monkeypatch.setattr(cli, "fontes_retrato", lambda: {})
 
     resultado = _auditar(config_filtro)
 
@@ -906,7 +1059,7 @@ def test_cli_registra_a_sanepar_real_e_atualizar_grava_com_a_fonte(
 ) -> None:
     from radar.coleta.sanepar import ler_lista
 
-    assert [f.nome for f in cli._fontes_retrato()] == ["sanepar", "compesa"]
+    assert list(cli.fontes_retrato()) == ["sanepar", "compesa"]
 
     dados = Path(__file__).resolve().parent.parent / "dados" / "fontes"
 

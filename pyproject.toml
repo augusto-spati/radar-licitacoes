@@ -17,6 +17,7 @@ dependencies = [
     "uvicorn>=0.54.0",
     "mangum>=0.22.0",
     "selectolax>=1.0.2",
+    "boto3>=1.35",
 ]
 
 [project.scripts]
@@ -70,13 +71,13 @@ modules = ["radar.coleta", "radar.editais", "radar.analise"]
 name = "Nenhum módulo importa a porta de entrada"
 type = "forbidden"
 source_modules = ["radar.coleta", "radar.editais", "radar.analise", "radar.comum"]
-forbidden_modules = ["radar.cli", "radar.api"]
+forbidden_modules = ["radar.cli", "radar.api", "radar.processador"]
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
 name = "api e cli importam só a raiz dos pacotes de domínio"
 type = "forbidden"
-source_modules = ["radar.api", "radar.cli"]
+source_modules = ["radar.api", "radar.cli", "radar.processador"]
 forbidden_modules = [
     "radar.coleta.janelas",
     "radar.coleta.pncp",

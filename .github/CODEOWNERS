@@ -1,5 +1,5 @@
 # Arquivos que guardam o contrato do front (anti-deriva). Mudança aqui também
-# exige o trailer `Contrato-Front: aprovado` (job `contrato-guardado` do CI).
+# exige o trailer `Contrato-Front: aprovado` (job `guarda-base` do CI).
 /frontend/eslint.config.*               @augusto-spati
 /frontend/.jscpd.json                   @augusto-spati
 /frontend/package.json                  @augusto-spati
