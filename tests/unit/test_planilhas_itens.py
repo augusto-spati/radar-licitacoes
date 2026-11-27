@@ -200,3 +200,16 @@ def test_bdi_implausivel_vira_desconhecido() -> None:
     peso = replace(_linha("1.2", "100"), bdi=Decimal("0.0035"))  # "Peso (%)" que escapasse
     (item_peso,) = itens_da_planilha(RIBEIRAO, SHA, [peso])
     assert (item_peso.bdi, item_peso.bdi_desconhecido) == (None, True)
+
+
+def test_dn_nao_se_ancora_na_quantidade() -> None:
+    """DN 100 na descrição e "100,00" de quantidade no texto: sem "DN 100"/"100 mm" no texto,
+    a linha cai; com a forma de diâmetro, vale."""
+    linha = _ia(
+        "1.1", "Tubo PVC DN 100 para rede de esgoto", "m", "100,00", "", "50,00", "5.000,00"
+    )
+    sem_dn = "1.1 Tubo PVC rede de esgoto m 100,00 R$ 50,00 R$ 5.000,00 TOTAL R$ 5.000,00"
+    assert linhas_da_ia([linha], sem_dn, total_planilha="5.000,00") == []
+    for forma in ("DN 100", "DN100", "Ø100", "100 mm"):
+        com_dn = sem_dn.replace("PVC", f"PVC {forma}")
+        assert len(linhas_da_ia([linha], com_dn, total_planilha="5.000,00")) == 1, forma

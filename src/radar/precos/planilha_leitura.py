@@ -202,8 +202,12 @@ def _precos(quantidade: Decimal, tokens: list[str]) -> _Precos | None:
         sem = max(menores)
     elif j_com > 0:
         sem = numeros[j_com - 1]
+    # Sem positivo antes de dividir: uma coluna "0,00" (mão de obra, desoneração) antes do
+    # preço não é o sem BDI; fica só o com BDI (e `bdi_desconhecido` na gravação).
     if sem is not None and (
-        not bdi_plausivel(com / sem - 1) or _material_mais_mao_de_obra(numeros[:j_com], com)
+        sem <= 0
+        or not bdi_plausivel(com / sem - 1)
+        or _material_mais_mao_de_obra(numeros[:j_com], com)
     ):
         sem = None
     if bdi is not None and not (
@@ -518,6 +522,17 @@ class _TextoCorrido:
         return any(leitura.posicoes(valor) for leitura in self.leituras)
 
 
+def _dn_no_texto(dn: int, trecho: str) -> bool:
+    """O DN na forma de diâmetro ("DN 100", "DN100", "Ø100", "100 mm", "DE=110"), no trecho
+    sem espaços: um número solto (a quantidade "100,00") não vale."""
+    numero = str(dn)
+    padrao = (
+        rf"(?:dn|de|ø|φ|diametro(?:nominal)?(?:de)?)[=:]?{numero}(?![\d])"
+        rf"|(?<![\d.,]){numero}mm"
+    )
+    return re.search(padrao, trecho) is not None
+
+
 def _ancorada_em(
     leitura: _Leitura, descricao: str, quantidade: Decimal, com: Decimal, total: Decimal
 ) -> bool:
@@ -536,9 +551,9 @@ def _ancorada_em(
     materiais = [grafias for termo, grafias in _MATERIAIS_IA.items() if termo in normalizada]
     for inicio, fim in janelas:
         comeco = max(0, inicio - JANELA_DESCRICAO)
-        if dn is not None and not any(v == dn and comeco <= p < fim for p, v in leitura.numeros):
-            continue
         trecho = _SEM_ESPACO.sub("", leitura.texto[comeco:fim])
+        if dn is not None and not _dn_no_texto(dn, trecho):
+            continue
         if all(any(g in trecho for g in grafias) for grafias in materiais):
             return True
     return False

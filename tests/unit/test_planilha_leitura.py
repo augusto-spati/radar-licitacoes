@@ -218,3 +218,35 @@ def test_material_mais_mao_de_obra_nao_e_sem_bdi() -> None:
 
 def test_razao_fora_da_faixa_nao_e_sem_bdi() -> None:
     assert _uma("1.1 Tubo PVC DN 150 m 10,00 50,00 112,50 1.125,00").preco_sem_bdi is None
+
+
+def test_coluna_zero_antes_do_preco_nao_divide_por_zero() -> None:
+    """Regressão: "0,00" (mão de obra, desoneração) antes do preço fazia com ÷ sem estourar
+    DivisionByZero e derrubava o edital inteiro."""
+    lida = _uma("1.1 ASSENTAMENTO DE TUBO PVC DN 100 m 10,00 0,00 50,00 500,00")
+    assert (lida.preco_sem_bdi, lida.preco_com_bdi, lida.bdi) == (None, Decimal("50.00"), None)
+
+
+@pytest.mark.parametrize(
+    "linha",
+    [
+        "1.1 Tubo m 10,00 0,00 0,00 0,00",
+        "1.1 Tubo m 0,00 0,00 50,00 500,00",
+        "1.1 Tubo m 10,00 0,00 0,00 50,00 500,00 0,00%",
+        "1.1 Tubo m 10,00 -5,00 50,00 500,00",
+        "1.1 Tubo m -10,00 50,00 -500,00",
+        "1.1 Tubo m 10,00",
+        "1.1 Tubo m 10,00 500,00",
+        "m 1,00 1,00 1,00 1,00 1,00 1,00 1,00 1,00",
+        "1.1 Tubo m 10,00 50,00 500,00 0%",
+        "1.1 Tubo m 10,00 50,00 500,00 999,99%",
+        "1.1 Tubo m 0,001 0,00 0,00",
+        "- - - - -",
+        "0,00 0,00 0,00",
+        "12",
+    ],
+)
+def test_ler_planilha_nunca_levanta_em_linha_numerica_estranha(linha: str) -> None:
+    for lida in ler_planilha([linha, f"2.1 Rede de esgoto PVC DN 150 {linha}"]):
+        assert lida.preco_com_bdi > 0 and lida.total > 0
+        assert lida.preco_sem_bdi is None or lida.preco_sem_bdi > 0
