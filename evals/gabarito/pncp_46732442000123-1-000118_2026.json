@@ -1,0 +1,122 @@
+{
+  "edital": "pncp~46732442000123-1-000118/2026",
+  "documentos": [
+    {
+      "sequencial": 1,
+      "url": "https://pncp.gov.br/pncp-api/v1/orgaos/46732442000123/compras/2026/118/arquivos/1",
+      "sha256": "a77bb96ade8635b67e07a7919c2d994cab54d9653c19de5e4053ca2db3123c02"
+    }
+  ],
+  "conjunto": "ajuste",
+  "conferido": false,
+  "conferido_por": null,
+  "conferido_em": null,
+  "observacoes": "RASCUNHO DO CLAUDE, A CONFERIR PELO AUGUSTO: feito lendo o texto extraído (busca por palavras-chave nas seções de habilitação), sem rodar nenhum modelo avaliado. Exigência que a busca não achou pode estar faltando. Descalvado/SP, fornecimento e instalação de hidrômetros. Capital OU patrimônio líquido ≥ R$ 42.327,78 (exigência alternativa: os dois campos com o mesmo valor). Atestado exige 50% da execução pretendida, sem número absoluto no trecho: quantidade nula (conferir no termo de referência). ME/EPP: p1 diz ampla concorrência, mas p8 fala em cota reservada (texto de modelo?). Prazo: p1 diz execução em 10 meses; p14 diz vigência e execução de 12 meses: ficou 300 dias, conferir.",
+  "exigencias": {
+    "capital_social_minimo": {
+      "numero": "42327.78",
+      "trecho": "Comprovação de Capital Registrado e Integralizado ou Patrimônio Líquido mínimo de R$ 42.327,78",
+      "pagina": 11,
+      "conflito": false,
+      "observacao": "alternativo: capital OU patrimônio líquido"
+    },
+    "patrimonio_liquido_minimo": {
+      "numero": "42327.78",
+      "trecho": "Comprovação de Capital Registrado e Integralizado ou Patrimônio Líquido mínimo de R$ 42.327,78",
+      "pagina": 11,
+      "conflito": false,
+      "observacao": "alternativo: capital OU patrimônio líquido"
+    },
+    "garantia_contratual_percentual": {
+      "numero": "5",
+      "trecho": "Garantia/Caução: 5% (cinco por cento) do valor da contratação",
+      "pagina": 1,
+      "conflito": false,
+      "observacao": ""
+    },
+    "prazo_execucao_dias": {
+      "numero": "300",
+      "trecho": "Do prazo de execução: 10 (dez) meses",
+      "pagina": 1,
+      "conflito": false,
+      "observacao": ""
+    },
+    "me_epp": {
+      "valor": "ampla",
+      "trecho": "Condição de Participação: Ampla concorrência",
+      "pagina": 1,
+      "conflito": false
+    },
+    "atestados": [
+      {
+        "descricao": "Fornecimento do objeto (hidrômetros), 50% da execução pretendida",
+        "quantidade": null,
+        "unidade": null,
+        "trecho": "comprovando o quantitativo mínimo de 50% da execução pretendida nesta contratação",
+        "pagina": 10
+      }
+    ],
+    "documentos": [
+      {
+        "valor": "contrato_social",
+        "trecho": "ato constitutivo, estatuto ou contrato social em vigor",
+        "pagina": 9,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_federal",
+        "trecho": "Certidão Negativa de Débitos Relativos aos Tributos Federais e à Dívida Ativa da União",
+        "pagina": 9,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_estadual",
+        "trecho": "Certidão Negativa de Débitos junto à Fazenda Estadual",
+        "pagina": 9,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_fgts",
+        "trecho": "de Garantia Por Tempo de Serviço",
+        "pagina": 9,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_trabalhista",
+        "trecho": "Certidão Negativa de Débitos Trabalhistas (C.N.D.T.)",
+        "pagina": 9,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_municipal",
+        "trecho": "Certidão Negativa de Débitos, da Fazenda Municipal",
+        "pagina": 9,
+        "conflito": false
+      },
+      {
+        "valor": "registro_conselho",
+        "trecho": "certidão de Registro da empresa no CREA",
+        "pagina": 10,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_falencia",
+        "trecho": "certidão negativa de falência expedida pelo distribuidor da sede da pessoa jurídica",
+        "pagina": 10,
+        "conflito": false
+      },
+      {
+        "valor": "balanco_patrimonial",
+        "trecho": "balanço patrimonial e demonstração do resultado do exercício (DRE) dos 02 (dois) últimos",
+        "pagina": 11,
+        "conflito": false
+      },
+      {
+        "valor": "declaracao_menor",
+        "trecho": "atende às exigências do inciso XXXIII do artigo 7º da Constituição",
+        "pagina": 11,
+        "conflito": false
+      }
+    ]
+  }
+}

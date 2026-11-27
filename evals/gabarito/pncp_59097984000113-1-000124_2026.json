@@ -1,0 +1,32 @@
+{
+  "edital": "pncp~59097984000113-1-000124/2026",
+  "documentos": [
+    {
+      "sequencial": 1,
+      "url": "https://pncp.gov.br/pncp-api/v1/orgaos/59097984000113/compras/2026/124/arquivos/1",
+      "sha256": "04eb70be5e84c9ce46b8a4aae037e44083d09ce53eb4bb57cc5e2d1702d15ab3"
+    }
+  ],
+  "conjunto": "teste",
+  "conferido": false,
+  "conferido_por": null,
+  "conferido_em": null,
+  "observacoes": "RASCUNHO DO CLAUDE, A CONFERIR PELO AUGUSTO: feito lendo o texto extraído (busca por palavras-chave nas seções de habilitação), sem rodar nenhum modelo avaliado. Exigência que a busca não achou pode estar faltando. SAAE Jaguariúna, registro de preços de hidrômetros. Sem capital, patrimônio, garantia nem atestado achados. Habilitação pelo SICAF (p16): os documentos não são listados um a um, só a declaração de menor. ME/EPP: itens de cota reservada e cota principal.",
+  "exigencias": {
+    "me_epp": {
+      "valor": "cota",
+      "trecho": "(Com itens Cota Principal e itens Cota Reservada)",
+      "pagina": 1,
+      "conflito": false
+    },
+    "atestados": [],
+    "documentos": [
+      {
+        "valor": "declaracao_menor",
+        "trecho": "não emprega menor de 18 anos em trabalho noturno, perigoso ou insalubre",
+        "pagina": 6,
+        "conflito": false
+      }
+    ]
+  }
+}

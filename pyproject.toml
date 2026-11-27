@@ -18,6 +18,7 @@ dependencies = [
     "mangum>=0.22.0",
     "selectolax>=1.0.2",
     "boto3>=1.35",
+    "pypdf>=5",
 ]
 
 [project.scripts]
@@ -88,6 +89,21 @@ forbidden_modules = [
     "radar.editais.filtro",
     "radar.editais.registro",
     "radar.editais.modelos",
+    "radar.analise.exigencias",
+    "radar.analise.modelos",
+    "radar.analise.normalizacao",
+    "radar.analise.perfil",
+    "radar.analise.comparacao",
+    "radar.analise.arquivos_pncp",
+    "radar.analise.extracao",
+    "radar.analise.trechos",
+    "radar.analise.armazem",
+    "radar.analise.provedor",
+    "radar.analise.cache",
+    "radar.analise.custos",
+    "radar.analise.extrator",
+    "radar.analise.pipeline",
+    "radar.analise.evals",
 ]
 allow_indirect_imports = true
 

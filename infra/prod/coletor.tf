@@ -212,8 +212,13 @@ data "aws_iam_policy_document" "scheduler_coletor" {
   }
 
   statement {
-    actions   = ["iam:PassRole"]
-    resources = [aws_iam_role.coletor_execucao.arn, aws_iam_role.coletor_task.arn]
+    actions = ["iam:PassRole"]
+    # analisador_task: override de TaskRoleArn da agenda radar-analisar-diario (analise.tf).
+    resources = [
+      aws_iam_role.coletor_execucao.arn,
+      aws_iam_role.coletor_task.arn,
+      aws_iam_role.analisador_task.arn,
+    ]
 
     condition {
       test     = "StringEquals"

@@ -1,0 +1,117 @@
+{
+  "edital": "pncp~04691691000178-1-000335/2026",
+  "documentos": [
+    {
+      "sequencial": 1,
+      "url": "https://pncp.gov.br/pncp-api/v1/orgaos/04691691000178/compras/2026/335/arquivos/1",
+      "sha256": "79e3399891bf57f17bd0256dc1e6b4353768b27e88bcf2efeb24bbc80936fa3f"
+    }
+  ],
+  "conjunto": "teste",
+  "conferido": false,
+  "conferido_por": null,
+  "conferido_em": null,
+  "observacoes": "RASCUNHO DO CLAUDE, A CONFERIR PELO AUGUSTO: feito lendo o texto extraído (busca por palavras-chave nas seções de habilitação), sem rodar nenhum modelo avaliado. Exigência que a busca não achou pode estar faltando. SeMAE São José do Rio Preto, atendimento, leitura com entrega de faturas e vistorias (linha comercial). Sem capital nem patrimônio mínimo achados. Quantidades dos atestados são por ano (1.120.000 leituras/ano etc.); o atestado D é em postos de atendimento simultâneos/mês. Documentos da qualificação econômica além da falência (item C.2 em diante) não foram lidos: conferir balanço.",
+  "exigencias": {
+    "garantia_contratual_percentual": {
+      "numero": "5",
+      "trecho": "em valor correspondente a 5% (cinco por cento) do valor total do contrato",
+      "pagina": 204,
+      "conflito": false,
+      "observacao": ""
+    },
+    "prazo_execucao_dias": {
+      "numero": "360",
+      "trecho": "Prazo de execução Em até 12 (doze) meses",
+      "pagina": 1,
+      "conflito": false,
+      "observacao": ""
+    },
+    "consorcio": {
+      "valor": "permitido",
+      "trecho": "Admitir-se-á a participação de empresas isoladamente ou reunidas em consórcio",
+      "pagina": 24,
+      "conflito": false
+    },
+    "me_epp": {
+      "valor": "ampla",
+      "trecho": "Benefícios ME/EPP Não",
+      "pagina": 1,
+      "conflito": false
+    },
+    "atestados": [
+      {
+        "descricao": "Leitura de medidores com impressão e entrega simultânea e rastreamento",
+        "quantidade": "1120000",
+        "unidade": "leitura",
+        "trecho": "Comprovação mínima: 1.120.000/ano.",
+        "pagina": 63
+      },
+      {
+        "descricao": "Vistoria para negociação de débitos com corte e arrecadação com POS",
+        "quantidade": "6000",
+        "unidade": "un",
+        "trecho": "Comprovação mínima: 6.000/ano.",
+        "pagina": 63
+      },
+      {
+        "descricao": "Vistorias técnicas com remoção de medidores para verificação de fraude",
+        "quantidade": "20000",
+        "unidade": "un",
+        "trecho": "Comprovação mínima: 20.000/ano",
+        "pagina": 63
+      },
+      {
+        "descricao": "Atendimento de usuários (postos simultâneos/mês)",
+        "quantidade": "40",
+        "unidade": "postos",
+        "trecho": "Comprovação mínima: 40 postos de atendimento simultâneos/mês",
+        "pagina": 64
+      }
+    ],
+    "documentos": [
+      {
+        "valor": "contrato_social",
+        "trecho": "Ato constitutivo, estatuto ou contrato social em vigor",
+        "pagina": 202,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_federal",
+        "trecho": "Prova de regularidade para com as Fazendas Federal, Estadual e Municipal",
+        "pagina": 202,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_estadual",
+        "trecho": "Prova de regularidade para com as Fazendas Federal, Estadual e Municipal",
+        "pagina": 202,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_municipal",
+        "trecho": "Prova de regularidade para com as Fazendas Federal, Estadual e Municipal",
+        "pagina": 202,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_fgts",
+        "trecho": "Certificado de Regularidade do FGTS",
+        "pagina": 202,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_trabalhista",
+        "trecho": "Prova de inexistência de débitos inadimplidos perante a Justiça do Trabalho",
+        "pagina": 202,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_falencia",
+        "trecho": "Certidão negativa de falência expedida pelo distribuidor da sede da pessoa jurídica",
+        "pagina": 202,
+        "conflito": false
+      }
+    ]
+  }
+}

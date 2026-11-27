@@ -20,6 +20,13 @@ class Config(BaseSettings):
     fila: Literal["local", "sqs"] = "local"
     fila_url: str | None = None
     fila_falhas_url: str | None = None
+    # Análise dos editais com IA (etapa 6).
+    config_ia: Path = RAIZ_REPOSITORIO / "config" / "ia.toml"
+    # O perfil do repositório só tem valores de exemplo; o real fica fora dele.
+    config_perfil: Path = RAIZ_REPOSITORIO / "config" / "perfil.toml"
+    ia_provedor: Literal["desligado", "bedrock"] = "desligado"
+    # Pasta local ou s3://<bucket>/<prefixo>: PDFs e textos extraídos (fora do banco).
+    documentos: str = str(Path.home() / ".radar" / "documentos")
     # Fila das janelas do PNCP (coletar_janela) e a DLQ dela.
     fila_janelas_url: str | None = None
     fila_janelas_falhas_url: str | None = None

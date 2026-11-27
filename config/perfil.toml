@@ -1,0 +1,46 @@
+# PERFIL DE EXEMPLO: valores fictícios, não são dados de nenhuma empresa real.
+# O perfil real da empresa fica fora do repositório: aponte RADAR_CONFIG_PERFIL para ele.
+# documentos: itens de DOCUMENTOS (radar.analise.exigencias). Atestados: `termos` são palavras
+# (sem acento, minúsculas) que casam com a descrição exigida; unidade em km, m, un, leitura...
+
+[empresa]
+porte = "demais"  # me | epp | demais
+capital_social = 1000000
+patrimonio_liquido = 1500000
+garantia_maxima_percentual = 5
+faz_visita_tecnica = true
+depende_de_consorcio = false
+documentos = [
+    "certidao_federal",
+    "certidao_fgts",
+    "certidao_trabalhista",
+    "certidao_estadual",
+    "certidao_municipal",
+    "certidao_falencia",
+    "balanco_patrimonial",
+    "contrato_social",
+]
+
+[[atestados]]
+descricao = "Pesquisa de vazamentos não visíveis com geofone"
+termos = ["vazamento", "vazamentos", "geofone"]
+quantidade = 1500
+unidade = "km"
+
+[[atestados]]
+descricao = "Substituição de hidrômetros"
+termos = ["hidrometro", "hidrometros"]
+quantidade = 20000
+unidade = "un"
+
+[[atestados]]
+descricao = "Leitura de hidrômetros e entrega de contas"
+termos = ["leitura", "leituras"]
+quantidade = 500000
+unidade = "leitura"
+
+[[atestados]]
+descricao = "Execução de rede de distribuição de água"
+termos = ["rede de agua", "rede de distribuicao"]
+quantidade = 30000
+unidade = "m"

@@ -1,0 +1,21 @@
+{
+  "output": {
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "text": "{\n  \"achados\": [\n    {\n      \"campo\": \"capital_social_minimo\",\n      \"valor\":  \"250.000,00\",\n      \"numero\": 250000,\n      \"unidade\": \"reais\",\n      \"trecho\": \"comprovação de capital social mínimo de R$ 250.000,00 (duzentos e cinquenta mil reais), registrado na Junta Comercial.\"\n    },\n    {\n      \"campo\": \"visita_tecnica\",\n      \"valor\": \"facultativa\",\n      \"numero\": null,\n      \"unidade\": \"\",\n      \"trecho\": \"A visita técnica é facultativa.\"\n    }\n  ]\n}"
+        }
+      ]
+    }
+  },
+  "stopReason": "end_turn",
+  "usage": {
+    "inputTokens": 130,
+    "outputTokens": 159,
+    "totalTokens": 289
+  },
+  "metrics": {
+    "latencyMs": 450
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "edital": "pncp~00000000000002-1-000002/2026",
+  "valor_estimado": null,
+  "documentos": [
+    {
+      "sequencial": 1,
+      "url": "https://exemplo/2",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "status": "extraido",
+      "paginas": 1
+    }
+  ],
+  "paginas": [
+    "EDITAL DE BRINQUEDO 2. Não há exigência de capital social. Prazo de execução: 6 (seis) meses. Este parágrafo é enchimento do edital de brinquedo para a página ter texto suficiente. Este parágrafo é enchimento do edital de brinquedo para a página ter texto suficiente. Este parágrafo é enchimento do edital de brinquedo para a página ter texto suficiente."
+  ]
+}

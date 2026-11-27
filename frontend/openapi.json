@@ -1,6 +1,119 @@
 {
   "components": {
     "schemas": {
+      "AnaliseOut": {
+        "properties": {
+          "aviso": {
+            "title": "Aviso",
+            "type": "string"
+          },
+          "criada_em": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Criada Em"
+          },
+          "documentos": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentoAnaliseOut"
+            },
+            "title": "Documentos",
+            "type": "array"
+          },
+          "id_publico": {
+            "title": "Id Publico",
+            "type": "string"
+          },
+          "incompleta": {
+            "title": "Incompleta",
+            "type": "boolean"
+          },
+          "itens": {
+            "items": {
+              "$ref": "#/components/schemas/ItemAnaliseOut"
+            },
+            "title": "Itens",
+            "type": "array"
+          },
+          "modelo": {
+            "title": "Modelo",
+            "type": "string"
+          },
+          "veredito": {
+            "enum": [
+              "apto",
+              "inapto",
+              "verificar"
+            ],
+            "title": "Veredito",
+            "type": "string"
+          },
+          "versao_prompt": {
+            "title": "Versao Prompt",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id_publico",
+          "modelo",
+          "versao_prompt",
+          "criada_em",
+          "veredito",
+          "incompleta",
+          "aviso",
+          "itens",
+          "documentos"
+        ],
+        "title": "AnaliseOut",
+        "type": "object"
+      },
+      "DocumentoAnaliseOut": {
+        "properties": {
+          "paginas": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paginas"
+          },
+          "status": {
+            "enum": [
+              "extraido",
+              "sem_texto",
+              "nao_pdf",
+              "grande_demais",
+              "falha"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "titulo": {
+            "title": "Titulo",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "titulo",
+          "url",
+          "paginas",
+          "status"
+        ],
+        "title": "DocumentoAnaliseOut",
+        "type": "object"
+      },
       "EditalDetalheOut": {
         "properties": {
           "data_abertura_proposta": {
@@ -300,6 +413,81 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "ItemAnaliseOut": {
+        "properties": {
+          "campo": {
+            "title": "Campo",
+            "type": "string"
+          },
+          "documento": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Documento"
+          },
+          "exigido": {
+            "title": "Exigido",
+            "type": "string"
+          },
+          "motivo": {
+            "title": "Motivo",
+            "type": "string"
+          },
+          "pagina": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pagina"
+          },
+          "perfil": {
+            "title": "Perfil",
+            "type": "string"
+          },
+          "situacao": {
+            "enum": [
+              "atende",
+              "nao_atende",
+              "verificar",
+              "informativo"
+            ],
+            "title": "Situacao",
+            "type": "string"
+          },
+          "trecho": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trecho"
+          }
+        },
+        "required": [
+          "campo",
+          "situacao",
+          "exigido",
+          "perfil",
+          "motivo",
+          "trecho",
+          "documento",
+          "pagina"
+        ],
+        "title": "ItemAnaliseOut",
+        "type": "object"
+      },
       "Linha": {
         "enum": [
           "redes",
@@ -416,6 +604,46 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/analises/{id_publico}": {
+      "get": {
+        "description": "Exigências extraídas por IA e comparadas com o perfil (modelo padrão).",
+        "operationId": "analise_api_analises__id_publico__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id_publico",
+            "required": true,
+            "schema": {
+              "title": "Id Publico",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnaliseOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Analise"
+      }
+    },
     "/api/editais": {
       "get": {
         "operationId": "listar_api_editais_get",

@@ -1,0 +1,74 @@
+{
+  "edital": "pncp~02318396000145-1-000080/2026",
+  "documentos": [
+    {
+      "sequencial": 1,
+      "url": "https://pncp.gov.br/pncp-api/v1/orgaos/02318396000145/compras/2026/80/arquivos/1",
+      "sha256": "b9ace034e2d74cc0f8f350cb910cde312bf216e620bfd03743247d017224c442"
+    }
+  ],
+  "conjunto": "ajuste",
+  "conferido": false,
+  "conferido_por": null,
+  "conferido_em": null,
+  "observacoes": "RASCUNHO DO CLAUDE, A CONFERIR PELO AUGUSTO: feito lendo o texto extraído (busca por palavras-chave nas seções de habilitação), sem rodar nenhum modelo avaliado. Exigência que a busca não achou pode estar faltando. Registro de preços exclusivo para ME/EPP (linha redes, R$ 73.255,97). Sem capital, patrimônio nem atestado com quantidade; garantia de execução expressamente não exigida (p16); balanço expressamente dispensado (p12). Prazo: só vigência de 12 meses (p20), ficou nulo. Declaração de menor não achada pela busca: conferir.",
+  "exigencias": {
+    "consorcio": {
+      "valor": "vedado",
+      "trecho": "é conveniente a vedação de participação de empresas em",
+      "pagina": 3,
+      "conflito": false
+    },
+    "me_epp": {
+      "valor": "exclusiva",
+      "trecho": "PROCESSO DESTINADO A PARTICIPAÇÃO EXCLUSIVA DE MICROEMPRESAS, EMPRESAS DE PEQUENO PORTE OU EQUIPARADAS",
+      "pagina": 1,
+      "conflito": false
+    },
+    "atestados": [],
+    "documentos": [
+      {
+        "valor": "contrato_social",
+        "trecho": "inscrição do ato constitutivo, estatuto ou contrato social no Registro Público de Empresas Mercantis",
+        "pagina": 11,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_federal",
+        "trecho": "Prova de regularidade fiscal perante a Fazenda Nacional",
+        "pagina": 12,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_estadual",
+        "trecho": "Prova de regularidade fiscal perante a Fazenda Estadual",
+        "pagina": 12,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_municipal",
+        "trecho": "Prova de regularidade fiscal perante a Fazenda Municipal",
+        "pagina": 12,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_fgts",
+        "trecho": "Fundo de Garantia do Tempo de Serviço (FGTS); 9.5.7 Prova de inexistência de débitos inad",
+        "pagina": 12,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_trabalhista",
+        "trecho": "Prova de inexistência de débitos inad",
+        "pagina": 12,
+        "conflito": false
+      },
+      {
+        "valor": "certidao_falencia",
+        "trecho": "Certidão negativa de falência expedida pelo distribuidor da sede do fornecedor",
+        "pagina": 12,
+        "conflito": false
+      }
+    ]
+  }
+}
