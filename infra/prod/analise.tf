@@ -132,6 +132,7 @@ resource "aws_iam_role_policy" "analisador_task" {
 # que tem ecs:RunTask na familia e iam:PassRole na role nova (coletor.tf).
 resource "aws_scheduler_schedule" "analisar_diario" {
   name                         = "radar-analisar-diario"
+  state                        = var.analise_agendada ? "ENABLED" : "DISABLED"
   schedule_expression          = "cron(0 9 * * ? *)"
   schedule_expression_timezone = "America/Sao_Paulo"
 

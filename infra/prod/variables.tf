@@ -88,3 +88,9 @@ variable "modelos_ia" {
     error_message = "modelos_ia aceita so ids de foundation model; perfis de inferencia (us., eu., apac., global.) sao cross-region."
   }
 }
+
+variable "analise_agendada" {
+  description = "Liga a agenda diaria do `radar analisar`. O primeiro apply vai com false, ate uma execucao manual provar a role e os overrides do alvo universal."
+  type        = bool
+  default     = true
+}
