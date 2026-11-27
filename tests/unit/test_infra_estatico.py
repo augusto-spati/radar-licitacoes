@@ -170,3 +170,13 @@ def test_cli_imprime_a_linha_que_o_filtro_do_alarme_conta() -> None:
     termo = achado.group(1)
     cli = (RAIZ / "src" / "radar" / "cli.py").read_text(encoding="utf-8")
     assert f"{termo} " in cli, f"cli.py nao imprime {termo!r}; o alarme nao-rodou dispararia"
+
+
+def test_bucket_documentos_nega_transporte_sem_tls() -> None:
+    analise = re.sub(r"\s+", " ", _analise_tf())
+    assert 'resource "aws_s3_bucket_policy" "documentos"' in analise
+    assert 'effect = "Deny"' in analise
+    assert 'variable = "aws:SecureTransport"' in analise
+    assert 'values = ["false"]' in analise
+    assert 'actions = ["s3:*"]' in analise
+    assert "depends_on = [aws_s3_bucket_public_access_block.documentos]" in analise

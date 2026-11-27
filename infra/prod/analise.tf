@@ -57,6 +57,38 @@ resource "aws_s3_bucket_lifecycle_configuration" "documentos" {
   }
 }
 
+# So HTTPS: qualquer acesso sem TLS (aws:SecureTransport = false) e negado, para todos.
+data "aws_iam_policy_document" "documentos_so_tls" {
+  statement {
+    sid     = "NegaSemTLS"
+    effect  = "Deny"
+    actions = ["s3:*"]
+    resources = [
+      aws_s3_bucket.documentos.arn,
+      "${aws_s3_bucket.documentos.arn}/*",
+    ]
+
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "documentos" {
+  bucket = aws_s3_bucket.documentos.id
+  policy = data.aws_iam_policy_document.documentos_so_tls.json
+
+  # A politica so entra depois do bloqueio de acesso publico (evita corrida no apply).
+  depends_on = [aws_s3_bucket_public_access_block.documentos]
+}
+
 # ---------- Role da task de analise ----------
 
 data "aws_iam_policy_document" "analisador_task" {
