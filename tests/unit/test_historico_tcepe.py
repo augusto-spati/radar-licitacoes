@@ -76,6 +76,20 @@ def test_sigiloso_ou_sem_estimado_fica_sem_desconto() -> None:
         assert caso.valor_homologado == Decimal("20345351.9900")
 
 
+def test_razao_absurda_fica_sem_desconto() -> None:
+    """Ata 93/2025 da Compesa no TCE-PE: estimado R$ 27.313,40 e homologado R$ 2.641.230,00
+    (desconto de -9.570%, o estimado veio por unidade). Fora de [0,3; 1,5] → sem desconto e fora
+    da régua; o caso continua contando para o órgão."""
+    processo = _adutora()
+    for homologado in ("2641230.00", "70000000.00", "1000.00"):
+        caso = caso_tcepe({**processo, "valorHomologado": homologado}, ["redes"], None)
+        assert caso is not None and caso.situacao == "homologada"
+        assert caso.desconto is None
+        assert caso.valor_estimado == Decimal("21883600.4800")
+    caso = caso_tcepe({**processo, "valorHomologado": "30000000.00"}, ["redes"], None)
+    assert caso is not None and caso.desconto == Decimal("-0.3709")  # razão 1,37: plausível
+
+
 def test_sem_sessao_usa_publicacao() -> None:
     processo = {k: v for k, v in _adutora().items() if k != "dataSessaoAbertura"}
     caso = caso_tcepe(processo, ["redes"], None)
