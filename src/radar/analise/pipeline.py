@@ -56,6 +56,9 @@ class Baixador(Protocol):
     def baixar(self, url: str) -> bytes: ...
 
 
+ZIP_SEM_DOCUMENTO_UTIL = "ZIP sem edital, termo de referência ou habilitação em PDF ou Word"
+
+
 class SemDocumentos(Exception):
     """A fonte ainda não tem edital nem termo de referência: nada é gravado, fica para a
     próxima rodada (a Compesa sobe a pasta da obra dias depois do aviso, por exemplo)."""
@@ -104,6 +107,9 @@ class _Documento:
     sequencial: int
     sha256: str | None
     status: str
+    # ZIP só com anexos que a análise não lê (memorial, planilha, BDI): não falta nada nele, então
+    # não deixa a análise incompleta.
+    sem_documento_util: bool = False
 
 
 @dataclass
@@ -251,7 +257,8 @@ def _processar_documento(
             },
         )
     _upsert_documento(sessao, valores)
-    return _Documento(arquivo.sequencial, valores["sha256"], status), paginas
+    sem_util = status == "nao_pdf" and valores["erro"] == ZIP_SEM_DOCUMENTO_UTIL
+    return _Documento(arquivo.sequencial, valores["sha256"], status, sem_util), paginas
 
 
 def _abrir_se_pacote(dados: bytes, valores: dict[str, Any]) -> bytes:
@@ -266,7 +273,7 @@ def _abrir_se_pacote(dados: bytes, valores: dict[str, Any]) -> bytes:
     pacote = ler_pacote(dados)
     escolhidos = [] if pacote is None else escolher_no_pacote(pacote.namelist(), limite=1)
     if pacote is None or not escolhidos:
-        valores["erro"] = "ZIP sem edital, termo de referência ou habilitação em PDF ou Word"
+        valores["erro"] = ZIP_SEM_DOCUMENTO_UTIL
         return dados
     nome = escolhidos[0].nome
     valores["titulo"] = f"{valores['titulo']} › {base_do_nome(legivel(nome))}"
@@ -340,7 +347,12 @@ def analisar_edital(
     try:
         documentos = _documentos(sessao, alvo, dep, agora)
         extraidos = [d for d in documentos.linhas if d.status == "extraido"]
-        docs_incompletos = len(extraidos) < len(documentos.linhas)
+        if not extraidos and all(d.sem_documento_util for d in documentos.linhas):
+            # Só ZIPs de anexos (memorial, planilha): o edital ainda não está publicado.
+            raise SemDocumentos(f"{alvo.fonte}~{alvo.id_na_fonte}")
+        docs_incompletos = any(
+            d.status != "extraido" and not d.sem_documento_util for d in documentos.linhas
+        )
         if not extraidos:
             logger.info(
                 "analise_sem_texto",
