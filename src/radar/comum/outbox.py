@@ -17,7 +17,7 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from radar.comum.db import Base
 
-TipoMensagem = Literal["pagina_coletada", "retrato_coletado"]
+TipoMensagem = Literal["pagina_coletada", "retrato_coletado", "coletar_janela"]
 
 
 class Outbox(Base):
@@ -25,7 +25,10 @@ class Outbox(Base):
 
     __tablename__ = "outbox"
     __table_args__ = (
-        CheckConstraint("tipo IN ('pagina_coletada', 'retrato_coletado')", name="ck_outbox_tipo"),
+        CheckConstraint(
+            "tipo IN ('pagina_coletada', 'retrato_coletado', 'coletar_janela')",
+            name="ck_outbox_tipo",
+        ),
         Index("ix_outbox_pendente", "id", postgresql_where=text("publicada_em IS NULL")),
     )
 

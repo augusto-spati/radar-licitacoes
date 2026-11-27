@@ -86,3 +86,22 @@ def test_regiao_da_url() -> None:
     assert regiao_da_url("https://sqs.us-east-1.amazonaws.com/1/f.fifo") == "us-east-1"
     with pytest.raises(ValueError):
         regiao_da_url("http://localhost:9324/queue/fila")
+
+
+def test_coletar_janela_ida_e_volta() -> None:
+    m = Mensagem(outbox_id=9, tipo="coletar_janela", carga={"janela_id": 3, "lote": 2})
+
+    assert de_corpo(para_corpo(m)) == m
+
+
+@pytest.mark.parametrize(
+    "carga",
+    [{"janela_id": 3}, {"lote": 0}, {"janela_id": "3", "lote": 0}, {"janela_id": 3, "lote": True}],
+)
+def test_de_corpo_coletar_janela_sem_lote_e_invalido(carga: dict[str, object]) -> None:
+    import json
+
+    corpo = json.dumps({"tipo": "coletar_janela", "carga": carga, "outbox_id": 1})
+
+    with pytest.raises(ValueError):
+        de_corpo(corpo)

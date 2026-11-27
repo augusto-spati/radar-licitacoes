@@ -39,7 +39,15 @@ def de_corpo(corpo: str) -> Mensagem:
         raise ValueError(f"tipo de mensagem desconhecido: {tipo!r}")
     if not isinstance(carga, dict) or not isinstance(outbox_id, int):
         raise ValueError(f"corpo de mensagem inválido: {corpo!r}")
+    if tipo == "coletar_janela" and not all(
+        _inteiro(carga.get(campo)) for campo in ("janela_id", "lote")
+    ):
+        raise ValueError(f"coletar_janela exige janela_id e lote inteiros: {corpo!r}")
     return Mensagem(outbox_id=outbox_id, tipo=tipo, carga=carga)
+
+
+def _inteiro(valor: object) -> bool:
+    return isinstance(valor, int) and not isinstance(valor, bool)
 
 
 def regiao_da_url(url: str) -> str:
