@@ -79,7 +79,7 @@ Preocupações registradas e abertas: trecho citado que atravessa a quebra de p�
 1. **Conferir os 12 gabaritos marcados "não conferido".** Para cada um, ler o edital, corrigir o JSON e mudar `conferido` para `true`, com nome e data. Vários itens estão anotados como "conferir" nas observações. Um ponto já sinalizado: capital e patrimônio alternativos (editais 249, 118 e 119) ficaram com o mesmo valor nos dois campos, e a decisão é dele.
 2. **Só depois, a rodada real comparando modelos.** Rodar `radar avaliar rodar --modo gravar` para os modelos in-region, commitar as respostas e a linha de base. Antes da conferência, a métrica não vale.
 3. **O perfil real da FR fica fora do repositório público.** `config/perfil.toml` tem só valores de exemplo. Em produção a análise roda hoje com esse perfil fictício; o real fica num arquivo apontado por `RADAR_CONFIG_PERFIL`.
-4. Confirmar que o `Overrides.TaskRoleArn` pelo alvo universal do Scheduler funciona na execução agendada das 09:00; essa parte só se confirma na execução.
+4. Conferir, na primeira manhã, que a execução agendada das 09:00 terminou bem. Os overrides (role do analisador e comando) já foram provados em 2026-11-27: a execução manual usou o mesmo `Input` da agenda e leu o Bedrock e o S3 com a role do analisador.
 
 ## Perguntas de entrevista
 
