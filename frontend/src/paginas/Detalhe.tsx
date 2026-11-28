@@ -39,7 +39,7 @@ function Voltar() {
   // A consulta (?linha=&uf=) veio da lista e volta com ela.
   const {search} = useLocation();
   return (
-    <Link href={`/${search}`} color="secondary">
+    <Link href={`/editais${search}`} color="secondary">
       <HStack gap={1} vAlign="center">
         <Icon icon={ArrowLeft} size="sm" color="inherit" xstyle={rtlStyles.mirror} />
         Voltar

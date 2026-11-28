@@ -3,10 +3,10 @@ import {rotas} from './rotas';
 
 describe('rotas', () => {
   it('formam a lista fechada da v1', () => {
-    expect(rotas.map(rota => rota.caminho)).toEqual(['/', '/edital/:id', '/entrar', '*']);
+    expect(rotas.map(rota => rota.caminho)).toEqual(['/', '/editais', '/edital/:id', '/entrar', '*']);
   });
 
-  it('só a lista aparece no menu', () => {
-    expect(rotas.filter(rota => rota.noMenu).map(rota => rota.caminho)).toEqual(['/']);
+  it('só o painel e a lista aparecem no menu, nessa ordem', () => {
+    expect(rotas.filter(rota => rota.noMenu).map(rota => rota.caminho)).toEqual(['/', '/editais']);
   });
 });

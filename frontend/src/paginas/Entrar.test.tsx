@@ -34,7 +34,7 @@ async function digitarCodigo(codigo: string) {
 }
 
 describe('Entrar (protótipo, fonte de exemplo)', () => {
-  it('e-mail, código e "Entrar" levam à lista sem chamar o Cognito', async () => {
+  it('e-mail, código e "Entrar" levam ao painel sem chamar o Cognito', async () => {
     const mock = simularFetch();
     abrir();
     expect(screen.getByText('Protótipo com dados de exemplo')).toBeTruthy();

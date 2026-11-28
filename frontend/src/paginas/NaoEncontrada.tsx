@@ -12,7 +12,7 @@ export function NaoEncontrada() {
           <EmptyState
             title="Página não encontrada"
             description="O endereço não existe ou foi digitado de forma incompleta."
-            actions={<Button label="Voltar para a lista" variant="primary" href="/" />}
+            actions={<Button label="Voltar para a lista" variant="primary" href="/editais" />}
           />
         </LayoutContent>
       }
