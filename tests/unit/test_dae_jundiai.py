@@ -1,4 +1,7 @@
+import json
 import logging
+import signal
+import time
 from collections.abc import Callable
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -695,6 +698,7 @@ def test_primeira_pagina_fora_do_lugar_falha() -> None:
 
 
 # --- PDF do edital: postback de download (aprovado em 28/11/2026, até 5 por rodada) -----------
+# Desligado por padrão (`BAIXAR_EDITAIS_PDF`): o site real pede identificação. Os testes ligam.
 
 CAPA = [
     "RECEBIMENTO DOS ENVELOPES",
@@ -709,9 +713,13 @@ PDF_AMBIGUO = pdf_com_texto(
     [["SESSÃO PÚBLICA DATA: 16/12/2026 HORÁRIO: 09:30", "SESSÃO PÚBLICA DATA: 17/12/2026"]]
 )
 SESSAO = datetime(2026, 12, 16, 9, 30)  # Brasília, sem fuso, como as datas da lista
+ISO_SESSAO = "2026-12-16T09:30:00-03:00"
+CONFERIDO = HOJE.isoformat()  # o relógio dos testes: 27/11/2026
 
 
-def _detalhe_pdf(cd: str, numero: int, anexos: list[tuple[str, str]] | None = None) -> str:
+def _detalhe_pdf(
+    cd: str, numero: int, anexos: list[tuple[str, str]] | None = None, estado: bool = True
+) -> str:
     """Detalhe com o estado do formulário e os links de postback, como o real."""
     anexos = anexos if anexos is not None else [(f"EDITAL {cd}.pdf", "EDITAL DA COMPRA")]
     linhas = "".join(
@@ -720,10 +728,17 @@ def _detalhe_pdf(cd: str, numero: int, anexos: list[tuple[str, str]] | None = No
         f'&#39;grdArquivos$ctl{i:02}$lnkArquivo&#39;,&#39;&#39;)">{nome}   </a></td></tr>'
         for i, (nome, tipo) in enumerate(anexos, start=2)
     )
-    return (
-        f"<html><body><form id='form1' method='post' action='./CompraNEWeb.aspx?cdcompra={cd}'>"
+    campos = (
         f"<input type='hidden' name='__VIEWSTATE' value='vs-det-{cd}'>"
         f"<input type='hidden' name='__EVENTVALIDATION' value='ev-det-{cd}'>"
+        if estado
+        else ""
+    )
+    return (
+        f"<html><body><form id='form1' method='post' action='./CompraNEWeb.aspx?cdcompra={cd}'>"
+        f"{campos}"
+        f"<select name='CompraNEMod1$ddlSituacao' id='CompraNEMod1_ddlSituacao' disabled>"
+        f"<option selected value='1'>Em Configuracao</option></select>"
         f"<span id='CompraNEMod1_lblTitulo'>MODO DE DISPUTA FECHADO - 2026/{numero} - PMJ</span>"
         f"<span id='CompraNEMod1_lblDsobjeto'>OBRA {cd}</span>"
         f"<span id='CompraNEMod1_lblDtPubl'>01/10/2026</span>"
@@ -742,19 +757,27 @@ DETALHES_PDF = {**DETALHES, **{cd: _detalhe_pdf(cd, numero) for cd, numero, _ in
 Resposta = Callable[[httpx.Request], httpx.Response]
 
 
-def _pdf_ok(_cd: str) -> httpx.Response:
-    return httpx.Response(200, content=PDF_OK, headers={"content-type": "application/pdf"})
+def _pdf_ok(cd: str) -> httpx.Response:
+    return httpx.Response(
+        200,
+        content=PDF_OK,
+        headers={
+            "content-type": "application/pdf",
+            "content-disposition": f'attachment; filename="EDITAL {cd}.pdf"',
+        },
+    )
 
 
 def _servidor_pdf(
     pdf: Callable[[str], httpx.Response] = _pdf_ok,
     detalhes: dict[str, str] = DETALHES_PDF,
+    primeira: str = P2026_PDF,
 ) -> Resposta:
     """O Compra Eletrônica com o download: o postback `lnkArquivo` devolve o PDF da compra."""
-    lista = _servidor({("2025", 1): P2025_1}, primeira=P2026_PDF, detalhes=detalhes)
+    lista = _servidor({("2025", 1): P2025_1}, primeira=primeira, detalhes=detalhes)
 
     def responder(requisicao: httpx.Request) -> httpx.Response:
-        if requisicao.method == "POST" and b"lnkArquivo" in requisicao.content:
+        if _e_download(requisicao):
             return pdf(requisicao.url.params["cdcompra"])
         return httpx.Response(200, text=lista(requisicao))
 
@@ -763,9 +786,10 @@ def _servidor_pdf(
 
 def _coletar_pdf(
     servidor: Resposta,
-    datas: dict[tuple[str, str], str | None] | None = None,
+    datas: dict[tuple[str, str], dict[str, Any]] | None = None,
     chamadas: list[httpx.Request] | None = None,
     pausas: list[float] | None = None,
+    baixar: bool = True,
 ) -> tuple[FonteDaeJundiai, list[PaginaColetada]]:
     feitas = [] if chamadas is None else chamadas
     dormidas = [] if pausas is None else pausas
@@ -774,9 +798,9 @@ def _coletar_pdf(
         feitas.append(requisicao)
         return servidor(requisicao)
 
-    fonte = FonteDaeJundiai(relogio=lambda: AGORA, datas_edital=datas)
+    fonte = FonteDaeJundiai(relogio=lambda: AGORA, datas_edital=datas, baixar_editais=baixar)
     with ClienteEducado(
-        httpx.Client(transport=httpx.MockTransport(tratar)),
+        httpx.Client(transport=httpx.MockTransport(tratar), follow_redirects=True),
         dormir=dormidas.append,
         marcador_bloqueio=FonteDaeJundiai.marcador_bloqueio,
     ) as cliente:
@@ -791,8 +815,18 @@ def _downloads(chamadas: list[httpx.Request]) -> list[str]:
     return [c.url.params["cdcompra"] for c in chamadas if _e_download(c)]
 
 
-def _editais(paginas: list[PaginaColetada]) -> dict[str, str]:
-    return {p.url: p.texto for p in paginas if dae.MARCA_EDITAL in p.url}
+def _editais(paginas: list[PaginaColetada]) -> dict[str, dict[str, Any]]:
+    """As páginas `#edital=` por cdcompra, já lidas do JSON."""
+    lidas = {}
+    for pagina in paginas:
+        if dae.MARCA_EDITAL in pagina.url:
+            assert pagina.formato == "json"
+            lidas[pagina.url.split("cdcompra=")[1].split("#")[0]] = json.loads(pagina.texto)
+    return lidas
+
+
+def _entrada(cd: str, data: str | None = ISO_SESSAO, conferido: str | None = CONFERIDO) -> Any:
+    return {"arquivo": f"EDITAL {cd}.pdf", "data": data, "conferido_em": conferido}
 
 
 def _por_cdcompra(editais: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -818,6 +852,21 @@ def test_edital_do_detalhe_pega_o_pdf_do_tipo_edital() -> None:
     assert dae.edital_do_detalhe(retificado) == ("E2.pdf", "grdArquivos$ctl04$lnkArquivo")
 
 
+def test_estado_do_formulario_nao_manda_campo_desabilitado() -> None:
+    # O navegador não envia o <select disabled> de situação do detalhe (visto no 846 real).
+    estado = estado_formulario(DETALHE_846)
+    assert "CompraNEMod1$ddlSituacao" not in estado
+    assert estado["__VIEWSTATE"] == "viewstate-det-846"
+
+
+def test_desligado_por_padrao_nao_baixa_nada() -> None:
+    assert dae.BAIXAR_EDITAIS_PDF is False
+    assert FonteDaeJundiai().baixar_editais is False
+    chamadas: list[httpx.Request] = []
+    _, paginas = _coletar_pdf(_servidor_pdf(), chamadas=chamadas, baixar=False)
+    assert _downloads(chamadas) == [] and _editais(paginas) == {}
+
+
 def test_download_logo_depois_do_detalhe_com_o_estado_dele_e_teto_de_5_mais_novos() -> None:
     chamadas: list[httpx.Request] = []
     pausas: list[float] = []
@@ -835,23 +884,16 @@ def test_download_logo_depois_do_detalhe_com_o_estado_dele_e_teto_de_5_mais_novo
         assert corpo["__EVENTVALIDATION"] == [f"ev-det-{cd}"]
         assert corpo["__EVENTTARGET"] == ["grdArquivos$ctl02$lnkArquivo"]
         assert corpo["__EVENTARGUMENT"] == [""]
+        assert "CompraNEMod1$ddlSituacao" not in corpo  # disabled
         assert str(chamada.url) == f"{BASE}CompraNEWeb.aspx?cdcompra={cd}"
     assert all(c.headers["User-Agent"].startswith("radar-licitacoes-estudo") for c in chamadas)
     assert pausas == [3.0] * (len(chamadas) - 1)  # cortesia também no download
-    assert _editais(paginas) == {
-        f"{BASE}CompraNEWeb.aspx?cdcompra={cd}#edital=EDITAL {cd}.pdf": (
-            f"2026-12-16T09:30:00-03:00|EDITAL {cd}.pdf"
-        )
-        for cd in novos[:5]
-    }
+    assert _editais(paginas) == {cd: _entrada(cd) for cd in novos[:5]}
     editais = _por_cdcompra(fonte.extrair(paginas))
     for cd in novos[:5]:
         assert editais[cd]["data_abertura_proposta"] == SESSAO
         assert editais[cd]["data_encerramento_proposta"] == SESSAO
-        assert editais[cd]["bruto"]["detalhe"]["data_sessao_edital"] == {
-            "arquivo": f"EDITAL {cd}.pdf",
-            "data": "2026-12-16T09:30:00-03:00",
-        }
+        assert editais[cd]["bruto"]["detalhe"]["data_sessao_edital"] == _entrada(cd)
     for cd in novos[5:]:  # passaram do teto: ficam para a próxima rodada
         assert editais[cd]["data_encerramento_proposta"] is None
         assert "data_sessao_edital" not in editais[cd]["bruto"]["detalhe"]
@@ -859,34 +901,66 @@ def test_download_logo_depois_do_detalhe_com_o_estado_dele_e_teto_de_5_mais_novo
 
 
 def test_cache_nao_baixa_de_novo_e_volta_ao_retrato() -> None:
-    datas: dict[tuple[str, str], str | None] = {
-        ("906", "EDITAL 906.pdf"): "2026-12-20T10:00:00-03:00",
-        ("905", "EDITAL 905.pdf"): None,  # nulo guardado: também não baixa
-        ("904", "OUTRO NOME.pdf"): "2026-12-01T10:00:00-03:00",  # retificado: baixa de novo
+    datas = {
+        ("906", "EDITAL 906.pdf"): _entrada("906", "2026-12-20T10:00:00-03:00", "2026-11-01"),
+        ("905", "EDITAL 905.pdf"): _entrada("905", None),  # nulo conferido hoje: não baixa
+        ("904", "OUTRO NOME.pdf"): _entrada("904"),  # retificado com outro nome: baixa de novo
+        ("903", "EDITAL 903.pdf"): _entrada("903", "2026-12-20T10:00:00", None),  # iso sem fuso
     }
     chamadas: list[httpx.Request] = []
     fonte, paginas = _coletar_pdf(_servidor_pdf(), datas=datas, chamadas=chamadas)
-    assert _downloads(chamadas) == ["904", "903", "902", "901", "900"]  # o cache não conta
-    url_905 = f"{BASE}CompraNEWeb.aspx?cdcompra=905#edital=EDITAL 905.pdf"
-    assert _editais(paginas)[url_905] == "|EDITAL 905.pdf"
+    assert _downloads(chamadas) == ["904", "902", "901", "900"]  # o cache não conta no teto
+    assert _editais(paginas)["905"] == _entrada("905", None)
     editais = _por_cdcompra(fonte.extrair(paginas))
     assert editais["906"]["data_encerramento_proposta"] == datetime(2026, 12, 20, 10, 0)
-    assert editais["906"]["bruto"]["detalhe"]["data_sessao_edital"] == {
-        "arquivo": "EDITAL 906.pdf",
-        "data": "2026-12-20T10:00:00-03:00",
-    }
+    assert (
+        editais["906"]["bruto"]["detalhe"]["data_sessao_edital"] == datas[("906", "EDITAL 906.pdf")]
+    )  # a entrada volta igual (conferido_em não muda sem reler)
     assert editais["905"]["data_encerramento_proposta"] is None
-    assert editais["905"]["bruto"]["detalhe"]["data_sessao_edital"] == {
-        "arquivo": "EDITAL 905.pdf",
-        "data": None,
-    }
+    assert editais["905"]["bruto"]["detalhe"]["data_sessao_edital"] == _entrada("905", None)
     assert editais["904"]["data_encerramento_proposta"] == SESSAO
+    assert editais["903"]["data_encerramento_proposta"] == datetime(2026, 12, 20, 10, 0)
 
 
-def test_cache_ilegivel_baixa_de_novo() -> None:
+def test_cache_vencido_rele_o_edital() -> None:
+    # Data já passada com o NE ainda aberto, ou nulo, conferidos há DIAS_RECONFERIR ou mais:
+    # relê (retificação com o mesmo nome). Conferido há menos: não relê.
+    velho = "2026-11-20"  # 7 dias antes de HOJE
+    recente = "2026-11-21"
+    datas = {
+        ("906", "EDITAL 906.pdf"): _entrada("906", "2026-11-25T09:30:00-03:00", velho),
+        ("905", "EDITAL 905.pdf"): _entrada("905", None, velho),
+        ("904", "EDITAL 904.pdf"): _entrada("904", "2026-11-25T09:30:00-03:00", recente),
+        ("903", "EDITAL 903.pdf"): _entrada("903", None, None),  # sem conferido: relê
+        ("902", "EDITAL 902.pdf"): {"data": "ontem"},  # ilegível: relê
+    }
     chamadas: list[httpx.Request] = []
-    _coletar_pdf(_servidor_pdf(), datas={("906", "EDITAL 906.pdf"): "ontem"}, chamadas=chamadas)
-    assert _downloads(chamadas)[0] == "906"
+    fonte, paginas = _coletar_pdf(_servidor_pdf(), datas=datas, chamadas=chamadas)
+    assert _downloads(chamadas) == ["906", "905", "903", "902", "901"]
+    lidas = _editais(paginas)
+    assert lidas["906"] == _entrada("906") and lidas["905"] == _entrada("905")
+    assert lidas["904"] == datas[("904", "EDITAL 904.pdf")]
+    # O teto adiou o 900: ficou sem página (não estava no cache).
+    assert "900" not in lidas
+    assert _por_cdcompra(fonte.extrair(paginas))["906"]["data_encerramento_proposta"] == SESSAO
+
+
+def test_cache_vencido_adiado_pelo_teto_ou_releitura_que_falha_continua_no_retrato() -> None:
+    velha = _entrada("900", "2026-11-25T09:30:00-03:00", "2026-11-01")
+    datas = {
+        ("900", "EDITAL 900.pdf"): velha,
+        ("906", "EDITAL 906.pdf"): _entrada("906", "2026-11-25T09:30:00-03:00", "2026-11-01"),
+    }
+
+    def falha_906(cd: str) -> httpx.Response:
+        return httpx.Response(500, text="erro") if cd == "906" else _pdf_ok(cd)
+
+    chamadas: list[httpx.Request] = []
+    _, paginas = _coletar_pdf(_servidor_pdf(falha_906), datas=datas, chamadas=chamadas)
+    assert _downloads(chamadas) == ["906", "905", "904", "903", "902"]  # 900 adiado pelo teto
+    lidas = _editais(paginas)
+    assert lidas["900"] == velha  # adiado: a entrada anterior segue
+    assert lidas["906"] == datas[("906", "EDITAL 906.pdf")]  # releitura falhou: idem
 
 
 def _falhas(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
@@ -894,24 +968,39 @@ def _falhas(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
 
 
 PDF_QUEBRADO = b"%PDF-1.4\nlixo"
+NOME_906 = {"content-disposition": 'attachment; filename="EDITAL 906.pdf"'}
 
 
 @pytest.mark.parametrize(
-    ("status", "corpo", "guarda", "motivo"),
+    ("status", "corpo", "headers", "guarda", "motivo"),
     [
-        (500, b"Server Error", False, "HTTP 500"),
-        (404, b"Not Found", False, "HTTP 404"),
-        (200, b"<html>erro</html>", False, "não é PDF"),
-        (200, PDF_QUEBRADO, True, "PDF ilegível"),
-        (200, PDF_AMBIGUO, True, "ambígua"),
-        (200, pdf_com_texto([["sem data nenhuma"]]), True, "ambígua"),
+        (500, b"Server Error", {}, False, "HTTP 500"),
+        (404, b"Not Found", {}, False, "HTTP 404"),
+        (200, b"<html><title>Compra Aberta</title></html>", {}, False, "não é PDF"),
+        (200, PDF_QUEBRADO, {}, True, "PDF ilegível"),
+        (200, PDF_AMBIGUO, NOME_906, True, "ambígua"),
+        (200, pdf_com_texto([["sem data nenhuma"]]), {}, True, "ambígua"),
+        (
+            200,
+            PDF_OK,
+            {"content-disposition": "attachment; filename=ANEXO.pdf"},
+            False,
+            "veio o arquivo 'ANEXO.pdf'",
+        ),
     ],
 )
 def test_falha_do_pdf_nao_derruba_o_retrato(
-    status: int, corpo: bytes, guarda: bool, motivo: str, caplog: pytest.LogCaptureFixture
+    status: int,
+    corpo: bytes,
+    headers: dict[str, str],
+    guarda: bool,
+    motivo: str,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     def pdf(cd: str) -> httpx.Response:
-        return httpx.Response(status, content=corpo) if cd == "906" else _pdf_ok(cd)
+        if cd == "906":
+            return httpx.Response(status, content=corpo, headers=headers)
+        return _pdf_ok(cd)
 
     with caplog.at_level(logging.INFO):
         fonte, paginas = _coletar_pdf(_servidor_pdf(pdf))
@@ -919,13 +1008,45 @@ def test_falha_do_pdf_nao_derruba_o_retrato(
     assert registro.__dict__["fonte"] == "dae_jundiai"
     assert registro.__dict__["cdcompra"] == "906"
     assert motivo in registro.__dict__["motivo"]
-    url = f"{BASE}CompraNEWeb.aspx?cdcompra=906#edital=EDITAL 906.pdf"
-    # Nulo que o mesmo arquivo repetiria vai para o cache; rede e HTTP tentam de novo amanhã.
-    assert _editais(paginas).get(url) == ("|EDITAL 906.pdf" if guarda else None)
+    # Nulo que o mesmo arquivo repetiria vai para o cache; rede, HTTP e outro arquivo, não.
+    assert _editais(paginas).get("906") == (_entrada("906", None) if guarda else None)
     editais = _por_cdcompra(fonte.extrair(paginas))
     assert len(editais) == 8  # o retrato inteiro
     assert editais["906"]["data_encerramento_proposta"] is None
     assert editais["905"]["data_encerramento_proposta"] == SESSAO
+
+
+def test_nao_e_pdf_loga_o_titulo_da_resposta(caplog: pytest.LogCaptureFixture) -> None:
+    html = b"<html><head><title>  Compra\n Aberta </title></head></html>"
+    with caplog.at_level(logging.WARNING):
+        _coletar_pdf(_servidor_pdf(lambda _cd: httpx.Response(200, content=html)))
+    assert "'Compra Aberta'" in _falhas(caplog)[0].__dict__["motivo"]
+
+
+def test_nome_do_content_disposition() -> None:
+    assert dae.nome_no_content_disposition('attachment; filename="MDF 017 26.pdf"') == (
+        "MDF 017 26.pdf"
+    )
+    assert dae.nome_no_content_disposition("attachment; filename=E.pdf; size=3") == "E.pdf"
+    assert (
+        dae.nome_no_content_disposition(
+            "attachment; filename=x.pdf; filename*=UTF-8''EDITAL%20N%C2%BA%201.pdf"
+        )
+        == "EDITAL Nº 1.pdf"
+    )
+    assert dae.nome_no_content_disposition("inline") is None
+
+
+def test_nome_igual_com_espacos_e_caixa_diferentes_vale() -> None:
+    def pdf(cd: str) -> httpx.Response:
+        return httpx.Response(
+            200,
+            content=PDF_OK,
+            headers={"content-disposition": f"attachment; filename=edital%20{cd}.PDF"},
+        )
+
+    _, paginas = _coletar_pdf(_servidor_pdf(pdf))
+    assert _editais(paginas)["906"] == _entrada("906")
 
 
 def test_erro_de_rede_no_download_nao_derruba_o_retrato(caplog: pytest.LogCaptureFixture) -> None:
@@ -955,6 +1076,92 @@ def test_pagina_de_bloqueio_no_download_derruba_o_retrato() -> None:
         _coletar_pdf(_servidor_pdf(lambda _cd: httpx.Response(200, text=bloqueio)))
 
 
+def test_redirecionamento_vira_outro_get_com_pausa() -> None:
+    # Mesmo com o httpx configurado para seguir, o download não segue na mesma requisição.
+    servidor = _servidor_pdf()
+
+    def redireciona(requisicao: httpx.Request) -> httpx.Response:
+        if _e_download(requisicao):
+            cd = requisicao.url.params["cdcompra"]
+            return httpx.Response(302, headers={"location": f"/dae/aberto/Arquivo.aspx?cd={cd}"})
+        if requisicao.url.path.endswith("Arquivo.aspx"):
+            return _pdf_ok(requisicao.url.params["cd"])
+        return servidor(requisicao)
+
+    chamadas: list[httpx.Request] = []
+    pausas: list[float] = []
+    fonte, paginas = _coletar_pdf(redireciona, chamadas=chamadas, pausas=pausas)
+    i = next(i for i, c in enumerate(chamadas) if _e_download(c))
+    seguinte = chamadas[i + 1]
+    assert seguinte.method == "GET"
+    assert str(seguinte.url) == (
+        "https://compraeletronica.jundiai.sp.gov.br/dae/aberto/Arquivo.aspx?cd=906"
+    )
+    assert pausas == [3.0] * (len(chamadas) - 1)  # o GET do redirect também espera
+    assert _editais(paginas)["906"] == _entrada("906")
+
+
+def test_identificacao_do_requerente_para_os_downloads_da_rodada(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # O que o site real respondeu em 28/11/2026: 302 para a identificação (facultativa, botão
+    # "Pular"). Não segue, não tenta outro edital na mesma rodada e não guarda nada.
+    def identificacao(cd: str) -> httpx.Response:
+        destino = f"/dae/aberto/CompraNEIdentificacao.aspx?cdcompra={cd}&sq=1"
+        return httpx.Response(302, headers={"location": destino}, text="Object moved")
+
+    chamadas: list[httpx.Request] = []
+    datas = {("900", "EDITAL 900.pdf"): _entrada("900", None, "2026-01-01")}  # vencida
+    with caplog.at_level(logging.INFO):
+        fonte, paginas = _coletar_pdf(_servidor_pdf(identificacao), datas=datas, chamadas=chamadas)
+    assert _downloads(chamadas) == ["906"]
+    assert not any("Identificacao" in str(c.url) for c in chamadas)
+    assert "identificação" in _falhas(caplog)[0].__dict__["motivo"]
+    assert _editais(paginas) == {"900": datas[("900", "EDITAL 900.pdf")]}  # a anterior segue
+    resumo = next(r for r in caplog.records if r.message == "dae_jundiai_editais_pdf")
+    assert resumo.__dict__["identificacao"] is True
+    assert len(fonte.extrair(paginas)) == 8
+
+
+def test_content_length_acima_do_teto_para_antes_de_ler(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(dae, "MAX_BYTES_PDF", 1000)
+    lidos: list[int] = []
+
+    def grande(cd: str) -> httpx.Response:
+        def corpo() -> Any:
+            for _ in range(100):
+                lidos.append(1)
+                yield b"x" * 1000
+
+        cabecalho = {"content-length": "100000"} if cd == "906" else {}
+        return httpx.Response(200, content=corpo(), headers=cabecalho)
+
+    fonte, paginas = _coletar_pdf(_servidor_pdf(grande))
+    lidas = _editais(paginas)
+    assert lidas["906"] == _entrada("906", None)  # grande demais: nulo guardado
+    assert lidas["905"] == _entrada("905", None)  # sem Content-Length: parou no streaming
+    assert len(lidos) <= 5 * 2  # nenhum download leu o corpo inteiro (100 partes)
+    assert len(fonte.extrair(paginas)) == 8
+
+
+def test_detalhe_sem_viewstate_isola_a_falha(caplog: pytest.LogCaptureFixture) -> None:
+    sem_estado = {**DETALHES_PDF, "906": _detalhe_pdf("906", 26, estado=False)}
+    chamadas: list[httpx.Request] = []
+    with caplog.at_level(logging.WARNING):
+        fonte, paginas = _coletar_pdf(_servidor_pdf(detalhes=sem_estado), chamadas=chamadas)
+    assert "906" not in _downloads(chamadas)
+    assert "__VIEWSTATE" in _falhas(caplog)[0].__dict__["motivo"]
+    assert "906" not in _editais(paginas) and len(fonte.extrair(paginas)) == 8
+
+
+def test_linha_sem_data_inicial_fica_por_ultimo() -> None:
+    linhas = [_ne(cd, f"2026/{numero:05}", inicio) for cd, numero, inicio in ABERTOS]
+    linhas[6] = _ne("906", "2026/00026", "")  # o "mais novo" sem data
+    chamadas: list[httpx.Request] = []
+    _coletar_pdf(_servidor_pdf(primeira=_pagina("2026", 1, [], linhas)), chamadas=chamadas)
+    assert _downloads(chamadas) == ["905", "904", "903", "902", "901"]
+
+
 def test_ne_que_nao_esta_aberto_nao_baixa() -> None:
     com_ata = {
         cd: _detalhe_pdf(cd, numero, [(f"E{cd}.pdf", "EDITAL DA COMPRA"), ("A.pdf", "ATA")])
@@ -977,8 +1184,29 @@ def test_so_as_3_primeiras_paginas_do_pdf_sao_lidas() -> None:
     assert "p3" in texto and "SESS" not in texto
 
 
+@pytest.mark.skipif(not hasattr(signal, "setitimer"), reason="sem SIGALRM (Windows)")
+def test_leitura_do_pdf_tem_limite_de_tempo(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(dae, "LIMITE_PDF_S", 0.05)
+
+    class Lento:
+        def __init__(self, *_: object) -> None:
+            time.sleep(1)
+
+    monkeypatch.setattr(dae, "PdfReader", Lento)
+    with pytest.raises(dae.FalhaEdital, match="TimeoutError") as falha:
+        dae.texto_do_pdf(PDF_OK)
+    assert falha.value.guardar
+
+
+def test_limite_de_tempo_e_inocuo_onde_nao_ha_sinal(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delattr(signal, "setitimer", raising=False)
+    assert "SESS" in dae.texto_do_pdf(PDF_OK)
+
+
 def test_pagina_de_edital_gravada_ilegivel_falha_no_extrair() -> None:
     fonte, paginas = _coletar_pdf(_servidor_pdf())
-    quebrada = PaginaColetada(f"{BASE}CompraNEWeb.aspx?cdcompra=906#edital=E.pdf", "html", "x")
-    with pytest.raises(ErroFonte, match="página de edital ilegível"):
-        fonte.extrair([*paginas, quebrada])
+    for texto in ("x", '{"arquivo": "outro.pdf", "data": null}', '{"arquivo": "E.pdf", "data": 1}'):
+        url = f"{BASE}CompraNEWeb.aspx?cdcompra=906#edital=E.pdf"
+        quebrada = PaginaColetada(url, "json", texto)
+        with pytest.raises(ErroFonte, match="página de edital ilegível"):
+            fonte.extrair([*paginas, quebrada])

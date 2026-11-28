@@ -20,7 +20,7 @@ import uuid
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Literal, Protocol, cast
+from typing import Any, Literal, Protocol, TypeVar, cast
 
 import httpx
 from opentelemetry import trace
@@ -45,6 +45,7 @@ MANTER_CONCLUIDOS = 3  # retratos processados cujas páginas brutas ficam guarda
 MANTER_FALHAS = 10  # retratos em falha idem (para diagnóstico)
 
 Formato = Literal["json", "html", "js"]
+T = TypeVar("T")
 StatusRetrato = Literal["concluido", "falha", "ocupado"]
 
 
@@ -59,6 +60,28 @@ class ErroFonte(Exception):
     def __init__(self, mensagem: str, status: int | None = None) -> None:
         super().__init__(mensagem)
         self.status = status
+
+
+class ArquivoGrande(Exception):
+    """O download passou do teto de bytes e foi interrompido (não é erro da fonte)."""
+
+    def __init__(self, url: str, max_bytes: int, declarado: int | None) -> None:
+        tamanho = f"{declarado} bytes declarados" if declarado is not None else "corpo maior"
+        super().__init__(f"arquivo acima de {max_bytes} bytes em {url} ({tamanho})")
+        self.declarado = declarado
+
+
+@dataclass(frozen=True)
+class Baixado:
+    """Resposta de um download limitado: o corpo inteiro (até o teto), sem seguir redirect."""
+
+    status_code: int
+    headers: httpx.Headers
+    content: bytes
+
+    def inicio_texto(self) -> str:
+        """Os primeiros 64 KB como texto: é onde se procura o marcador de bloqueio."""
+        return self.content[:65536].decode("utf-8", errors="replace")
 
 
 @dataclass(frozen=True)
@@ -80,8 +103,9 @@ class ClienteEducado:
     POST só existe para o postback de leitura do ASP.NET WebForms (`postback_leitura`): a lista
     da DAE Jundiaí só passa da página 1 por `__doPostBack`, e o Augusto aprovou essa exceção em
     27/11/2026 (nota `docs/superpowers/specs/2026-11-27-fonte-dae-jundiai.md`), e o download do
-    PDF do edital em 28/11/2026 (até 5 por rodada). Mesma cortesia do GET; quem chama garante que
-    o POST só lê (paginação, filtro de busca, download de anexo) e não cria nada.
+    PDF do edital em 28/11/2026 (`baixar_leitura`: streaming com teto de bytes, sem seguir
+    redirecionamento). Mesma cortesia do GET; quem chama garante que o POST só lê (paginação,
+    filtro de busca, download de anexo) e não cria nada.
     403, 429, qualquer outro status de erro, falha de transporte ou corpo que casa com
     `marcador_bloqueio` (captcha, página de bloqueio) viram `ErroFonte`.
 
@@ -121,28 +145,61 @@ class ClienteEducado:
         headers: dict[str, str] | None = None,
     ) -> httpx.Response:
         """`headers` somam-se aos do cliente só nesta requisição (o User-Agent fica)."""
-        return self._educado("GET", url, params=params, headers=headers)
+
+        def requisitar() -> tuple[int, Callable[[], str], httpx.Response]:
+            resposta = self._http.request("GET", url, params=params, headers=headers)
+            return resposta.status_code, lambda: resposta.text, resposta
+
+        return self._educado("GET", url, requisitar)
 
     def postback_leitura(
         self, url: str, dados: dict[str, str], headers: dict[str, str] | None = None
     ) -> httpx.Response:
         """POST de formulário (`application/x-www-form-urlencoded`) só para ler um ASP.NET
-        (paginação, busca, download de anexo). Nunca para enviar algo que crie ou altere dado."""
-        return self._educado("POST", url, dados=dados, headers=headers)
+        (paginação, busca). Nunca para enviar algo que crie ou altere dado na fonte."""
+
+        def requisitar() -> tuple[int, Callable[[], str], httpx.Response]:
+            resposta = self._http.request("POST", url, data=dados, headers=headers)
+            return resposta.status_code, lambda: resposta.text, resposta
+
+        return self._educado("POST", url, requisitar)
+
+    def baixar_leitura(
+        self, url: str, *, max_bytes: int, dados: dict[str, str] | None = None
+    ) -> Baixado:
+        """Download de arquivo: POST de postback (com `dados`) ou GET, lido em streaming.
+
+        Para em `max_bytes` (`ArquivoGrande`, já pelo `Content-Length` quando vem), sem guardar
+        mais que isso. Não segue redirecionamento: o 3xx volta para quem chama seguir com outra
+        requisição, que tem a pausa de cortesia. O marcador de bloqueio é procurado só nos
+        primeiros 64 KB. Mesmo método só de leitura do `postback_leitura` (download de anexo
+        do edital, aprovado em 28/11/2026).
+        """
+        metodo = "GET" if dados is None else "POST"
+
+        def requisitar() -> tuple[int, Callable[[], str], Baixado]:
+            with self._http.stream(metodo, url, data=dados, follow_redirects=False) as resposta:
+                declarado = resposta.headers.get("content-length", "")
+                if declarado.isdigit() and int(declarado) > max_bytes:
+                    raise ArquivoGrande(url, max_bytes, int(declarado))
+                corpo = bytearray()
+                for parte in resposta.iter_bytes():
+                    corpo += parte
+                    if len(corpo) > max_bytes:
+                        raise ArquivoGrande(url, max_bytes, None)
+                baixado = Baixado(resposta.status_code, resposta.headers, bytes(corpo))
+            return baixado.status_code, baixado.inicio_texto, baixado
+
+        return self._educado(metodo, url, requisitar)
 
     def _educado(
-        self,
-        metodo: str,
-        url: str,
-        params: dict[str, Any] | None = None,
-        dados: dict[str, str] | None = None,
-        headers: dict[str, str] | None = None,
-    ) -> httpx.Response:
+        self, metodo: str, url: str, requisitar: Callable[[], tuple[int, Callable[[], str], T]]
+    ) -> T:
         if not self._primeira:
             self._dormir(self._intervalo_s)
         self._primeira = False
         try:
-            resposta = self._medido(metodo, url, params, dados, headers)
+            resposta = self._medido(metodo, url, requisitar)
         except ErroFonte:
             metricas.registrar("PaginaComErro", 1)
             raise
@@ -150,13 +207,9 @@ class ClienteEducado:
         return resposta
 
     def _medido(
-        self,
-        metodo: str,
-        url: str,
-        params: dict[str, Any] | None,
-        dados: dict[str, str] | None,
-        headers: dict[str, str] | None,
-    ) -> httpx.Response:
+        self, metodo: str, url: str, requisitar: Callable[[], tuple[int, Callable[[], str], T]]
+    ) -> T:
+        """`requisitar` faz a chamada HTTP e devolve (status, texto para o marcador, resultado)."""
         host = self._http.base_url.join(url).host or "desconhecido"
         with tracer().start_as_current_span(
             metodo,
@@ -170,26 +223,21 @@ class ClienteEducado:
             inicio = self._cronometro()
             status: int | None = None
             try:
-                resposta = self._http.request(
-                    metodo, url, params=params, data=dados, headers=headers
-                )
-                status = resposta.status_code
+                status, texto, resultado = requisitar()
             except httpx.HTTPError as erro:
                 span.set_attribute("error.type", type(erro).__name__)
                 raise ErroFonte(f"{type(erro).__name__} em {url}: {erro}") from erro
             finally:
                 self._medir(host, status, self._cronometro() - inicio)
-            span.set_attribute("http.response.status_code", resposta.status_code)
-            if resposta.status_code >= 400:
-                span.set_attribute("error.type", str(resposta.status_code))
+            span.set_attribute("http.response.status_code", status)
+            if status >= 400:
+                span.set_attribute("error.type", str(status))
                 span.set_status(StatusCode.ERROR)
-                raise ErroFonte(
-                    f"HTTP {resposta.status_code} em {url}", status=resposta.status_code
-                )
-            if self._bloqueio is not None and self._bloqueio.search(resposta.text):
+                raise ErroFonte(f"HTTP {status} em {url}", status=status)
+            if self._bloqueio is not None and self._bloqueio.search(texto()):
                 span.set_attribute("error.type", "bloqueio")
                 raise ErroFonte(f"bloqueio em {url}")
-            return resposta
+            return resultado
 
     def _medir(self, host: str, status: int | None, duracao: float) -> None:
         if self._fonte in metricas.CATALOGO["LatenciaRequisicao"].valores_dimensao["fonte"]:
