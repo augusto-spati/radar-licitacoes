@@ -15,11 +15,16 @@ Fluxo, tudo no mesmo cookie (`ASP.NET_SessionId`) e com o `ClienteEducado`:
    página da grade anterior (vem na página 9 se a última lida foi a 9): nesse caso há um
    postback `Page$1` antes de seguir;
 4. o detalhe de cada compra do sistema "NE" (`CompraNEWeb.aspx?cdcompra=N`, modos de disputa,
-   alienação, chamada pública...) é GET e traz a data de publicação e os anexos tipados.
+   alienação, chamada pública...) é GET e traz a data de publicação e os anexos tipados;
+5. logo depois do GET do detalhe de um NE aberto, o PDF do edital (anexo `EDITAL DA COMPRA`)
+   vem pelo postback `grdArquivos$ctlNN$lnkArquivo` com o estado do próprio detalhe, e a data
+   da sessão sai da capa (`data_sessao_no_edital`). No máximo `MAX_EDITAIS_PDF` por rodada, os
+   mais novos primeiro, e só o que não está no cache (`datas_edital`, que quem monta a fonte lê
+   do banco).
 
-POST é exceção aprovada pelo Augusto em 27/11/2026 e fica restrita a esses dois postbacks de
-navegação (`_postar_pagina` e `_postar_busca`): nenhum outro botão, nenhum download de anexo
-(também é postback, fica para a análise).
+POST é exceção aprovada pelo Augusto e fica restrita a três postbacks de leitura: os dois de
+navegação (`_postar_pagina` e `_postar_busca`, 27/11/2026) e o download do PDF do edital
+(`_baixar_edital`, 28/11/2026, até 5 por rodada). Nenhum outro botão, nenhum outro anexo.
 
 Janela: os últimos 12 meses pela "Data/Hora inicial" (como na Compesa). Como a lista vem por
 exercício, o retrato lê o exercício corrente e o anterior inteiros e `extrair` descarta o que é
@@ -50,14 +55,15 @@ Situação:
   aconteceu (em julgamento até `DIAS_JULGAMENTO_COM_ATA`, depois encerrada); sem ata, aberta até
   `DIAS_ABERTA_SEM_ATA` da publicação, depois encerrada também: "outra" a reconciliação nunca
   fecha, e um NE de mais de seis meses sem ata publicada não é oportunidade. A data de
-  abertura do NE só existe no PDF do edital: o prazo fica nulo, e por isso o filtro de abertos
-  (que exige prazo futuro) ainda não mostra esses editais. `data_sessao_no_edital` já lê a
-  data da capa do edital (texto); falta o download, que no Compra Eletrônica é postback e não
-  está aprovado (nota da fonte, seção 7).
+  abertura do NE só existe no PDF do edital: vem da página `#edital=` do retrato (passo 5). Sem
+  ela (falha, teto, edital sem PDF) o prazo fica nulo e o filtro de abertos (que exige prazo
+  futuro) não mostra o edital. Falha do PDF nunca derruba o retrato; 403, 429 e bloqueio
+  derrubam, como em qualquer requisição.
 
 Formatos de data: lista `dd/mm/aaaa HH:MM:SS` (hora zero no NE), detalhe `dd/mm/aaaa`.
 """
 
+import io
 import logging
 import re
 import unicodedata
@@ -67,6 +73,8 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import httpx
+from pypdf import PdfReader
 from selectolax.lexbor import LexborHTMLParser, LexborNode
 
 from radar.coleta.retratos import ClienteEducado, ErroFonte, PaginaColetada
@@ -82,6 +90,11 @@ JANELA_DIAS = 365
 DIAS_JULGAMENTO_COM_ATA = 90
 DIAS_ABERTA_SEM_ATA = 180
 GRADE = "gdvCompras"
+# PDFs de edital baixados por rodada (aprovação do Augusto, 28/11/2026); o cache não conta.
+MAX_EDITAIS_PDF = 5
+MAX_BYTES_PDF = 30 * 1024 * 1024
+PAGINAS_LIDAS_PDF = 3  # a data está na capa
+TIPO_EDITAL = "EDITAL DA COMPRA"
 SEM_REGISTROS = "Nenhum registro encontrado!"
 
 # Sigla do id de cada modalidade do `ddlModalidade` (todas as 17 de 27/11/2026), pelo nome sem
@@ -140,6 +153,8 @@ _PAGINA = re.compile(r"Page\$(\d+)")
 _URL_LISTA = re.compile(r"#exercicio=(\d{4})&pagina=(\d+)$")
 _ACTION_CDCOMPRA = re.compile(r"cdcompra=(\d+)", re.IGNORECASE)
 _NUMERO_TITULO = re.compile(r"\b(\d{4})/(\d+)\b")
+_ALVO_ARQUIVO = re.compile(r"__doPostBack\('(grdArquivos\$ctl\d+\$lnkArquivo)'")
+MARCA_EDITAL = "#edital="  # a página do retrato com a data da sessão lida do PDF
 # Campos do formulário que a busca zera (a página 1 do GET vem assim).
 _BUSCA_LIMPA = {
     "txtObjeto": "",
@@ -500,6 +515,81 @@ def data_sessao_no_edital(texto: str) -> datetime | None:
     return datetime(dia.year, dia.month, dia.day, hora, minuto, tzinfo=FUSO)
 
 
+# --- PDF do edital (postback de download) ----------------------------------------------------
+
+
+class FalhaEdital(Exception):
+    """O PDF do edital não deu a data. Nunca derruba o retrato: o prazo fica nulo.
+
+    `guardar` diz se o resultado nulo vai para o cache (o mesmo arquivo daria o mesmo nulo:
+    PDF ilegível, grande demais, sem data legível) ou se a próxima rodada tenta de novo (rede,
+    HTTP de erro, resposta que não é PDF).
+    """
+
+    def __init__(self, motivo: str, *, guardar: bool) -> None:
+        super().__init__(motivo)
+        self.motivo = motivo
+        self.guardar = guardar
+
+
+def edital_do_detalhe(html: str) -> tuple[str, str] | None:
+    """(nome do arquivo, alvo do postback) do PDF do edital no detalhe; None se não há.
+
+    Só anexo do tipo `EDITAL DA COMPRA`, arquivo `.pdf` e link `grdArquivos$ctlNN$lnkArquivo`.
+    Com mais de um (edital retificado), o último da grade, que é o mais recente.
+    """
+    tabela = LexborHTMLParser(html).css_first("table#grdArquivos")
+    if tabela is None:
+        return None
+    achado: tuple[str, str] | None = None
+    for tr in tabela.css("tr"):
+        celulas = tr.css("td")
+        if len(celulas) < 3:
+            continue
+        arquivo = _texto(celulas[2])
+        if _texto(celulas[1]).upper() != TIPO_EDITAL or not arquivo.lower().endswith(".pdf"):
+            continue
+        link = celulas[2].css_first("a[href]")
+        alvo = _ALVO_ARQUIVO.search((link.attributes.get("href") or "") if link else "")
+        if alvo is not None:
+            achado = (arquivo, alvo.group(1))
+    return achado
+
+
+def texto_do_pdf(conteudo: bytes, tipo: str = "") -> str:
+    """Texto das `PAGINAS_LIDAS_PDF` primeiras páginas; `FalhaEdital` se não é PDF legível."""
+    if b"%PDF" not in conteudo[:1024]:
+        raise FalhaEdital(f"resposta não é PDF ({tipo or 'sem content-type'})", guardar=False)
+    if len(conteudo) > MAX_BYTES_PDF:
+        raise FalhaEdital(f"PDF grande demais ({len(conteudo)} bytes)", guardar=True)
+    try:
+        leitor = PdfReader(io.BytesIO(conteudo))
+        total = min(len(leitor.pages), PAGINAS_LIDAS_PDF)
+        return "\n".join(leitor.pages[i].extract_text() or "" for i in range(total))
+    except Exception as erro:  # o pypdf lança de tudo num PDF quebrado
+        raise FalhaEdital(f"PDF ilegível ({type(erro).__name__})", guardar=True) from erro
+
+
+def _derruba_o_retrato(erro: ErroFonte) -> bool:
+    """403, 429 ou página de bloqueio: param tudo. Rede e outros HTTP de erro, não."""
+    if erro.status is not None:
+        return erro.status in (403, 429)
+    return not isinstance(erro.__cause__, httpx.HTTPError)  # sem causa de rede: bloqueio
+
+
+def _data_do_cache(valor: object) -> tuple[bool, str | None]:
+    """(válido, iso) de um valor do cache: iso legível ou None; outra coisa não vale."""
+    if valor is None:
+        return True, None
+    if not isinstance(valor, str):
+        return False, None
+    try:
+        datetime.fromisoformat(valor)
+    except ValueError:
+        return False, None
+    return True, valor
+
+
 def situacao_pregao(linha: LinhaLista) -> tuple[str, str]:
     texto, situacao = ICONES_PREGAO.get(linha.icone, ("", ""))
     if not situacao:
@@ -543,9 +633,22 @@ class FonteDaeJundiai:
     marcador_bloqueio: str | None = MARCADOR_BLOQUEIO
     rotulo_saida = "fora da janela"
 
-    def __init__(self, relogio: Callable[[], datetime] | None = None) -> None:
+    def __init__(
+        self,
+        relogio: Callable[[], datetime] | None = None,
+        datas_edital: dict[tuple[str, str], str | None] | None = None,
+    ) -> None:
         self._relogio = relogio or _agora_real
         self._listas: dict[tuple[str, int, int], Lista] = {}
+        self.datas_edital: dict[tuple[str, str], str | None] = dict(datas_edital or {})
+
+    def usar_datas_edital(self, datas: dict[tuple[str, str], str | None]) -> None:
+        """Cache da data da sessão: `{(cdcompra, arquivo do edital): iso | None}`.
+
+        Quem monta a fonte lê do `bruto.detalhe.data_sessao_edital` dos editais abertos; o que
+        está aqui não é baixado de novo (nulo inclusive) e volta ao retrato como página.
+        """
+        self.datas_edital = dict(datas)
 
     def _ler_lista(self, url: str, html: str) -> Lista:
         chave = (url, len(html), hash(html))
@@ -574,13 +677,100 @@ class FonteDaeJundiai:
         dados = dados_postback(html, "", "", trocar)
         return cliente.postback_leitura(URL_LISTA, dados).text
 
+    @staticmethod
+    def _baixar_edital(cliente: ClienteEducado, html: str, cdcompra: str, alvo: str) -> datetime:
+        """Postback de download do PDF do edital com o estado do detalhe; a data da capa.
+
+        `FalhaEdital` em qualquer falha isolável; 403/429/bloqueio sobem como `ErroFonte`.
+        """
+        try:
+            dados = dados_postback(html, alvo, "")
+        except ErroFonte as erro:
+            raise FalhaEdital(str(erro), guardar=False) from erro
+        try:
+            url = f"{BASE}CompraNEWeb.aspx?cdcompra={cdcompra}"
+            resposta = cliente.postback_leitura(url, dados)
+        except ErroFonte as erro:
+            if _derruba_o_retrato(erro):
+                raise
+            raise FalhaEdital(str(erro), guardar=False) from erro
+        texto = texto_do_pdf(resposta.content, resposta.headers.get("content-type", ""))
+        data = data_sessao_no_edital(texto)
+        if data is None:
+            raise FalhaEdital("data da sessão ausente ou ambígua", guardar=True)
+        return data
+
+    def _edital_aberto(self, linha: LinhaLista, html: str, hoje: date) -> tuple[str, str] | None:
+        """(arquivo, alvo) do edital de um NE aberto; None se não é aberto ou não tem PDF."""
+        try:
+            detalhe = ler_detalhe(html, linha.cdcompra)
+            conferir_titulo(linha, detalhe)
+        except ErroFonte:
+            return None  # `extrair` falha alto com o mesmo detalhe
+        if inferir_situacao_ne(linha, detalhe, hoje)[1] != "aberta":
+            return None
+        edital = edital_do_detalhe(html)
+        if edital is None:
+            self._logar_falha(linha.cdcompra, "detalhe sem edital em PDF")
+        return edital
+
+    def _logar_falha(self, cdcompra: str, motivo: str) -> None:
+        logger.warning(
+            "dae_jundiai_edital_falhou",
+            extra={"fonte": self.nome, "cdcompra": cdcompra, "motivo": motivo},
+        )
+
+    def _paginas_dos_detalhes(
+        self, cliente: ClienteEducado, linhas: list[LinhaLista]
+    ) -> Iterator[PaginaColetada]:
+        """GET de cada detalhe e, logo depois, o PDF do edital se o NE está aberto.
+
+        Os mais novos primeiro (Data/Hora inicial), para o teto de `MAX_EDITAIS_PDF` ficar com
+        eles. Cache não conta no teto. Uma página `#edital=` com `<iso>|<arquivo>` (iso vazio
+        para nulo) vai para o retrato quando há data ou nulo que se guarda.
+        """
+        hoje = self.hoje()
+        baixados = adiados = 0
+        ordem = sorted(linhas, key=lambda linha: linha.inicio or datetime.min, reverse=True)
+        for linha in ordem:
+            url = f"{BASE}{linha.caminho}"
+            html = cliente.get(url).text
+            yield PaginaColetada(url, "html", html)
+            edital = self._edital_aberto(linha, html, hoje)
+            if edital is None:
+                continue
+            arquivo, alvo = edital
+            chave = (linha.cdcompra, arquivo)
+            valido, iso = (
+                _data_do_cache(self.datas_edital[chave])
+                if chave in self.datas_edital
+                else (False, None)
+            )
+            if not valido:  # fora do cache (ou cache ilegível): baixa, dentro do teto
+                if baixados >= MAX_EDITAIS_PDF:
+                    adiados += 1
+                    continue
+                baixados += 1
+                try:
+                    iso = _iso(self._baixar_edital(cliente, html, linha.cdcompra, alvo))
+                except FalhaEdital as falha:
+                    self._logar_falha(linha.cdcompra, falha.motivo)
+                    if not falha.guardar:
+                        continue
+                    iso = None
+            yield PaginaColetada(f"{url}{MARCA_EDITAL}{arquivo}", "html", f"{iso or ''}|{arquivo}")
+        logger.info(
+            "dae_jundiai_editais_pdf",
+            extra={"fonte": self.nome, "baixados": baixados, "adiados": adiados},
+        )
+
     def coletar(self, cliente: ClienteEducado) -> Iterator[PaginaColetada]:
         self._listas = {}
         corte = self.corte()
         corrente = self.hoje().year
         exercicios = list(range(corrente, corte.year - 1, -1))  # o corrente primeiro
         html = cliente.get(URL_LISTA).text
-        detalhes: dict[str, None] = {}
+        detalhes: dict[str, LinhaLista] = {}
         for exercicio in exercicios:
             if self._ler_lista(URL_LISTA, html).exercicio != str(exercicio):
                 html = self._postar_busca(cliente, html, exercicio)
@@ -598,11 +788,9 @@ class FonteDaeJundiai:
                 yield PaginaColetada(url, "html", pagina)
                 for linha in self._ler_lista(url, pagina).linhas:
                     if linha.sistema == "NE" and not _antiga(linha, corte):
-                        detalhes.setdefault(linha.caminho)
+                        detalhes.setdefault(linha.caminho, linha)
         logger.info("dae_jundiai_detalhes", extra={"detalhes": len(detalhes)})
-        for caminho in detalhes:
-            url = f"{BASE}{caminho}"
-            yield PaginaColetada(url, "html", cliente.get(url).text)
+        yield from self._paginas_dos_detalhes(cliente, list(detalhes.values()))
 
     def _paginas_do_exercicio(
         self, cliente: ClienteEducado, html: str, exercicio: str, *, aceita_vazio: bool
@@ -639,7 +827,12 @@ class FonteDaeJundiai:
         corte, hoje = self.corte(), self.hoje()
         linhas: dict[str, LinhaLista] = {}
         detalhes: dict[str, Detalhe] = {}
+        editais: dict[str, dict[str, str | None]] = {}
         for pagina in paginas:
+            if MARCA_EDITAL in pagina.url:
+                # Antes do detalhe: a URL é a do detalhe mais o fragmento `#edital=`.
+                editais.update(_ler_pagina_edital(pagina))
+                continue
             na_lista = _URL_LISTA.search(pagina.url)
             if na_lista:
                 lista = self._ler_lista(pagina.url, pagina.texto)
@@ -666,8 +859,29 @@ class FonteDaeJundiai:
                 if detalhe is None:
                     raise ErroFonte(f"detalhe ausente de {id_na_fonte}")
                 conferir_titulo(linha, detalhe)
-            normalizados.append(_normalizar(id_na_fonte, linha, detalhe, hoje))
+            edital = editais.get(linha.cdcompra) if detalhe is not None else None
+            normalizados.append(_normalizar(id_na_fonte, linha, detalhe, hoje, edital))
         return normalizados
+
+
+def _ler_pagina_edital(pagina: PaginaColetada) -> dict[str, dict[str, str | None]]:
+    """`{cdcompra: {"arquivo": ..., "data": iso | None}}` da página `#edital=` do retrato."""
+    achado = _CDCOMPRA.search(pagina.url)
+    iso, separador, arquivo = pagina.texto.partition("|")
+    valido, data = _data_do_cache(iso or None)
+    if achado is None or not separador or not arquivo or not valido:
+        raise ErroFonte(f"página de edital ilegível: {pagina.url!r}")
+    return {achado.group(2): {"arquivo": arquivo, "data": data}}
+
+
+def _prazo_do_edital(edital: dict[str, str | None] | None) -> datetime | None:
+    """A data da sessão em hora de Brasília sem fuso, como as datas da lista."""
+    if edital is None or not edital.get("data"):
+        return None
+    data = datetime.fromisoformat(str(edital["data"]))
+    if data.tzinfo is not None:
+        data = data.astimezone(FUSO).replace(tzinfo=None)
+    return data
 
 
 def _conferir_exercicio(lista: Lista, exercicio: str) -> None:
@@ -694,13 +908,19 @@ def _anexos_normalizados(detalhe: Detalhe | None) -> list[dict[str, str]]:
 
 
 def _normalizar(
-    id_na_fonte: str, linha: LinhaLista, detalhe: Detalhe | None, hoje: date
+    id_na_fonte: str,
+    linha: LinhaLista,
+    detalhe: Detalhe | None,
+    hoje: date,
+    edital: dict[str, str | None] | None = None,
 ) -> dict[str, Any]:
     codigo = sigla(linha.modalidade)
     if detalhe is not None:
         original, situacao = inferir_situacao_ne(linha, detalhe, hoje)
         publicacao = detalhe.publicacao or linha.inicio
-        prazo = None  # a data da sessão só está no PDF do edital
+        # A data da sessão só está no PDF do edital (página `#edital=`); recebimento dos
+        # envelopes e sessão são o mesmo prazo, como nos pregões.
+        prazo = _prazo_do_edital(edital)
     else:
         original, situacao = situacao_pregao(linha)
         publicacao = linha.inicio
@@ -742,6 +962,8 @@ def _normalizar(
                 "situacao_sistema": detalhe.situacao_sistema,
                 "publicacao": _iso(detalhe.publicacao),
                 "anexos": detalhe.anexos,
+                # O cache da data do PDF (a cli o relê do banco): só quando houve leitura.
+                **({"data_sessao_edital": edital} if edital is not None else {}),
             },
         },
     }

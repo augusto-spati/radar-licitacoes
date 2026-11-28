@@ -28,6 +28,7 @@ from radar.coleta import (
     ClienteTcepe,
     ErroResultados,
     ErroTcepe,
+    FonteDaeJundiai,
     FonteRetrato,
     NumeroSemBusca,
     carregar_historico,
@@ -84,6 +85,7 @@ from radar.editais import (
     caso_tcepe,
     casos_externos_gravados,
     contratos_do_processo,
+    datas_sessao_dae_jundiai,
     gravar_casos_externos,
     gravar_resultados,
     interpretar_itens,
@@ -328,9 +330,13 @@ def _com_fila(sessao: Session, fila: Fila, coletar: Callable[[], int]) -> tuple[
 def _rodar_retrato(sessao: Session, fonte: FonteRetrato) -> int:
     """Coleta o retrato de uma fonte (gravar é do consumidor); devolve 1 se falhou.
 
-    Falha de uma fonte não para as outras. A trava da fonte vale durante a coleta.
+    Falha de uma fonte não para as outras. A trava da fonte vale durante a coleta. A DAE
+    Jundiaí recebe o cache da data da sessão (PDF do edital) lido do banco: só baixa o que
+    falta.
     """
     try:
+        if isinstance(fonte, FonteDaeJundiai):
+            fonte.usar_datas_edital(datas_sessao_dae_jundiai(sessao))
         with _criar_cliente_retrato(fonte) as cliente:
             resumo = executar_retrato(sessao, fonte, cliente, _agora())
     except Exception:  # Ctrl+C (BaseException) continua parando o processo

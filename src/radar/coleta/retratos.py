@@ -79,8 +79,9 @@ class ClienteEducado:
 
     POST só existe para o postback de leitura do ASP.NET WebForms (`postback_leitura`): a lista
     da DAE Jundiaí só passa da página 1 por `__doPostBack`, e o Augusto aprovou essa exceção em
-    27/11/2026 (nota `docs/superpowers/specs/2026-11-27-fonte-dae-jundiai.md`). Mesma cortesia
-    do GET; quem chama garante que o POST só navega (paginação, filtro de busca) e não cria nada.
+    27/11/2026 (nota `docs/superpowers/specs/2026-11-27-fonte-dae-jundiai.md`), e o download do
+    PDF do edital em 28/11/2026 (até 5 por rodada). Mesma cortesia do GET; quem chama garante que
+    o POST só lê (paginação, filtro de busca, download de anexo) e não cria nada.
     403, 429, qualquer outro status de erro, falha de transporte ou corpo que casa com
     `marcador_bloqueio` (captcha, página de bloqueio) viram `ErroFonte`.
 
@@ -125,8 +126,8 @@ class ClienteEducado:
     def postback_leitura(
         self, url: str, dados: dict[str, str], headers: dict[str, str] | None = None
     ) -> httpx.Response:
-        """POST de formulário (`application/x-www-form-urlencoded`) só para navegar numa lista
-        ASP.NET (paginação, busca). Nunca para enviar algo que crie ou altere dado na fonte."""
+        """POST de formulário (`application/x-www-form-urlencoded`) só para ler um ASP.NET
+        (paginação, busca, download de anexo). Nunca para enviar algo que crie ou altere dado."""
         return self._educado("POST", url, dados=dados, headers=headers)
 
     def _educado(

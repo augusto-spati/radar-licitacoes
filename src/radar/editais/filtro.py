@@ -200,6 +200,31 @@ def bruto_do_edital(sessao: Session, fonte: str, id_na_fonte: str) -> dict[str, 
     )
 
 
+def datas_sessao_dae_jundiai(sessao: Session) -> dict[tuple[str, str], str | None]:
+    """Cache da data da sessão lida do PDF do edital da DAE Jundiaí, dos editais abertos.
+
+    `{(cdcompra, arquivo do edital): iso | None}`, de `bruto.lista.cdcompra` e
+    `bruto.detalhe.data_sessao_edital` (sem migração: o valor mora no bruto). O coletor não
+    baixa de novo o que está aqui; nulo também conta (PDF sem data legível).
+    """
+    brutos = sessao.scalars(
+        select(Edital.bruto).where(
+            Edital.fonte == Fonte.dae_jundiai.value, Edital.situacao_normalizada == "aberta"
+        )
+    )
+    datas: dict[tuple[str, str], str | None] = {}
+    for bruto in brutos:
+        lista = bruto.get("lista") if isinstance(bruto, dict) else None
+        detalhe = bruto.get("detalhe") if isinstance(bruto, dict) else None
+        lido = detalhe.get("data_sessao_edital") if isinstance(detalhe, dict) else None
+        if not isinstance(lista, dict) or not isinstance(lido, dict):
+            continue
+        cdcompra, arquivo, data = lista.get("cdcompra"), lido.get("arquivo"), lido.get("data")
+        if cdcompra and arquivo and (data is None or isinstance(data, str)):
+            datas[(str(cdcompra), str(arquivo))] = data
+    return datas
+
+
 def listar_abertos(
     sessao: Session, criterios: Criterios, agora: datetime, limite: int
 ) -> list[EditalDetalhe]:

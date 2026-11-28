@@ -35,7 +35,7 @@ Filas ficam como futuro, no tema 2: outbox + SQS (etapa 4a; o pgmq não existe n
 - [x] Login por código (Cognito e SES em sandbox) com JWT no API Gateway. `infra/prod/auth.tf`, `infra/prod/api.tf`. Vídeo: a gravar.
 - [x] Coletores Sanepar e Compesa no modelo multi-fonte. `docs/etapas/03-coletores.md`. Vídeo: a gravar (`docs/videos/03-coletores.md`).
 - [x] Coletor da DAE S/A Jundiaí (Compra Eletrônica, postback de leitura do ASP.NET aprovado pelo Augusto). `src/radar/coleta/dae_jundiai.py`, migração `0012`, `docs/etapas/03-coletores.md`.
-- [ ] DAE Jundiaí: data da sessão dos modos de disputa (só no PDF do edital, baixado por postback) para o edital aberto aparecer no filtro de abertos. Parser da capa pronto (`data_sessao_no_edital`); falta o Augusto aprovar o POST de download do anexo (nota da fonte, seção 7).
+- [x] DAE Jundiaí: data da sessão dos modos de disputa (só no PDF do edital, baixado por postback) para o edital aberto aparecer no filtro de abertos. POST de download aprovado pelo Augusto em 28/11/2026 (até 5 PDFs por rodada); parser da capa (`data_sessao_no_edital`), download e cache em `bruto.detalhe.data_sessao_edital` (nota da fonte, seção 7).
 - [x] Etapa 2b-brutos (páginas brutas no S3): descartada, ver acima. Volta no tema 4.
 
 ## Observabilidade
