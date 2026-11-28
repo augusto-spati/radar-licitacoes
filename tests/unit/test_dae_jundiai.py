@@ -1188,12 +1188,29 @@ def test_so_as_3_primeiras_paginas_do_pdf_sao_lidas() -> None:
 def test_leitura_do_pdf_tem_limite_de_tempo(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(dae, "LIMITE_PDF_S", 0.05)
 
-    class Lento:
+    class LentoQueEngoleExcecao:
+        # Como o pypdf: `except Exception` por dentro. O limite tem de passar por ele.
         def __init__(self, *_: object) -> None:
-            time.sleep(1)
+            for _ in range(20):
+                try:
+                    time.sleep(0.1)
+                except Exception:
+                    pass
 
-    monkeypatch.setattr(dae, "PdfReader", Lento)
-    with pytest.raises(dae.FalhaEdital, match="TimeoutError") as falha:
+    monkeypatch.setattr(dae, "PdfReader", LentoQueEngoleExcecao)
+    with pytest.raises(dae.FalhaEdital, match="demorado demais") as falha:
+        dae.texto_do_pdf(PDF_OK)
+    assert falha.value.guardar
+
+
+def test_tempo_esgotado_vira_falha_do_pdf_guardada(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Em qualquer plataforma: a exceção do limite (não é `Exception`) vira `FalhaEdital`.
+    def estoura(*_: object) -> None:
+        raise dae.TempoEsgotadoPdf("leitura passou de 30.0 s")
+
+    monkeypatch.setattr(dae, "PdfReader", estoura)
+    assert not issubclass(dae.TempoEsgotadoPdf, Exception)
+    with pytest.raises(dae.FalhaEdital, match="demorado demais") as falha:
         dae.texto_do_pdf(PDF_OK)
     assert falha.value.guardar
 

@@ -108,7 +108,9 @@ MAX_EDITAIS_PDF = 5
 # Desligado: na rodada supervisionada de 28/11/2026 o postback `lnkArquivo` respondeu 302 para
 # `CompraNEIdentificacao.aspx` ("Identificação do Requerente", facultativa, com botão "Pular").
 # Passar dela é outro postback (o botão `btnPular`), fora da exceção aprovada. Ligar só depois
-# do Augusto aprovar e de implementar esse passo (nota da fonte, seção 7).
+# do Augusto aprovar e de implementar esse passo (nota da fonte, seção 7). Ao ligar: o limite de
+# tempo da leitura do PDF (`LIMITE_PDF_S`) só funciona no Linux e na thread principal (SIGALRM),
+# como a cli roda no Fargate; noutro lugar o pypdf lê sem limite de tempo.
 BAIXAR_EDITAIS_PDF = False
 _IDENTIFICACAO = re.compile(r"CompraNEIdentificacao\.aspx", re.IGNORECASE)
 MAX_BYTES_PDF = 10 * 1024 * 1024  # a capa é a página 1; parar o download aqui
@@ -604,8 +606,18 @@ def texto_do_pdf(conteudo: bytes, tipo: str = "") -> str:
             leitor = PdfReader(io.BytesIO(conteudo))
             total = min(len(leitor.pages), PAGINAS_LIDAS_PDF)
             return "\n".join(leitor.pages[i].extract_text() or "" for i in range(total))
-    except Exception as erro:  # o pypdf lança de tudo num PDF quebrado; TimeoutError também
+    except TempoEsgotadoPdf as erro:
+        raise FalhaEdital(f"PDF demorado demais ({erro})", guardar=True) from erro
+    except Exception as erro:  # o pypdf lança de tudo num PDF quebrado
         raise FalhaEdital(f"PDF ilegível ({type(erro).__name__})", guardar=True) from erro
+
+
+class TempoEsgotadoPdf(BaseException):
+    """A leitura do PDF passou de `LIMITE_PDF_S`.
+
+    `BaseException` de propósito: o pypdf tem `except Exception` por dentro, que engoliria um
+    `TimeoutError` e seguiria lendo. Só `texto_do_pdf` a captura.
+    """
 
 
 def _amostra(conteudo: bytes) -> str:
@@ -617,7 +629,7 @@ def _amostra(conteudo: bytes) -> str:
 
 @contextmanager
 def _limite_de_tempo(segundos: float) -> Iterator[None]:
-    """`TimeoutError` depois de `segundos`; sem efeito onde não há `SIGALRM` ou fora da thread
+    """`TempoEsgotadoPdf` depois de `segundos`; sem efeito onde não há `SIGALRM` ou fora da thread
     principal (o sinal só vale lá)."""
     alarme = getattr(signal, "SIGALRM", None)
     temporizador = getattr(signal, "setitimer", None)
@@ -627,7 +639,7 @@ def _limite_de_tempo(segundos: float) -> Iterator[None]:
         return
 
     def estourou(*_: object) -> None:
-        raise TimeoutError(f"leitura do PDF passou de {segundos} s")
+        raise TempoEsgotadoPdf(f"leitura passou de {segundos} s")
 
     anterior = signal.signal(alarme, estourou)
     temporizador(signal.ITIMER_REAL, segundos)  # type: ignore[attr-defined,unused-ignore]
