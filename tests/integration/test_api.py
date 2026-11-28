@@ -1,7 +1,7 @@
 import copy
 import json
 from collections.abc import Callable
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from types import TracebackType
@@ -10,10 +10,11 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from radar.api.app import criar_app
-from radar.coleta.modelos import ColetaJanela
+from radar.coleta.modelos import ColetaJanela, ColetaRetrato
 from radar.editais import registrar
 from radar.precos import PrecoItem
 
@@ -592,3 +593,176 @@ def test_precos_vazio_sem_dados(cliente: TestClient, sessao: Session) -> None:
 def test_precos_404_para_edital_inexistente(cliente: TestClient) -> None:
     assert cliente.get("/api/precos/pncp~nao/existe").status_code == 404
     assert cliente.get("/api/precos/sem-fonte").status_code == 404
+
+
+def _fixar_primeiro_visto(sessao: Session, id_na_fonte: str, quando: datetime) -> None:
+    sessao.execute(
+        text("UPDATE edital SET primeiro_visto_em = :q WHERE id_na_fonte = :i"),
+        {"q": quando, "i": id_na_fonte},
+    )
+    sessao.flush()
+
+
+def _analise_com(sessao: Session, id_na_fonte: str, veredito: str, campo: str | None) -> None:
+    from radar.analise import AnaliseEdital, carregar_config_ia
+
+    modelo = carregar_config_ia(RAIZ / "config" / "ia.toml").modelo_padrao
+    itens = [] if campo is None else [{"campo": campo, "situacao": "verificar"}]
+    sessao.add(
+        AnaliseEdital(
+            fonte="pncp",
+            id_na_fonte=id_na_fonte,
+            modelo=modelo,
+            versao_prompt="abc123def456",
+            hash_documentos="h",
+            veredito=veredito,
+            incompleta=False,
+            exigencias={},
+            comparacao={"veredito": veredito, "itens": itens},
+            trechos=0,
+            trechos_invalidos=0,
+            achados_descartados=0,
+            truncado=False,
+            tokens_entrada=1,
+            tokens_saida=1,
+            custo_usd=0,
+            criada_em=datetime(2026, 11, 27, 12, tzinfo=UTC),
+        )
+    )
+    sessao.flush()
+
+
+def _base_do_painel(sessao: Session) -> None:
+    """3 em até 20 dias (a1 novo), 2 depois (corte: 2026-12-17 00:00)."""
+    registrar(
+        sessao,
+        [
+            _registro("a1/2026", "Conserto de vazamento", encerramento="2026-12-01T10:00:00"),
+            _registro("a2/2026", "Conserto de vazamento", encerramento="2026-12-05T10:00:00"),
+            _registro("a3/2026", "Conserto de vazamento", encerramento="2026-12-16T23:59:00"),
+            _registro("b1/2026", "Conserto de vazamento", encerramento="2026-12-17T00:00:00"),
+            _registro("b2/2026", "Conserto de vazamento", encerramento="2026-12-30T10:00:00"),
+        ],
+    )
+    antigo = datetime(2026, 11, 1, tzinfo=UTC)
+    for i in ("a2/2026", "a3/2026", "b1/2026", "b2/2026"):
+        _fixar_primeiro_visto(sessao, i, antigo)
+    _fixar_primeiro_visto(sessao, "a1/2026", AGORA - timedelta(hours=2))
+
+
+def _perfil_real(sessao: Session) -> None:
+    from radar.analise import carregar_perfil, gravar_perfil_resumo
+
+    perfil = carregar_perfil(RAIZ / "config" / "perfil.toml").model_copy(update={"exemplo": False})
+    gravar_perfil_resumo(sessao, perfil, AGORA)
+    sessao.flush()
+
+
+def test_resumo_traz_veredito_motivo_e_primeiro_visto_em(
+    cliente: TestClient, sessao: Session
+) -> None:
+    registrar(sessao, [_registro("v1/2026", "Conserto de vazamento")])
+    _analise_com(sessao, "v1/2026", "verificar", "atestados")
+
+    e = cliente.get("/api/editais").json()["editais"][0]
+
+    assert e["veredito"] == "verificar" and e["motivo_verificar"] == "atestados"
+    assert e["primeiro_visto_em"].endswith("-03:00")
+
+
+def test_lista_filtra_encerra_em_dias_novos_e_veredito(
+    cliente: TestClient, sessao: Session
+) -> None:
+    _base_do_painel(sessao)
+    _analise_com(sessao, "a2/2026", "inapto", None)
+
+    def ids(**params: Any) -> list[str]:
+        corpo = cliente.get("/api/editais", params=params).json()
+        return [e["id_publico"] for e in corpo["editais"]]
+
+    assert ids(encerra_em_dias=20) == ["pncp~a1/2026", "pncp~a2/2026", "pncp~a3/2026"]
+    assert ids(novos="true") == ["pncp~a1/2026"]
+    assert ids(veredito=["inapto"]) == ["pncp~a2/2026"]
+    assert "pncp~a2/2026" not in ids(veredito=["apto", "verificar", "sem_analise"])
+
+
+@pytest.mark.parametrize(
+    "params", [{"encerra_em_dias": "366"}, {"encerra_em_dias": "-1"}, {"veredito": "talvez"}]
+)
+def test_recorte_invalido_422(cliente: TestClient, params: dict[str, str]) -> None:
+    assert cliente.get("/api/editais", params=params).status_code == 422
+
+
+def test_painel_separa_e_conta_da_mesma_base(cliente: TestClient, sessao: Session) -> None:
+    _base_do_painel(sessao)
+
+    corpo = cliente.get("/api/painel").json()
+
+    assert corpo["contadores"] == {"decidir": 3, "novos": 1, "abertos": 5}
+    assert [s["chave"] for s in corpo["secoes"]] == ["decidir", "mais_adiante"]
+    assert [s["total"] for s in corpo["secoes"]] == [3, 2]
+
+
+def test_painel_contador_decidir_bate_com_a_lista_filtrada(
+    cliente: TestClient, sessao: Session
+) -> None:
+    _base_do_painel(sessao)
+    painel = cliente.get("/api/painel").json()
+
+    lista = cliente.get(
+        "/api/editais",
+        params={"encerra_em_dias": 20, "veredito": ["apto", "verificar", "sem_analise"]},
+    )
+
+    assert len(lista.json()["editais"]) == painel["contadores"]["decidir"]
+
+
+def test_painel_sem_perfil_resumo_e_exemplo_e_ignora_veredito(
+    cliente: TestClient, sessao: Session
+) -> None:
+    _base_do_painel(sessao)
+    _analise_com(sessao, "a2/2026", "inapto", None)
+
+    corpo = cliente.get("/api/painel").json()
+
+    ids_decidir = [e["id_publico"] for e in corpo["secoes"][0]["editais"]]
+    assert corpo["perfil_exemplo"] is True and "pncp~a2/2026" in ids_decidir
+
+
+def test_painel_com_perfil_real_tira_inapto_de_decidir(
+    cliente: TestClient, sessao: Session
+) -> None:
+    _base_do_painel(sessao)
+    _analise_com(sessao, "a2/2026", "inapto", None)
+    _perfil_real(sessao)
+
+    corpo = cliente.get("/api/painel").json()
+
+    ids = [e["id_publico"] for s in corpo["secoes"] for e in s["editais"]]
+    assert corpo["perfil_exemplo"] is False and "pncp~a2/2026" not in ids
+    assert corpo["contadores"]["decidir"] == 2
+
+
+def test_painel_lista_fonte_atrasada_sem_texto_de_erro(
+    cliente: TestClient, sessao: Session
+) -> None:
+    sessao.add(
+        ColetaRetrato(
+            fonte="sanepar",
+            status="falha",
+            iniciado_em=AGORA - timedelta(hours=1),
+            erro="http://interno/segredo",
+        )
+    )
+    sessao.flush()
+
+    resposta = cliente.get("/api/painel")
+
+    assert {"fonte": "sanepar", "motivo": "atrasado", "dados_de": None} in resposta.json()["coleta"]
+    assert "interno" not in resposta.text
+
+
+def test_lista_traz_perfil_exemplo(cliente: TestClient, sessao: Session) -> None:
+    assert cliente.get("/api/editais").json()["perfil_exemplo"] is True
+    _perfil_real(sessao)
+    assert cliente.get("/api/editais").json()["perfil_exemplo"] is False

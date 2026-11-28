@@ -1,5 +1,7 @@
+from dataclasses import replace
 from datetime import datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -100,3 +102,12 @@ def test_detalhe_traz_situacao_normalizada() -> None:
 )
 def test_separar_id_publico(valor: str, esperado: tuple[str, str] | None) -> None:
     assert separar_id_publico(valor) == esperado
+
+
+def test_resumo_out_traz_primeiro_visto_em_com_fuso() -> None:
+    base = _edital(None)
+    visto = datetime(2026, 11, 28, 15, 0, tzinfo=ZoneInfo("UTC"))
+    saida = resumo_out(replace(base, primeiro_visto_em=visto, veredito="apto"))
+
+    assert saida.primeiro_visto_em == "2026-11-28T12:00:00-03:00"
+    assert saida.veredito == "apto"

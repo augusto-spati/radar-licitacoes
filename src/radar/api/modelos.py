@@ -3,6 +3,8 @@
 import re
 from datetime import datetime
 from decimal import Decimal
+from enum import StrEnum
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
@@ -14,12 +16,14 @@ from radar.analise import (
     Veredito,
     pagina_no_documento,
 )
+from radar.coleta import FalhaColeta
 from radar.editais import (
     EditalDetalhe,
     EditalResumo,
     Fonte,
     HistoricoOrgao,
     OrigemHistorico,
+    Painel,
     Situacao,
     id_publico,
 )
@@ -41,6 +45,9 @@ class EditalResumoOut(BaseModel):
     data_encerramento_proposta: str | None
     link_origem: str | None
     linhas: list[str]
+    veredito: Veredito | None
+    motivo_verificar: str | None
+    primeiro_visto_em: str | None
 
 
 class EditalDetalheOut(EditalResumoOut):
@@ -53,7 +60,15 @@ class EditalDetalheOut(EditalResumoOut):
 
 class ListaOut(BaseModel):
     atualizado_em: str | None
+    perfil_exemplo: bool
     editais: list[EditalResumoOut]
+
+
+class FiltroVeredito(StrEnum):
+    apto = "apto"
+    verificar = "verificar"
+    inapto = "inapto"
+    sem_analise = "sem_analise"
 
 
 class StatusOut(BaseModel):
@@ -118,6 +133,9 @@ def resumo_out(edital: EditalResumo) -> EditalResumoOut:
         data_encerramento_proposta=_iso(edital.data_encerramento_proposta),
         link_origem=link_http(edital.link_origem) or link_reserva(edital.fonte, edital.id_na_fonte),
         linhas=edital.linhas,
+        veredito=edital.veredito,  # type: ignore[arg-type]
+        motivo_verificar=edital.motivo_verificar,
+        primeiro_visto_em=iso_com_fuso(edital.primeiro_visto_em),
     )
 
 
@@ -363,5 +381,54 @@ def precos_out(uf: str | None, referencias: list[Referencia]) -> PrecosOut:
                 data_base_fim=None if r.data_base_fim is None else r.data_base_fim.isoformat(),
             )
             for r in referencias
+        ],
+    )
+
+
+class SecaoPainelOut(BaseModel):
+    chave: Literal["decidir", "mais_adiante"]
+    total: int
+    editais: list[EditalResumoOut]
+
+
+class ContadoresOut(BaseModel):
+    decidir: int
+    novos: int
+    abertos: int
+
+
+class FalhaColetaOut(BaseModel):
+    fonte: Fonte
+    motivo: Literal["atrasado", "falha"]
+    dados_de: str | None
+
+
+class PainelOut(BaseModel):
+    atualizado_em: str | None
+    perfil_exemplo: bool
+    contadores: ContadoresOut
+    secoes: list[SecaoPainelOut]
+    coleta: list[FalhaColetaOut]
+
+
+def painel_out(
+    painel: Painel,
+    atualizado_em: datetime | None,
+    perfil_exemplo: bool,
+    falhas: list[FalhaColeta],
+) -> PainelOut:
+    return PainelOut(
+        atualizado_em=iso_com_fuso(atualizado_em),
+        perfil_exemplo=perfil_exemplo,
+        contadores=ContadoresOut(
+            decidir=painel.decidir, novos=painel.novos, abertos=painel.abertos
+        ),
+        secoes=[
+            SecaoPainelOut(chave=s.chave, total=s.total, editais=[resumo_out(e) for e in s.editais])
+            for s in painel.secoes
+        ],
+        coleta=[
+            FalhaColetaOut(fonte=Fonte(f.fonte), motivo=f.motivo, dados_de=iso_com_fuso(f.dados_de))
+            for f in falhas
         ],
     )
