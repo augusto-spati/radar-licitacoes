@@ -200,6 +200,31 @@ def bruto_do_edital(sessao: Session, fonte: str, id_na_fonte: str) -> dict[str, 
     )
 
 
+def datas_sessao_dae_jundiai(sessao: Session) -> dict[tuple[str, str], dict[str, Any]]:
+    """Cache da data da sessão lida do PDF do edital da DAE Jundiaí, dos editais abertos.
+
+    `{(cdcompra, arquivo do edital): bruto.detalhe.data_sessao_edital}` (sem migração: o valor
+    mora no bruto, `{"arquivo", "data": iso | None, "conferido_em": iso}`). Quem decide se a
+    entrada ainda vale é o coletor.
+    """
+    brutos = sessao.scalars(
+        select(Edital.bruto).where(
+            Edital.fonte == Fonte.dae_jundiai.value, Edital.situacao_normalizada == "aberta"
+        )
+    )
+    datas: dict[tuple[str, str], dict[str, Any]] = {}
+    for bruto in brutos:
+        lista = bruto.get("lista") if isinstance(bruto, dict) else None
+        detalhe = bruto.get("detalhe") if isinstance(bruto, dict) else None
+        lido = detalhe.get("data_sessao_edital") if isinstance(detalhe, dict) else None
+        if not isinstance(lista, dict) or not isinstance(lido, dict):
+            continue
+        cdcompra, arquivo = lista.get("cdcompra"), lido.get("arquivo")
+        if cdcompra and arquivo:
+            datas[(str(cdcompra), str(arquivo))] = lido
+    return datas
+
+
 def listar_abertos(
     sessao: Session, criterios: Criterios, agora: datetime, limite: int
 ) -> list[EditalDetalhe]:
