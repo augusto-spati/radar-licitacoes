@@ -5,6 +5,7 @@ from decimal import Decimal
 from typing import Any, Literal, get_args
 
 from sqlalchemy import (
+    CHAR,
     BigInteger,
     Boolean,
     CheckConstraint,
@@ -12,6 +13,7 @@ from sqlalchemy import (
     Index,
     Integer,
     Numeric,
+    SmallInteger,
     Text,
     UniqueConstraint,
     func,
@@ -68,6 +70,8 @@ class AnaliseEdital(Base):
         UniqueConstraint(
             "fonte", "id_na_fonte", "modelo", "versao_prompt", name="uq_analise_edital"
         ),
+        # Ascendente: o btree é varrido de trás para frente e serve o ORDER BY ... DESC.
+        Index("ix_analise_edital_ultima", "fonte", "id_na_fonte", "modelo", "criada_em", "id"),
         CheckConstraint(f"veredito IN ({_lista_sql(VEREDITOS)})", name="ck_analise_veredito"),
     )
 
@@ -89,6 +93,19 @@ class AnaliseEdital(Base):
     tokens_saida: Mapped[int] = mapped_column(Integer)
     custo_usd: Mapped[Decimal] = mapped_column(Numeric(12, 6))
     criada_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PerfilResumo(Base):
+    """Resumo não sensível do perfil, numa linha só (o painel lê; a análise grava)."""
+
+    __tablename__ = "perfil_resumo"
+    __table_args__ = (CheckConstraint("id = 1", name="ck_perfil_resumo_uma_linha"),)
+
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, default=1, autoincrement=False)
+    exemplo: Mapped[bool] = mapped_column(Boolean)
+    uf_sede: Mapped[str | None] = mapped_column(CHAR(2))
+    valor_maximo_obra: Mapped[Decimal | None] = mapped_column(Numeric)
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class RespostaLLM(Base):

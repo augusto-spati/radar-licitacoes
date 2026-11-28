@@ -58,6 +58,7 @@ from radar.analise.extrator import SISTEMA, Extracao, extrair_exigencias
 from radar.analise.modelos import (
     AnaliseEdital,
     DocumentoEdital,
+    PerfilResumo,
     RespostaLLM,
     StatusDocumento,
     Veredito,
@@ -156,6 +157,7 @@ __all__ = [
     "ItemComparacao",
     "Pedido",
     "Perfil",
+    "PerfilResumo",
     "Provedor",
     "ProvedorBedrock",
     "ProvedorComCache",

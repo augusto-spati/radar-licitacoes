@@ -3,8 +3,7 @@
 import copy
 import json
 import logging
-import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -16,7 +15,7 @@ import pytest
 from alembic import command
 from alembic.config import Config as AlembicConfig
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, create_engine, inspect, select, text, update
+from sqlalchemy import Engine, inspect, select, text, update
 from sqlalchemy.orm import Session
 
 from radar.api.app import criar_app
@@ -89,25 +88,6 @@ def _edital(sessao: Session, fonte: str, id_na_fonte: str) -> Edital:
 
 
 # --- Migração 0003 -------------------------------------------------------------------------
-
-
-@pytest.fixture
-def banco_migracao(engine: Engine) -> Iterator[tuple[AlembicConfig, Engine]]:
-    """Banco vazio no mesmo servidor do teste, para subir e descer migrações à mão."""
-    nome = f"migracao_{uuid.uuid4().hex[:8]}"
-    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conexao:
-        conexao.execute(text(f"CREATE DATABASE {nome}"))
-    url = engine.url.set(database=nome)
-    config = AlembicConfig(str(RAIZ / "alembic.ini"))
-    config.set_main_option("script_location", str(RAIZ / "migrations"))
-    config.attributes["url"] = url.render_as_string(hide_password=False)
-    alvo = create_engine(url)
-    try:
-        yield config, alvo
-    finally:
-        alvo.dispose()
-        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conexao:
-            conexao.execute(text(f"DROP DATABASE {nome}"))
 
 
 _INSERT_0002 = text(

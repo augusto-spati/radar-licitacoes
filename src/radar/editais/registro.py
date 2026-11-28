@@ -23,6 +23,8 @@ logger = logging.getLogger(__name__)
 FUSO = ZoneInfo("America/Sao_Paulo")
 # Linhas por comando: ~22 colunas x 1000 fica bem abaixo do limite de 65535 parâmetros.
 _LOTE = 1000
+# Colunas gravadas só na inserção: o ON CONFLICT não as sobrescreve.
+_SO_NA_INSERCAO = frozenset({"primeiro_visto_em"})
 
 # PNCP: 1 Divulgada, 2 Revogada, 3 Anulada, 4 Suspensa. Código desconhecido vira "outra".
 _SITUACAO_PNCP: dict[int, Situacao] = {1: "aberta", 2: "encerrada", 3: "encerrada", 4: "outra"}
@@ -246,7 +248,7 @@ def _upsert(
         colunas_novas: dict[str, ColumnClause[Any]] = {
             c.name: insercao.excluded[c.name]
             for c in Edital.__table__.columns
-            if not c.primary_key and c.computed is None
+            if not c.primary_key and c.computed is None and c.name not in _SO_NA_INSERCAO
         }
         comando = insercao.on_conflict_do_update(
             index_elements=["fonte", "id_na_fonte"],
