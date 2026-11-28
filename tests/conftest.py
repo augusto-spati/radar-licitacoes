@@ -1,4 +1,5 @@
 import os
+import uuid
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -54,6 +55,25 @@ def sessao(engine: Engine) -> Iterator[Session]:
         with Session(conexao, join_transaction_mode="create_savepoint") as sessao:
             yield sessao
         transacao.rollback()
+
+
+@pytest.fixture
+def banco_migracao(engine: Engine) -> Iterator[tuple[AlembicConfig, Engine]]:
+    """Banco vazio no mesmo servidor do teste, para subir e descer migrações à mão."""
+    nome = f"migracao_{uuid.uuid4().hex[:8]}"
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conexao:
+        conexao.execute(text(f"CREATE DATABASE {nome}"))
+    url = engine.url.set(database=nome)
+    config = AlembicConfig(str(RAIZ / "alembic.ini"))
+    config.set_main_option("script_location", str(RAIZ / "migrations"))
+    config.attributes["url"] = url.render_as_string(hide_password=False)
+    alvo = create_engine(url)
+    try:
+        yield config, alvo
+    finally:
+        alvo.dispose()
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conexao:
+            conexao.execute(text(f"DROP DATABASE {nome}"))
 
 
 # Fixtures de telemetria e métricas em memória (`spans`, `metricas`).

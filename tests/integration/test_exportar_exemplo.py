@@ -36,7 +36,10 @@ def test_exemplo_valida_contra_modelos() -> None:
     assert set(dados) == {"atualizado_em", "editais"}
     assert dados["editais"]
     for item in dados["editais"]:
-        EditalDetalheOut.model_validate(item)
+        # O exemplo.json não é regerado; o front completa estes campos ao carregar.
+        EditalDetalheOut.model_validate(
+            {"veredito": None, "motivo_verificar": None, "primeiro_visto_em": None, **item}
+        )
 
 
 def test_exporta_casados_e_completa_com_outros_abertos(sessao: Session) -> None:

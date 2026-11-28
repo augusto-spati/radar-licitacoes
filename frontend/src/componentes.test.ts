@@ -17,13 +17,16 @@ const src = path.dirname(fileURLToPath(import.meta.url));
 
 const COMPONENTES = [
   'Aderencia.tsx',
+  'AvisoColeta.tsx',
   'AvisoDesatualizado.tsx',
   'CartaoEdital.tsx',
+  'ContadorPainel.tsx',
   'EstadoCarga.tsx',
   'FiltrosEditais.tsx',
   'HistoricoOrgao.tsx',
   'PrecosReferencia.tsx',
   'ReguaDesconto.tsx',
+  'SecaoPainel.tsx',
   'SeloFonte.tsx',
   'Shell.tsx',
   'TokensLinhas.tsx',

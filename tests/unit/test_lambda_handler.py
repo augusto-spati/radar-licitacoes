@@ -64,7 +64,9 @@ def test_handler_id_com_barra(
 ) -> None:
     recebidos: list[tuple[str, str]] = []
 
-    def falso(sessao: object, fonte: str, id_na_fonte: str, criterios: object) -> None:
+    def falso(
+        sessao: object, fonte: str, id_na_fonte: str, criterios: object, modelo: object
+    ) -> None:
         recebidos.append((fonte, id_na_fonte))
 
     monkeypatch.setattr("radar.api.app.obter_edital", falso)

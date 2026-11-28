@@ -37,11 +37,14 @@ async function lerJson<T>(caminho: string): Promise<T> {
   return (await resposta.json()) as T;
 }
 
-function consulta({linha, ufs, todos}: Filtros): string {
+function consulta({linha, ufs, todos, encerraEmDias, novos, vereditos}: Filtros): string {
   const params = new URLSearchParams();
   if (linha !== undefined) params.set('linha', linha);
   for (const uf of ufs ?? []) params.append('uf', uf);
   if (todos !== undefined) params.set('todos', String(todos));
+  if (encerraEmDias !== undefined) params.set('encerra_em_dias', String(encerraEmDias));
+  if (novos === true) params.set('novos', 'true');
+  for (const v of vereditos ?? []) params.append('veredito', v);
   const texto = params.toString();
   return texto === '' ? '' : `?${texto}`;
 }
@@ -61,6 +64,7 @@ async function lerOuNulo<T>(caminho: string, vazios: number[] = [404]): Promise<
 export const fonteApi: Fonte = {
   listar: f => lerJson(`/api/editais${consulta(f)}`),
   status: () => lerJson('/api/status'),
+  painel: () => lerJson('/api/painel'),
   obter: id => lerOuNulo<EditalDetalhe>(`/api/editais/${caminhoDoId(id)}`),
   // 404: edital ainda não analisado; 503: a API está sem modelo de IA configurado.
   analise: id => lerOuNulo<Analise>(`/api/analises/${caminhoDoId(id)}`, [404, 503]),

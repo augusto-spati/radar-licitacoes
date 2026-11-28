@@ -9,7 +9,13 @@ from radar.coleta.fatias import (
     ResultadoFatia,
     coletar_fatia,
 )
-from radar.coleta.frescor import SEM_DADO_H, frescor_por_fonte
+from radar.coleta.frescor import (
+    LIMITE_ATRASO_H,
+    SEM_DADO_H,
+    FalhaColeta,
+    falhas_de_coleta,
+    frescor_por_fonte,
+)
 from radar.coleta.historico import (
     ResumoHistorico,
     carregar_historico,
@@ -65,6 +71,7 @@ from radar.coleta.trava import liberar_trava, obter_trava, trava_fonte
 
 __all__ = [
     "LEASE_S",
+    "LIMITE_ATRASO_H",
     "ORCAMENTO_LAMBDA_S",
     "SEM_DADO_H",
     "Auditoria",
@@ -77,6 +84,7 @@ __all__ = [
     "ErroPNCP",
     "ErroResultados",
     "ErroTcepe",
+    "FalhaColeta",
     "NumeroSemBusca",
     "EstadoRetrato",
     "FonteCompesa",
@@ -104,6 +112,7 @@ __all__ = [
     "estado_retrato",
     "frescor_por_fonte",
     "executar_retrato",
+    "falhas_de_coleta",
     "ha_retrato_mais_novo_processado",
     "janelas_com_lease_vivo",
     "janelas_paradas",

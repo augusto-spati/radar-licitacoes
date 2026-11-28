@@ -875,6 +875,7 @@ def analisar(
         carregar_config_ia,
         carregar_perfil_de,
         criar_armazem,
+        gravar_perfil_resumo,
         guarda_teto,
     )
 
@@ -919,6 +920,9 @@ def analisar(
                     ok = True
                     return
                 try:
+                    # Resumo do perfil para o painel: gravação curta, antes de alvos e rede.
+                    gravar_perfil_resumo(sessao, perfil, _agora())
+                    sessao.commit()
                     alvos, pulados = _alvos_analise(
                         sessao,
                         criterios,
@@ -1971,7 +1975,7 @@ def avaliar_rodar(
 @app.command()
 def recomparar() -> None:
     """Refaz o veredito de todas as análises com o perfil atual (sem IA, sem custo)."""
-    from radar.analise import carregar_perfil_de
+    from radar.analise import carregar_perfil_de, gravar_perfil_resumo
     from radar.analise import recomparar as recomparar_analises
 
     configurar_logs()
@@ -1979,6 +1983,8 @@ def recomparar() -> None:
     sessao = _criar_sessao()
     try:
         total, mudaram = recomparar_analises(sessao, perfil)
+        gravar_perfil_resumo(sessao, perfil, _agora())
+        sessao.commit()
     finally:
         sessao.close()
     typer.echo(f"recomparar: {total} análises, {mudaram} mudaram de veredito")

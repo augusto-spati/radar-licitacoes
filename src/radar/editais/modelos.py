@@ -79,6 +79,10 @@ class Edital(Base):
     data_atualizacao: Mapped[datetime] = mapped_column(DateTime())
     link_origem: Mapped[str | None] = mapped_column(Text)
     visto_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Quando o radar viu o edital pela primeira vez; só na inserção (ver `_SO_NA_INSERCAO`).
+    primeiro_visto_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
     hash_conteudo: Mapped[str | None] = mapped_column(Text)
     bruto: Mapped[dict[str, Any]] = mapped_column(JSONB)
     busca: Mapped[str | None] = mapped_column(

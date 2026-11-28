@@ -4,6 +4,7 @@
 # (sem acento, minúsculas) que casam com a descrição exigida; unidade em km, m, un, leitura...
 
 [empresa]
+exemplo = true  # true no perfil de exemplo; o perfil real omite ou põe false
 porte = "demais"  # me | epp | demais
 capital_social = 1000000
 patrimonio_liquido = 1500000

@@ -13,29 +13,35 @@ from zoneinfo import ZoneInfo
 from fastapi import Depends, FastAPI, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from radar.analise import carregar_config_ia, obter_analise
+from radar.analise import carregar_config_ia, ler_perfil_resumo, obter_analise
 from radar.api.modelos import (
     AnaliseOut,
     EditalDetalheOut,
+    FiltroVeredito,
     HistoricoOut,
     ListaOut,
+    PainelOut,
     PrecosOut,
     StatusOut,
     analise_out,
     detalhe_out,
     historico_out,
     iso_com_fuso,
+    painel_out,
     precos_out,
     resumo_out,
 )
-from radar.coleta import ultima_atualizacao
+from radar.coleta import falhas_de_coleta, ultima_atualizacao
 from radar.comum import criar_engine, fabrica_sessao, obter_config
 from radar.editais import (
+    Fonte,
+    Recorte,
     carregar_criterios,
     filtrar,
     historico_do_edital,
     obter_edital,
     separar_id_publico,
+    separar_painel,
 )
 from radar.precos import referencias
 
@@ -100,6 +106,9 @@ def criar_app(
         uf: Annotated[list[UF] | None, Query()] = None,
         todos: bool = False,
         limite: Annotated[int, Query(ge=1, le=500)] = 200,
+        encerra_em_dias: Annotated[int | None, Query(ge=0, le=365)] = None,
+        novos: bool = False,
+        veredito: Annotated[list[FiltroVeredito] | None, Query()] = None,
     ) -> ListaOut:
         escolhidos = criterios
         if linha is not None:
@@ -107,17 +116,43 @@ def criar_app(
         if uf:
             pedidas = {str(u) for u in uf}
             escolhidos = replace(escolhidos, ufs=[u for u in criterios.ufs if u in pedidas])
-        editais = filtrar(sessao, escolhidos, relogio(), somente_abertos=not todos, limite=limite)
+        recorte = Recorte(
+            encerra_em_dias=encerra_em_dias,
+            novos=novos,
+            vereditos=frozenset(v.value for v in veredito or []),
+        )
+        editais = filtrar(
+            sessao,
+            escolhidos,
+            relogio(),
+            somente_abertos=not todos,
+            limite=limite,
+            modelo_analise=modelo_padrao,
+            recorte=recorte,
+        )
+        resumo = ler_perfil_resumo(sessao)
         return ListaOut(
             atualizado_em=iso_com_fuso(ultima_atualizacao(sessao)),
+            perfil_exemplo=resumo is None or resumo.exemplo,
             editais=[resumo_out(e) for e in editais],
         )
+
+    @app.get("/api/painel")
+    def painel(sessao: SessaoDep) -> PainelOut:
+        """Home: Decidir e Mais adiante; contadores da base inteira, nunca de lista cortada."""
+        agora = relogio()
+        editais = filtrar(sessao, criterios, agora, limite=None, modelo_analise=modelo_padrao)
+        resumo = ler_perfil_resumo(sessao)
+        perfil_exemplo = resumo is None or resumo.exemplo
+        separado = separar_painel(editais, agora, considerar_veredito=not perfil_exemplo)
+        falhas = falhas_de_coleta(sessao, agora, [f.value for f in Fonte])
+        return painel_out(separado, ultima_atualizacao(sessao), perfil_exemplo, falhas)
 
     @app.get("/api/editais/{id_publico:path}")
     def detalhe(id_publico: str, sessao: SessaoDep) -> EditalDetalheOut:
         """`id_publico` é `<fonte>~<id_na_fonte>`; o id da fonte pode ter `/` (ou `%2F`)."""
         chave = separar_id_publico(id_publico)
-        edital = None if chave is None else obter_edital(sessao, *chave, criterios)
+        edital = None if chave is None else obter_edital(sessao, *chave, criterios, modelo_padrao)
         if edital is None:
             raise HTTPException(status_code=404, detail="edital não encontrado")
         return detalhe_out(edital)

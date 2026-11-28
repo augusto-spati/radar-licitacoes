@@ -7,10 +7,11 @@ React + Vite + Astryx 0.7.17 (versão exata em core, tema e cli). Texto da inter
 Antes de criar um componente: `astryx search`, depois `src/componentes/`; componente novo só com pedido explícito. A lista de componentes (e de pastas de `src/`) é fechada em `src/componentes.test.ts`.
 
 - **Rotas (lista fechada da v1)**, todas em `src/rotas.tsx`, que também gera o menu:
-  - `/`: lista de editais (única no menu)
+  - `/`: painel (primeiro no menu)
+  - `/editais`: lista de editais (no menu)
   - `/edital/:id`: detalhe
   - `/entrar`: login por código no e-mail (Cognito, `src/dados/sessao.ts`); com a fonte de exemplo é só visual
-  - `*`: 404 ("Página não encontrada", com link para a lista); captura o resto, fica por último e fora do menu
+  - `*`: 404 ("Página não encontrada", com link para a lista (`/editais`)); captura o resto, fica por último e fora do menu
 
   Rota nova, página nova ou item de menu novo só com pedido explícito. O roteador é `HashRouter` e o build usa `base: './'`.
 - **Shell fixo**: `src/componentes/Shell.tsx` (template `shell-top-nav`). Não mude a moldura, o cabeçalho nem a navegação; o menu sai de `rotas`.

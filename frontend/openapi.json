@@ -72,6 +72,29 @@
         "title": "AnaliseOut",
         "type": "object"
       },
+      "ContadoresOut": {
+        "properties": {
+          "abertos": {
+            "title": "Abertos",
+            "type": "integer"
+          },
+          "decidir": {
+            "title": "Decidir",
+            "type": "integer"
+          },
+          "novos": {
+            "title": "Novos",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "decidir",
+          "novos",
+          "abertos"
+        ],
+        "title": "ContadoresOut",
+        "type": "object"
+      },
       "ContratacaoPassadaOut": {
         "properties": {
           "data": {
@@ -298,6 +321,17 @@
             "title": "Modalidade Nome",
             "type": "string"
           },
+          "motivo_verificar": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Motivo Verificar"
+          },
           "municipio": {
             "anyOf": [
               {
@@ -327,6 +361,17 @@
           "orgao_nome": {
             "title": "Orgao Nome",
             "type": "string"
+          },
+          "primeiro_visto_em": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primeiro Visto Em"
           },
           "situacao_nome": {
             "title": "Situacao Nome",
@@ -363,6 +408,22 @@
               }
             ],
             "title": "Valor Estimado"
+          },
+          "veredito": {
+            "anyOf": [
+              {
+                "enum": [
+                  "apto",
+                  "inapto",
+                  "verificar"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Veredito"
           }
         },
         "required": [
@@ -378,6 +439,9 @@
           "data_encerramento_proposta",
           "link_origem",
           "linhas",
+          "veredito",
+          "motivo_verificar",
+          "primeiro_visto_em",
           "orgao_cnpj",
           "situacao_nome",
           "situacao_normalizada",
@@ -440,6 +504,17 @@
             "title": "Modalidade Nome",
             "type": "string"
           },
+          "motivo_verificar": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Motivo Verificar"
+          },
           "municipio": {
             "anyOf": [
               {
@@ -458,6 +533,17 @@
           "orgao_nome": {
             "title": "Orgao Nome",
             "type": "string"
+          },
+          "primeiro_visto_em": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primeiro Visto Em"
           },
           "uf": {
             "anyOf": [
@@ -480,6 +566,22 @@
               }
             ],
             "title": "Valor Estimado"
+          },
+          "veredito": {
+            "anyOf": [
+              {
+                "enum": [
+                  "apto",
+                  "inapto",
+                  "verificar"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Veredito"
           }
         },
         "required": [
@@ -494,10 +596,56 @@
           "valor_estimado",
           "data_encerramento_proposta",
           "link_origem",
-          "linhas"
+          "linhas",
+          "veredito",
+          "motivo_verificar",
+          "primeiro_visto_em"
         ],
         "title": "EditalResumoOut",
         "type": "object"
+      },
+      "FalhaColetaOut": {
+        "properties": {
+          "dados_de": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dados De"
+          },
+          "fonte": {
+            "$ref": "#/components/schemas/Fonte"
+          },
+          "motivo": {
+            "enum": [
+              "atrasado",
+              "falha"
+            ],
+            "title": "Motivo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fonte",
+          "motivo",
+          "dados_de"
+        ],
+        "title": "FalhaColetaOut",
+        "type": "object"
+      },
+      "FiltroVeredito": {
+        "enum": [
+          "apto",
+          "verificar",
+          "inapto",
+          "sem_analise"
+        ],
+        "title": "FiltroVeredito",
+        "type": "string"
       },
       "Fonte": {
         "description": "Fonte do edital. Vira o enum `Fonte` do OpenAPI (uma união no TypeScript).",
@@ -694,13 +842,63 @@
             },
             "title": "Editais",
             "type": "array"
+          },
+          "perfil_exemplo": {
+            "title": "Perfil Exemplo",
+            "type": "boolean"
           }
         },
         "required": [
           "atualizado_em",
+          "perfil_exemplo",
           "editais"
         ],
         "title": "ListaOut",
+        "type": "object"
+      },
+      "PainelOut": {
+        "properties": {
+          "atualizado_em": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Atualizado Em"
+          },
+          "coleta": {
+            "items": {
+              "$ref": "#/components/schemas/FalhaColetaOut"
+            },
+            "title": "Coleta",
+            "type": "array"
+          },
+          "contadores": {
+            "$ref": "#/components/schemas/ContadoresOut"
+          },
+          "perfil_exemplo": {
+            "title": "Perfil Exemplo",
+            "type": "boolean"
+          },
+          "secoes": {
+            "items": {
+              "$ref": "#/components/schemas/SecaoPainelOut"
+            },
+            "title": "Secoes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "atualizado_em",
+          "perfil_exemplo",
+          "contadores",
+          "secoes",
+          "coleta"
+        ],
+        "title": "PainelOut",
         "type": "object"
       },
       "PrecosOut": {
@@ -1011,6 +1209,36 @@
         "title": "ReguaOut",
         "type": "object"
       },
+      "SecaoPainelOut": {
+        "properties": {
+          "chave": {
+            "enum": [
+              "decidir",
+              "mais_adiante"
+            ],
+            "title": "Chave",
+            "type": "string"
+          },
+          "editais": {
+            "items": {
+              "$ref": "#/components/schemas/EditalResumoOut"
+            },
+            "title": "Editais",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "chave",
+          "total",
+          "editais"
+        ],
+        "title": "SecaoPainelOut",
+        "type": "object"
+      },
       "StatusOut": {
         "properties": {
           "atualizado_em": {
@@ -1231,6 +1459,53 @@
               "title": "Limite",
               "type": "integer"
             }
+          },
+          {
+            "in": "query",
+            "name": "encerra_em_dias",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 365,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Encerra Em Dias"
+            }
+          },
+          {
+            "in": "query",
+            "name": "novos",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Novos",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "veredito",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/FiltroVeredito"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Veredito"
+            }
           }
         ],
         "responses": {
@@ -1336,6 +1611,25 @@
           }
         },
         "summary": "Historico"
+      }
+    },
+    "/api/painel": {
+      "get": {
+        "description": "Home: Decidir e Mais adiante; contadores da base inteira, nunca de lista cortada.",
+        "operationId": "painel_api_painel_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PainelOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Painel"
       }
     },
     "/api/precos/{id_publico}": {

@@ -1,8 +1,8 @@
 // Apoio dos testes de tela: fonte simulada, edital de exemplo e render com
 // roteador em memória. Não é arquivo *.test.* para poder ser importado.
 import type {ReactElement} from 'react';
-import {render} from '@testing-library/react';
-import {vi} from 'vitest';
+import {cleanup, render} from '@testing-library/react';
+import {afterEach, beforeEach, vi} from 'vitest';
 import {MemoryRouter, Route, Routes, useLocation} from 'react-router';
 import {LinkProvider} from '@astryxdesign/core/Link';
 import {Theme} from '@astryxdesign/core/theme';
@@ -12,14 +12,40 @@ import type {Fonte} from '../dados/fonte';
 import {FonteContext} from '../dados/FonteContext';
 import type {EditalDetalhe} from '../dados/tipos';
 
+/** Relógio parado em `agora` em cada teste (só o Date; os timers seguem reais), com limpeza da tela. */
+export function fixarRelogio(agora: Date) {
+  beforeEach(() => {
+    vi.useFakeTimers({toFake: ['Date']});
+    vi.setSystemTime(agora);
+  });
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+}
+
 export function fonteFalsa(parcial: Partial<Fonte> = {}): Fonte {
   return {
-    listar: async () => ({atualizado_em: new Date().toISOString(), editais: []}),
+    listar: async () => ({
+      atualizado_em: new Date().toISOString(),
+      editais: [],
+      perfil_exemplo: false,
+    }),
     obter: async () => null,
     analise: async () => null,
     historico: async () => null,
     precos: async () => null,
     status: async () => ({atualizado_em: null}),
+    painel: async () => ({
+      atualizado_em: null,
+      perfil_exemplo: false,
+      coleta: [],
+      contadores: {abertos: 0, decidir: 0, novos: 0},
+      secoes: [
+        {chave: 'decidir', total: 0, editais: []},
+        {chave: 'mais_adiante', total: 0, editais: []},
+      ],
+    }),
     ...parcial,
   };
 }
@@ -43,6 +69,9 @@ export function edital(parcial: Partial<EditalDetalhe> = {}): EditalDetalhe {
     situacao_normalizada: 'aberta',
     link_origem: 'https://compras.exemplo.gov.br/edital/36',
     linhas: ['redes'],
+    veredito: null,
+    motivo_verificar: null,
+    primeiro_visto_em: '2026-11-01T10:00:00-03:00',
     ...parcial,
   };
 }
@@ -53,9 +82,18 @@ function Endereco() {
   return <output aria-label="endereço">{pathname + search}</output>;
 }
 
-type Opcoes = {fonte: Fonte; endereco?: string; padrao?: string};
+/** `outras`: rotas a mais (caminho → tela), para seguir um redirecionamento. */
+type Opcoes = {
+  fonte: Fonte;
+  endereco?: string;
+  padrao?: string;
+  outras?: Record<string, ReactElement>;
+};
 
-export function renderizar(tela: ReactElement, {fonte, endereco = '/', padrao = '/'}: Opcoes) {
+export function renderizar(
+  tela: ReactElement,
+  {fonte, endereco = '/', padrao = '/', outras = {}}: Opcoes,
+) {
   return render(
     <Theme theme={neutralTheme}>
       <FonteContext value={fonte}>
@@ -63,6 +101,9 @@ export function renderizar(tela: ReactElement, {fonte, endereco = '/', padrao = 
           <LinkProvider component={LinkDoRoteador}>
             <Routes>
               <Route path={padrao} element={tela} />
+              {Object.entries(outras).map(([caminho, elemento]) => (
+                <Route key={caminho} path={caminho} element={elemento} />
+              ))}
             </Routes>
             <Endereco />
           </LinkProvider>

@@ -1,21 +1,14 @@
 // @vitest-environment jsdom
 import {cleanup, fireEvent, screen, within} from '@testing-library/react';
-import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
+import {describe, expect, it, vi} from 'vitest';
 import type {Fonte} from '../dados/fonte';
-import {edital, fonteFalsa, renderizar} from '../testes/apoio';
+import {edital, fixarRelogio, fonteFalsa, renderizar} from '../testes/apoio';
 import {Lista} from './Lista';
 
-// 26/11/2026 12:00 em Brasília; só o Date é falso, os timers seguem reais.
+// 26/11/2026 12:00 em Brasília.
 const AGORA = new Date('2026-11-26T12:00:00-03:00');
 
-beforeEach(() => {
-  vi.useFakeTimers({toFake: ['Date']});
-  vi.setSystemTime(AGORA);
-});
-afterEach(() => {
-  cleanup();
-  vi.useRealTimers();
-});
+fixarRelogio(AGORA);
 
 const recente = '2026-11-26T09:00:00-03:00';
 const cartoes = () => screen.getAllByRole('link', {name: /^Abrir edital/});
@@ -41,7 +34,7 @@ describe('Lista', () => {
       linhas: [],
     });
     renderizar(<Lista />, {
-      fonte: fonteFalsa({listar: async () => ({atualizado_em: recente, editais: [primeiro, segundo]})}),
+      fonte: fonteFalsa({listar: async () => ({atualizado_em: recente, perfil_exemplo: false, editais: [primeiro, segundo]})}),
     });
 
     expect(await screen.findByText('Rede de esgoto')).toBeTruthy();
@@ -73,8 +66,8 @@ describe('Lista', () => {
   });
 
   it('lê os filtros da URL, repassa à fonte e leva a consulta ao detalhe', async () => {
-    const listar = vi.fn<Fonte['listar']>(async () => ({atualizado_em: recente, editais: [edital()]}));
-    renderizar(<Lista />, {fonte: fonteFalsa({listar}), endereco: '/?linha=redes&uf=SP&uf=PR'});
+    const listar = vi.fn<Fonte['listar']>(async () => ({atualizado_em: recente, perfil_exemplo: false, editais: [edital()]}));
+    renderizar(<Lista />, {fonte: fonteFalsa({listar}), endereco: '/editais?linha=redes&uf=SP&uf=PR', padrao: '/editais'});
 
     await screen.findByText('Execução de rede de esgoto no bairro Centro');
     expect(listar).toHaveBeenLastCalledWith({linha: 'redes', ufs: ['SP', 'PR']});
@@ -85,32 +78,32 @@ describe('Lista', () => {
 
   it('ignora linha e UF da URL que não estão no contrato da API', async () => {
     // A API responderia 422; a lista mostra o que é válido em vez de dar erro.
-    const listar = vi.fn<Fonte['listar']>(async () => ({atualizado_em: recente, editais: [edital()]}));
-    renderizar(<Lista />, {fonte: fonteFalsa({listar}), endereco: '/?linha=inexistente&uf=BA&uf=SP'});
+    const listar = vi.fn<Fonte['listar']>(async () => ({atualizado_em: recente, perfil_exemplo: false, editais: [edital()]}));
+    renderizar(<Lista />, {fonte: fonteFalsa({listar}), endereco: '/editais?linha=inexistente&uf=BA&uf=SP', padrao: '/editais'});
 
     await screen.findByText('Execução de rede de esgoto no bairro Centro');
     expect(listar).toHaveBeenLastCalledWith({ufs: ['SP']});
   });
 
   it('trocar a linha atualiza a URL e recarrega', async () => {
-    const listar = vi.fn<Fonte['listar']>(async () => ({atualizado_em: recente, editais: [edital()]}));
-    renderizar(<Lista />, {fonte: fonteFalsa({listar}), endereco: '/?uf=SP'});
+    const listar = vi.fn<Fonte['listar']>(async () => ({atualizado_em: recente, perfil_exemplo: false, editais: [edital()]}));
+    renderizar(<Lista />, {fonte: fonteFalsa({listar}), endereco: '/editais?uf=SP', padrao: '/editais'});
     await screen.findByText('Execução de rede de esgoto no bairro Centro');
 
     const grupo = screen.getByRole('group', {name: 'Linha de serviço'});
     fireEvent.click(within(grupo).getByRole('button', {name: 'Perdas'}));
 
     await vi.waitFor(() => expect(listar).toHaveBeenLastCalledWith({linha: 'perdas', ufs: ['SP']}));
-    expect(endereco()).toBe('/?uf=SP&linha=perdas');
+    expect(endereco()).toBe('/editais?uf=SP&linha=perdas');
 
     fireEvent.click(within(grupo).getByRole('button', {name: 'Todas'}));
     await vi.waitFor(() => expect(listar).toHaveBeenLastCalledWith({ufs: ['SP']}));
-    expect(endereco()).toBe('/?uf=SP');
+    expect(endereco()).toBe('/editais?uf=SP');
   });
 
   it('lista_vazia_mostra_estado_vazio', async () => {
     renderizar(<Lista />, {
-      fonte: fonteFalsa({listar: async () => ({atualizado_em: recente, editais: []})}),
+      fonte: fonteFalsa({listar: async () => ({atualizado_em: recente, perfil_exemplo: false, editais: []})}),
     });
     expect(await screen.findByText('Nenhum edital aberto com esses filtros')).toBeTruthy();
   });
@@ -124,7 +117,7 @@ describe('Lista', () => {
     const listar = vi
       .fn()
       .mockRejectedValueOnce(new Error('A API respondeu 500'))
-      .mockResolvedValueOnce({atualizado_em: recente, editais: [edital()]});
+      .mockResolvedValueOnce({atualizado_em: recente, perfil_exemplo: false, editais: [edital()]});
     renderizar(<Lista />, {fonte: fonteFalsa({listar})});
 
     expect(await screen.findByText('Não foi possível carregar os editais')).toBeTruthy();
@@ -137,7 +130,7 @@ describe('Lista', () => {
 
   it('lista_desatualizada_mostra_aviso', async () => {
     renderizar(<Lista />, {
-      fonte: fonteFalsa({listar: async () => ({atualizado_em: null, editais: [edital()]})}),
+      fonte: fonteFalsa({listar: async () => ({atualizado_em: null, perfil_exemplo: false, editais: [edital()]})}),
     });
     expect(await screen.findByText('Os dados podem estar desatualizados')).toBeTruthy();
     expect(screen.getByText('Nenhuma coleta foi concluída ainda.')).toBeTruthy();
@@ -146,9 +139,109 @@ describe('Lista', () => {
   it('aviso de desatualizado diz quando foi a última coleta', async () => {
     renderizar(<Lista />, {
       fonte: fonteFalsa({
-        listar: async () => ({atualizado_em: '2026-11-24T08:30:00-03:00', editais: [edital()]}),
+        listar: async () => ({atualizado_em: '2026-11-24T08:30:00-03:00', perfil_exemplo: false, editais: [edital()]}),
       }),
     });
     expect(await screen.findByText('Última atualização em 24/11/2026 08:30.')).toBeTruthy();
+  });
+
+  it('lista_mostra_selo_de_aderencia_so_com_perfil_real', async () => {
+    const editais = [
+      edital({id_publico: 'pncp~a', objeto: 'Apto', veredito: 'apto'}),
+      edital({id_publico: 'pncp~i', objeto: 'Inapto', veredito: 'inapto'}),
+      edital({id_publico: 'pncp~v', objeto: 'Verificar', veredito: 'verificar'}),
+      edital({id_publico: 'pncp~s', objeto: 'Sem análise'}),
+    ];
+    const comPerfil = (perfil_exemplo: boolean) =>
+      fonteFalsa({listar: async () => ({atualizado_em: recente, perfil_exemplo, editais})});
+
+    renderizar(<Lista />, {fonte: comPerfil(false)});
+    expect(await screen.findByText('apto')).toBeTruthy();
+    expect(screen.getByText('inapto')).toBeTruthy();
+    expect(screen.getByText('verificar')).toBeTruthy();
+    expect(screen.getByText('sem análise · conferir edital')).toBeTruthy();
+    cleanup();
+
+    renderizar(<Lista />, {fonte: comPerfil(true)});
+    await screen.findByText('Inapto');
+    expect(screen.queryByText(/^(apto|inapto|verificar|sem análise)/)).toBeNull();
+  });
+
+  const umEdital = () =>
+    vi.fn<Fonte['listar']>(async () => ({
+      atualizado_em: recente,
+      perfil_exemplo: false,
+      editais: [edital()],
+    }));
+
+  it('lista_le_recorte_da_url_e_mostra_o_que_esta_filtrando', async () => {
+    const listar = umEdital();
+    renderizar(<Lista />, {
+      fonte: fonteFalsa({listar}),
+      endereco: '/editais?encerra_em_dias=20&novos=true',
+      padrao: '/editais',
+    });
+
+    await screen.findByText('Execução de rede de esgoto no bairro Centro');
+    expect(listar).toHaveBeenLastCalledWith({ufs: [], encerraEmDias: 20, novos: true});
+    expect(screen.getByText('Só os que encerram em até 20 dias · só os novos')).toBeTruthy();
+    expect(cartoes()[0].getAttribute('href')).toContain('?encerra_em_dias=20&novos=true');
+  });
+
+  it('lista_mostra_a_aderencia_filtrada', async () => {
+    const listar = umEdital();
+    renderizar(<Lista />, {
+      fonte: fonteFalsa({listar}),
+      endereco: '/editais?veredito=apto&veredito=verificar&veredito=sem_analise',
+      padrao: '/editais',
+    });
+
+    await screen.findByText('Execução de rede de esgoto no bairro Centro');
+    expect(listar).toHaveBeenLastCalledWith({
+      ufs: [],
+      vereditos: ['apto', 'verificar', 'sem_analise'],
+    });
+    expect(screen.getByText('aderência: apto, verificar, sem análise')).toBeTruthy();
+  });
+
+  it('lista_mostrar_todos_limpa_o_recorte_e_mantem_linha', async () => {
+    const listar = umEdital();
+    renderizar(<Lista />, {
+      fonte: fonteFalsa({listar}),
+      endereco: '/editais?linha=redes&encerra_em_dias=20&novos=true&veredito=apto',
+      padrao: '/editais',
+    });
+    await screen.findByText('Execução de rede de esgoto no bairro Centro');
+
+    fireEvent.click(screen.getByRole('button', {name: 'Mostrar todos'}));
+
+    await vi.waitFor(() => expect(endereco()).toBe('/editais?linha=redes'));
+    expect(listar).toHaveBeenLastCalledWith({linha: 'redes', ufs: []});
+    expect(screen.queryByRole('button', {name: 'Mostrar todos'})).toBeNull();
+  });
+
+  it('lista_ignora_recorte_invalido_na_url', async () => {
+    const listar = umEdital();
+    renderizar(<Lista />, {
+      fonte: fonteFalsa({listar}),
+      endereco: '/editais?encerra_em_dias=abc&veredito=talvez&novos=sim',
+      padrao: '/editais',
+    });
+
+    await screen.findByText('Execução de rede de esgoto no bairro Centro');
+    expect(listar).toHaveBeenLastCalledWith({ufs: []});
+    expect(screen.queryByRole('button', {name: 'Mostrar todos'})).toBeNull();
+  });
+
+  it('lista_ignora_dias_fora_de_0_a_365', async () => {
+    const listar = umEdital();
+    renderizar(<Lista />, {
+      fonte: fonteFalsa({listar}),
+      endereco: '/editais?encerra_em_dias=366',
+      padrao: '/editais',
+    });
+
+    await screen.findByText('Execução de rede de esgoto no bairro Centro');
+    expect(listar).toHaveBeenLastCalledWith({ufs: []});
   });
 });

@@ -52,7 +52,7 @@ describe('Detalhe', () => {
     expect(screen.getByRole('heading', {level: 2, name: 'Aderência à FR'})).toBeTruthy();
     // "Voltar" leva os filtros de volta para a lista.
     expect(screen.getByRole('link', {name: /Voltar/}).getAttribute('href')).toBe(
-      '/?linha=redes&uf=SP',
+      '/editais?linha=redes&uf=SP',
     );
   });
 
@@ -77,7 +77,7 @@ describe('Detalhe', () => {
     expect(valorDe('Linhas de serviço')).toBe('—');
     // Sem link (a API já manda o de reserva): o front não monta um por conta própria.
     expect(screen.queryByRole('link', {name: /Abrir no/})).toBeNull();
-    expect(screen.getByRole('link', {name: /Voltar/}).getAttribute('href')).toBe('/');
+    expect(screen.getByRole('link', {name: /Voltar/}).getAttribute('href')).toBe('/editais');
   });
 
   it.each(['', '   ', 'javascript:alert(1)', 'www.compras.gov.br/36'])(

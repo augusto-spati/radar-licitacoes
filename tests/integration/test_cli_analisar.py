@@ -18,7 +18,14 @@ from typer.testing import CliRunner
 
 import radar.analise
 from radar import cli
-from radar.analise import AnaliseEdital, ClienteArquivosPNCP, ConfigIA, Pedido, Resposta
+from radar.analise import (
+    AnaliseEdital,
+    ClienteArquivosPNCP,
+    ConfigIA,
+    Pedido,
+    Resposta,
+    ler_perfil_resumo,
+)
 from radar.analise.custos import gasto_do_mes
 from radar.analise.modelos import RespostaLLM
 from radar.coleta.trava import obter_trava
@@ -616,3 +623,56 @@ def test_edital_sem_documento_nao_grava_e_volta_depois(
         assert "0 analisados, 0 pulados, 0 falhas" in resultado.output
         assert resultado.output.rstrip().endswith(", 1 sem documentos")
     assert _analisados(fabrica) == set()
+
+
+# ---------- perfil_resumo e fila por prazo ----------
+
+
+def test_analisar_grava_o_resumo_do_perfil(
+    rede: tuple[sessionmaker[Session], Rede], config_filtro: Path
+) -> None:
+    fabrica, _ = rede
+    _popular(fabrica)
+    assert _analisar(config_filtro).exit_code == 0
+    with fabrica() as sessao:
+        lido = ler_perfil_resumo(sessao)
+    assert lido is not None and lido.exemplo is True  # config/perfil.toml
+
+
+def test_recomparar_grava_o_resumo_do_perfil(
+    rede: tuple[sessionmaker[Session], Rede], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fabrica, _ = rede
+    perfil = tmp_path / "perfil.toml"
+    texto = (RAIZ / "config" / "perfil.toml").read_text(encoding="utf-8")
+    texto = texto.replace(
+        "exemplo = true", 'exemplo = false\nuf_sede = "SP"\nvalor_maximo_obra = 3000000'
+    )
+    perfil.write_text(texto, encoding="utf-8")
+    monkeypatch.setenv("RADAR_CONFIG_PERFIL", str(perfil))
+    resultado = runner.invoke(cli.app, ["recomparar"])
+    assert resultado.exit_code == 0, resultado.output
+    with fabrica() as sessao:
+        lido = ler_perfil_resumo(sessao)
+    assert lido is not None
+    assert (lido.exemplo, lido.uf_sede, lido.valor_maximo_obra) == (False, "SP", Decimal("3000000"))
+
+
+def test_fila_da_analise_vai_pelo_prazo_mais_curto(
+    rede: tuple[sessionmaker[Session], Rede], config_filtro: Path
+) -> None:
+    fabrica, _ = rede
+    longe = "78200482000110-1-000310/2026"
+    perto = "78200482000110-1-000311/2026"
+    with fabrica() as sessao:
+        registrar(
+            sessao,
+            [
+                _registro(longe, encerramento="2026-12-20T10:00:00"),
+                _registro(perto, encerramento="2026-12-01T10:00:00"),
+            ],
+        )
+        sessao.commit()
+    resultado = _analisar(config_filtro, "--limite", "1", "--fontes", "pncp")
+    assert resultado.exit_code == 0, resultado.output
+    assert _analisados(fabrica) == {perto}

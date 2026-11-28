@@ -6,11 +6,11 @@ const AGORA = new Date('2026-11-26T12:00:00-03:00');
 
 test('abre um edital filtrado e o Voltar mantém o filtro', async ({page}) => {
   await congelarRelogio(page);
-  await page.goto('/');
+  await page.goto('/#/editais');
   await expect(page.getByRole('heading', {level: 1, name: 'Editais abertos'})).toBeVisible();
 
   await page.getByRole('button', {name: 'Redes'}).click();
-  await expect(page).toHaveURL(/#\/\?linha=redes$/);
+  await expect(page).toHaveURL(/#\/editais\?linha=redes$/);
 
   // O primeiro cartão filtrado é o primeiro aberto com a linha "redes" da fixture (já em ordem de
   // prazo). Esperar por ele evita agir sobre o cartão da lista ainda sem filtro.
@@ -31,7 +31,7 @@ test('abre um edital filtrado e o Voltar mantém o filtro', async ({page}) => {
   await expect(page.getByRole('heading', {level: 1, name: edital?.orgao_nome})).toBeVisible();
 
   await page.getByRole('link', {name: 'Voltar'}).click();
-  await expect(page).toHaveURL(/#\/\?linha=redes$/);
+  await expect(page).toHaveURL(/#\/editais\?linha=redes$/);
   await expect(page.getByRole('heading', {level: 1, name: 'Editais abertos'})).toBeVisible();
   await expect(page.getByRole('button', {name: 'Redes'})).toHaveAttribute('aria-pressed', 'true');
 });

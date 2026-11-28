@@ -1,4 +1,4 @@
-import type {FonteEdital, Linha, UF} from './tipos';
+import type {FiltroVeredito, FonteEdital, Linha, UF} from './tipos';
 
 // Datas da API sem fuso (ex.: "2026-11-27T08:00:00") são horário de Brasília.
 // O Brasil não tem horário de verão desde 2019, então Brasília é UTC-3 fixo.
@@ -17,12 +17,25 @@ const diaMes = (d: Date) => `${dois(d.getUTCDate())}/${dois(d.getUTCMonth() + 1)
 const horaMinuto = (d: Date) => `${dois(d.getUTCHours())}:${dois(d.getUTCMinutes())}`;
 const diaCalendario = (d: Date) => Math.floor(d.getTime() / UM_DIA_MS);
 
+/** Dias de calendário de Brasília de `agora` até o prazo; 0 = hoje. */
+export const diasAteEncerrar = (iso: string, agora: Date): number =>
+  diaCalendario(paredeBrasilia(instante(iso))) - diaCalendario(paredeBrasilia(agora.getTime()));
+
+/** Janela do bloco Decidir do painel (a mesma do `encerra_em_dias` da Lista). */
+export const DIAS_DECIDIR = 20;
+/** Um edital é novo até esta quantidade de dias depois de visto pela primeira vez. */
+export const DIAS_NOVO = 3;
+
+/** Visto pela primeira vez há no máximo 3 dias (inclusive); sem data não é novo. */
+export const ehNovo = (primeiroVistoEm: string | null, agora: Date): boolean =>
+  primeiroVistoEm !== null && instante(primeiroVistoEm) >= agora.getTime() - DIAS_NOVO * UM_DIA_MS;
+
 export function formatarPrazo(iso: string | null, agora: Date): string {
   if (iso === null) return '—';
   const alvo = instante(iso);
   const parede = paredeBrasilia(alvo);
   if (alvo < agora.getTime()) return `encerrado · ${diaMes(parede)}`;
-  const dias = diaCalendario(parede) - diaCalendario(paredeBrasilia(agora.getTime()));
+  const dias = diasAteEncerrar(iso, agora);
   if (dias === 0) return `encerra hoje · ${horaMinuto(parede)}`;
   if (dias === 1) return `encerra amanhã · ${diaMes(parede)}`;
   return `encerra em ${dias} dias · ${diaMes(parede)}`;
@@ -113,7 +126,9 @@ export function formatarMesAno(iso: string): string {
 const LIMITE_DESATUALIZADO_MS = 36 * 60 * 60 * 1000;
 
 export function estaDesatualizado(atualizadoEm: string | null, agora: Date): boolean {
-  return atualizadoEm === null || agora.getTime() - instante(atualizadoEm) > LIMITE_DESATUALIZADO_MS;
+  return (
+    atualizadoEm === null || agora.getTime() - instante(atualizadoEm) > LIMITE_DESATUALIZADO_MS
+  );
 }
 
 /**
@@ -133,6 +148,13 @@ const ORDEM_UFS = {SP: 0, PR: 1, PE: 2, MG: 3} satisfies Record<UF, number>;
 export const UFS = Object.keys(ORDEM_UFS) as UF[];
 
 export const ehLinha = (v: string): v is Linha => Object.hasOwn(LINHAS, v);
+const FILTROS_VEREDITO = {apto: 0, verificar: 1, inapto: 2, sem_analise: 3} satisfies Record<
+  FiltroVeredito,
+  number
+>;
+export const ehFiltroVeredito = (v: string): v is FiltroVeredito =>
+  Object.hasOwn(FILTROS_VEREDITO, v);
+
 export const ehUF = (v: string): v is UF => Object.hasOwn(ORDEM_UFS, v);
 
 export const nomeLinha = (linha: string): string => (ehLinha(linha) ? LINHAS[linha] : linha);
@@ -154,3 +176,20 @@ export function idNaFonte(idPublico: string): string {
   const posicao = idPublico.indexOf('~');
   return posicao < 0 ? idPublico : idPublico.slice(posicao + 1);
 }
+
+// Campos da comparação (src/radar/analise/comparacao.py). Campo novo sem nome
+// aqui aparece como veio da API.
+const CAMPOS: Record<string, string> = {
+  capital_social_minimo: 'Capital social mínimo',
+  patrimonio_liquido_minimo: 'Patrimônio líquido mínimo',
+  garantia_proposta_percentual: 'Garantia da proposta',
+  garantia_contratual_percentual: 'Garantia contratual',
+  visita_tecnica: 'Visita técnica',
+  consorcio: 'Consórcio',
+  me_epp: 'Participação de ME/EPP',
+  prazo_execucao_dias: 'Prazo de execução',
+  documentos: 'Documentos de habilitação',
+  atestados: 'Atestado técnico',
+};
+
+export const nomeCampo = (campo: string): string => CAMPOS[campo] ?? campo;
