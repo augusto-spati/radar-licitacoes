@@ -185,14 +185,23 @@ def _com_analise(consulta: Select[Any], lateral: LateralFromClause | None) -> Se
     return consulta.select_from(Edital.__table__.outerjoin(lateral, true()))
 
 
+def limite_encerra_em(agora: datetime, dias: int) -> datetime:
+    """Limite exclusivo (Brasília, sem fuso) de "encerra em até `dias` dias de calendário".
+
+    O dia `hoje + dias` entra inteiro (até 23:59); 00:00 do dia seguinte já não.
+    """
+    hoje = agora.astimezone(FUSO).date()
+    return datetime.combine(hoje, time()) + timedelta(days=dias + 1)
+
+
 def _condicoes_recorte(
     recorte: Recorte, agora: datetime, veredito: ColumnElement[Any]
 ) -> list[ColumnElement[bool]]:
     condicoes: list[ColumnElement[bool]] = []
     if recorte.encerra_em_dias is not None:
-        hoje = agora.astimezone(FUSO).date()
-        limite = datetime.combine(hoje, time()) + timedelta(days=recorte.encerra_em_dias + 1)
-        condicoes.append(Edital.data_encerramento_proposta < limite)
+        condicoes.append(
+            Edital.data_encerramento_proposta < limite_encerra_em(agora, recorte.encerra_em_dias)
+        )
     if recorte.novos:
         condicoes.append(Edital.primeiro_visto_em >= agora - timedelta(days=DIAS_NOVO))
     if recorte.vereditos:

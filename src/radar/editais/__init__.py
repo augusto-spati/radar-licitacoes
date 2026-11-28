@@ -29,6 +29,7 @@ from radar.editais.filtro import (
     datas_sessao_dae_jundiai,
     filtrar,
     id_publico,
+    limite_encerra_em,
     listar_abertos,
     obter_edital,
     separar_id_publico,
@@ -48,6 +49,16 @@ from radar.editais.modelos import (
     ResultadoExterno,
     ResultadoItem,
     Situacao,
+)
+from radar.editais.painel import (
+    DIAS_DECIDIR,
+    LIMITE_SECAO,
+    ChaveSecao,
+    Painel,
+    Secao,
+    dias_ate_encerrar,
+    eh_novo,
+    separar_painel,
 )
 from radar.editais.planilhas import UFS_FORA as UFS_FORA_PLANILHAS
 from radar.editais.planilhas import AlvoPlanilha, alvo_planilha, alvos_planilha
@@ -104,6 +115,15 @@ __all__ = [
     "resumir",
     "bruto_do_edital",
     "DIAS_NOVO",
+    "DIAS_DECIDIR",
+    "LIMITE_SECAO",
+    "ChaveSecao",
+    "Painel",
+    "Secao",
+    "dias_ate_encerrar",
+    "eh_novo",
+    "limite_encerra_em",
+    "separar_painel",
     "Criterios",
     "FiltroVeredito",
     "Recorte",

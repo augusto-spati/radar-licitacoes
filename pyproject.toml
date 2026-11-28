@@ -95,6 +95,7 @@ forbidden_modules = [
     "radar.coleta.tcepe",
     "radar.editais.filtro",
     "radar.editais.historico",
+    "radar.editais.painel",
     "radar.editais.registro",
     "radar.editais.resultados",
     "radar.editais.modelos",
