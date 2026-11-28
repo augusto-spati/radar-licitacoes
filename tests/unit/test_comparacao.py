@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from radar.analise.comparacao import Comparacao, comparar
 from radar.analise.exigencias import Atestado, CategoriaEvidencia, Exigencias, ValorEvidencia
@@ -234,6 +235,7 @@ def test_perfil_de_exemplo_carrega() -> None:
     assert perfil.capital_social == Decimal("1000000")
     assert len(perfil.documentos) == 8
     assert len(perfil.atestados) == 4
+    assert perfil.exemplo is True and perfil.uf_sede is None and perfil.valor_maximo_obra is None
 
 
 def test_documento_invalido_no_perfil(tmp_path: Path) -> None:
@@ -264,3 +266,42 @@ def test_perfil_do_s3_e_ausente(monkeypatch: pytest.MonkeyPatch) -> None:
     assert lidos == [("radar-documentos", "perfil/perfil.toml")]
     with pytest.raises(FileNotFoundError, match="perfil ausente"):
         carregar_perfil_de("s3://radar-documentos/perfil/outro.toml")
+
+
+_EMPRESA_BASE = (
+    'porte = "me"\ncapital_social = 1\npatrimonio_liquido = 1\ngarantia_maxima_percentual = 5\n'
+    "faz_visita_tecnica = true\ndepende_de_consorcio = false\ndocumentos = []\n"
+)
+
+
+def _perfil_toml(tmp_path: Path, extra: str) -> Perfil:
+    arquivo = tmp_path / "perfil.toml"
+    arquivo.write_text("[empresa]\n" + _EMPRESA_BASE + extra, encoding="utf-8")
+    return carregar_perfil(arquivo)
+
+
+def test_perfil_campos_da_sede_e_capacidade(tmp_path: Path) -> None:
+    perfil = _perfil_toml(
+        tmp_path, 'exemplo = false\nuf_sede = "SP"\nvalor_maximo_obra = 2500000.5\n'
+    )
+    assert (perfil.exemplo, perfil.uf_sede, perfil.valor_maximo_obra) == (
+        False,
+        "SP",
+        Decimal("2500000.5"),
+    )
+
+
+def test_uf_sede_invalida_e_erro(tmp_path: Path) -> None:
+    with pytest.raises(ValidationError):
+        _perfil_toml(tmp_path, 'uf_sede = "Paraná"\n')
+
+
+def test_campo_desconhecido_no_perfil_avisa(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level("WARNING"):
+        _perfil_toml(tmp_path, "campo_novo = 123\n")
+    avisos = [r for r in caplog.records if r.message == "perfil_campo_desconhecido"]
+    assert len(avisos) == 1
+    assert avisos[0].__dict__["campos"] == ["campo_novo"]
+    assert "123" not in caplog.text

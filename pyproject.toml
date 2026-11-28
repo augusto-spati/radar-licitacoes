@@ -103,6 +103,7 @@ forbidden_modules = [
     "radar.analise.modelos",
     "radar.analise.normalizacao",
     "radar.analise.perfil",
+    "radar.analise.perfil_resumo",
     "radar.analise.comparacao",
     "radar.analise.arquivos_pncp",
     "radar.analise.extracao",

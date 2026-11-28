@@ -64,6 +64,7 @@ from radar.analise.modelos import (
     Veredito,
 )
 from radar.analise.perfil import Perfil, carregar_perfil, carregar_perfil_de, ler_perfil
+from radar.analise.perfil_resumo import ResumoDoPerfil, gravar_perfil_resumo, ler_perfil_resumo
 from radar.analise.pipeline import (
     FONTES_ANALISADAS,
     FONTES_PADRAO,
@@ -162,6 +163,7 @@ __all__ = [
     "ProvedorBedrock",
     "ProvedorComCache",
     "Relatorio",
+    "ResumoDoPerfil",
     "Resposta",
     "RespostaAusente",
     "RespostaExtracao",
@@ -191,6 +193,8 @@ __all__ = [
     "extrair_paginas",
     "gasto_do_mes",
     "guarda_teto",
+    "gravar_perfil_resumo",
+    "ler_perfil_resumo",
     "ja_analisado",
     "ler_linha_de_base",
     "mascarar_dados_pessoais",
