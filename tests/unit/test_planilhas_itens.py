@@ -13,6 +13,10 @@ from radar.precos import (
     ler_planilha,
     linhas_da_ia,
 )
+from radar.precos.modelos import PrecoItemNovo
+from radar.precos.planilhas import (
+    marcar_fora_de_escala,
+)
 
 DADOS = Path(__file__).resolve().parents[1] / "dados" / "planilhas"
 
@@ -258,3 +262,123 @@ def test_continuacao_nao_decide_agua_ou_esgoto_no_edital_dos_dois() -> None:
     )
     (linha,) = ler_planilha([pagina])
     assert itens_da_planilha(MATERIAIS_HIDRAULICOS, SHA, [linha]) == []
+
+
+# --- Preço fora da escala do DN (barra de 6 m numa linha "METRO") ---
+
+TRES_PONTAS = replace(
+    RIBEIRAO,
+    id_pncp="00000000000000-1-000001/2026",
+    municipio="Três Pontas",
+    orgao_nome="SAAE Três Pontas",
+    uf="MG",
+    objeto="Ampliação da rede de distribuição de água",
+)
+
+
+def _tubo(item: str, descricao: str, com: str) -> LinhaPlanilha:
+    return replace(_linha(item, com), descricao=descricao, total=Decimal(com) * 10)
+
+
+def _suspeitos(itens: list[PrecoItemNovo]) -> dict[tuple[str | None, int | None], bool]:
+    return {(i.material, i.dn): i.suspeito for i in itens}
+
+
+def test_tres_pontas_preco_da_barra_no_metro_e_suspeito() -> None:
+    descricao = "Tubo PVC DN {} fornecimento e assentamento para rede de água"
+    linhas = [
+        _tubo("1.1", descricao.format(50), "12.32"),
+        _tubo("1.2", descricao.format(75), "207.74"),
+        _tubo("1.3", descricao.format(100), "274.90"),
+    ]
+    itens = itens_da_planilha(TRES_PONTAS, SHA, linhas)
+    assert len({(i.servico, i.material, i.escopo, i.unidade_canonica) for i in itens}) == 1
+    assert _suspeitos(itens) == {("pvc", 50): False, ("pvc", 75): True, ("pvc", 100): True}
+    # A linha fica como veio; só a marca muda.
+    assert [i.preco_com_bdi for i in itens] == [
+        Decimal("12.32"),
+        Decimal("207.74"),
+        Decimal("274.90"),
+    ]
+    assert all(i.observacao is None for i in itens)
+
+
+def _item(
+    dn: int | None, preco: str, material: str | None = "pvc", fator: str = "1"
+) -> PrecoItemNovo:
+    return PrecoItemNovo(
+        origem="pncp_planilha",
+        chave_origem=f"x#{material}{dn}",
+        uf="MG",
+        municipio=None,
+        orgao_nome="SAAE",
+        orgao_cnpj=None,
+        processo="x",
+        data=None,
+        data_base=None,
+        descricao="tubo",
+        unidade="m",
+        quantidade=Decimal(10),
+        preco_sem_bdi=None,
+        bdi=None,
+        preco_com_bdi=Decimal(preco),
+        bdi_desconhecido=True,
+        preco_contratado_com_bdi=None,
+        fonte_referencia=None,
+        codigo_referencia=None,
+        servico="rede_agua",
+        material=material,
+        dn=dn,
+        escopo="completo",
+        faixa=None,
+        unidade_canonica="m",
+        fator_unidade=Decimal(fator),
+        suspeito=False,
+    )
+
+
+def test_serie_crescente_normal_nao_marca_nada() -> None:
+    itens = [
+        _item(50, "25"),
+        _item(75, "40"),
+        _item(100, "60"),
+        _item(150, "110"),
+        _item(300, "420"),
+    ]
+    assert not any(i.suspeito for i in marcar_fora_de_escala(itens))
+
+
+def test_economia_de_escala_e_mao_de_obra_nao_marcam() -> None:
+    # Assentamento: cresce bem menos que DN²; DN maior pode até sair um pouco mais barato.
+    itens = [_item(50, "8"), _item(100, "7"), _item(400, "40")]
+    assert not any(i.suspeito for i in marcar_fora_de_escala(itens))
+
+
+def test_uma_linha_so_nao_marca() -> None:
+    assert not marcar_fora_de_escala([_item(75, "207.74")])[0].suspeito
+
+
+def test_materiais_diferentes_nao_se_comparam() -> None:
+    itens = marcar_fora_de_escala([_item(50, "12.32", "pvc"), _item(75, "207.74", "fofo")])
+    assert not any(i.suspeito for i in itens)
+
+
+def test_dn_menor_muito_mais_caro_que_o_maior_e_suspeito() -> None:
+    itens = marcar_fora_de_escala([_item(50, "74"), _item(75, "20"), _item(100, "28")])
+    assert _suspeitos(itens) == {("pvc", 50): True, ("pvc", 75): False, ("pvc", 100): False}
+
+
+def test_mesmo_dn_com_precos_diferentes_fica_como_esta() -> None:
+    itens = marcar_fora_de_escala([_item(75, "20"), _item(75, "120")])
+    assert not any(i.suspeito for i in itens)
+
+
+def test_preco_comparado_na_unidade_canonica() -> None:
+    # Preço por barra de 6 m com fator 6: R$ 120/barra = R$ 20/m, na escala do DN 50.
+    itens = marcar_fora_de_escala([_item(50, "12"), _item(75, "120", fator="6")])
+    assert not any(i.suspeito for i in itens)
+
+
+def test_sem_dn_nao_entra() -> None:
+    itens = marcar_fora_de_escala([_item(None, "500"), _item(50, "10")])
+    assert not any(i.suspeito for i in itens)

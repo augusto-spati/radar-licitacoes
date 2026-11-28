@@ -14,6 +14,11 @@ compõe com os documentos e a IA é a CLI.
   quantidade, preço) de outro edital já gravado. As linhas ficam uma vez só, no edital
   processado por último (a rodada vai do mais antigo ao mais novo); o anterior vira
   `republicada`.
+- Preço fora da escala do DN: na mesma planilha e no mesmo grupo (serviço, material, escopo,
+  faixa, unidade canônica), a linha é `suspeito` se custa mais que
+  `FOLGA_ESCALA_DN × (DN ÷ DN menor)²` vezes uma linha de DN menor, ou mais que `QUEDA_MAXIMA`
+  vezes uma de DN maior. É o preço da barra de 6 m numa linha "METRO" (SAAE Três Pontas: DN 50
+  a R$ 12,32/m, DN 75 a R$ 207,74/m). A linha é gravada como veio; só não entra na mediana.
 """
 
 import logging
@@ -47,6 +52,11 @@ REPUBLICACAO_MINIMA = Decimal("0.8")
 LINHAS_MINIMAS_REPUBLICACAO = 3
 # `falhou` tenta de novo depois disso; `pulado_teto`, no mês seguinte.
 ESPERA_FALHA = timedelta(days=7)
+# O custo do tubo acompanha a massa (~DN²): 3× isso a partir de um DN menor não é plausível.
+FOLGA_ESCALA_DN = Decimal(3)
+EXPOENTE_DN = 2
+# Nem um DN menor custar 3× um DN maior do mesmo grupo.
+QUEDA_MAXIMA = Decimal(3)
 _FINAIS = ("extraida", "sem_planilha", "republicada", "ia_invalida")
 
 type _Assinatura = tuple[str | None, Decimal | None, Decimal | None]
@@ -138,7 +148,49 @@ def itens_da_planilha(
                 observacao=classificacao.observacao,
             )
         )
-    return novos
+    return marcar_fora_de_escala(novos)
+
+
+type _ChaveEscala = tuple[str, str | None, str | None, str | None, str]
+
+
+def _preco_canonico(item: PrecoItemNovo) -> Decimal | None:
+    """Preço na unidade canônica, como a consulta compara (com BDI; senão o sem BDI)."""
+    preco = item.preco_com_bdi if item.preco_com_bdi is not None else item.preco_sem_bdi
+    if preco is None or preco <= 0 or item.fator_unidade <= 0:
+        return None
+    return preco / item.fator_unidade
+
+
+def _fora_de_escala(dn: int, preco: Decimal, outro_dn: int, outro_preco: Decimal) -> bool:
+    if outro_dn < dn:
+        limite = FOLGA_ESCALA_DN * (Decimal(dn) / Decimal(outro_dn)) ** EXPOENTE_DN
+        return preco > limite * outro_preco
+    if outro_dn > dn:
+        return preco > QUEDA_MAXIMA * outro_preco
+    return False  # mesmo DN: não há régua para dizer qual dos dois está errado
+
+
+def marcar_fora_de_escala(itens: Sequence[PrecoItemNovo]) -> list[PrecoItemNovo]:
+    """Marca `suspeito` o preço fora da escala do DN no seu grupo (ver docstring do módulo).
+
+    Só liga a marca, nunca a desliga; grupo com um DN só não tem com o que comparar.
+    `observacao` não muda: é marca semântica ("adutora"), não texto livre.
+    """
+    grupos: dict[_ChaveEscala, list[tuple[int, int, Decimal]]] = {}
+    for indice, item in enumerate(itens):
+        preco = _preco_canonico(item)
+        if item.dn is None or item.dn <= 0 or preco is None:
+            continue
+        chave = (item.servico, item.material, item.escopo, item.faixa, item.unidade_canonica)
+        grupos.setdefault(chave, []).append((indice, item.dn, preco))
+    marcar = {
+        indice
+        for linhas in grupos.values()
+        for indice, dn, preco in linhas
+        if any(_fora_de_escala(dn, preco, outro_dn, outro) for _, outro_dn, outro in linhas)
+    }
+    return [replace(item, suspeito=True) if i in marcar else item for i, item in enumerate(itens)]
 
 
 # --- Estado por edital ---
