@@ -4,6 +4,7 @@ import re
 from dataclasses import replace
 from datetime import date
 from decimal import Decimal
+from itertools import permutations
 from pathlib import Path
 
 from radar.precos import (
@@ -382,3 +383,85 @@ def test_preco_comparado_na_unidade_canonica() -> None:
 def test_sem_dn_nao_entra() -> None:
     itens = marcar_fora_de_escala([_item(None, "500"), _item(50, "10")])
     assert not any(i.suspeito for i in itens)
+
+
+def _marcados(itens: list[PrecoItemNovo]) -> list[int | None]:
+    return sorted((i.dn for i in marcar_fora_de_escala(itens) if i.suspeito), key=lambda d: d or 0)
+
+
+def test_barato_errado_e_condenado_pela_maioria_e_nao_condena_os_certos() -> None:
+    itens = [_item(50, "2"), _item(75, "25"), _item(100, "40"), _item(150, "80")]
+    assert _marcados(itens) == [50]
+
+
+def test_caro_errado_no_meio_da_serie_sai_pela_maioria() -> None:
+    itens = [_item(50, "12"), _item(75, "207"), _item(100, "25"), _item(150, "45")]
+    assert _marcados(itens) == [75]
+
+
+def test_tres_dns_sem_maioria_vale_a_assimetria_do_preco_inflado() -> None:
+    # Limite conhecido: com 3 DNs, um barato errado é igual a Três Pontas (dois inflados).
+    # Sem maioria, sai a linha cara: a falha conhecida é a barra de 6 m na linha "METRO".
+    assert _marcados([_item(50, "2"), _item(75, "25"), _item(100, "40")]) == [75, 100]
+
+
+def test_serie_mista_legitima_de_assentamento_nao_marca() -> None:
+    # DN menor um pouco mais caro (2,9×, abaixo de QUEDA_MAXIMA) e o resto na escala.
+    itens = [_item(50, "29"), _item(100, "10"), _item(150, "18"), _item(200, "30")]
+    assert _marcados(itens) == []
+
+
+def test_limites_sao_estritos() -> None:
+    # 3 × (75 ÷ 50)² = 6,75: no limite fica; um centavo acima, não.
+    assert _marcados([_item(50, "10"), _item(75, "67.50")]) == []
+    assert _marcados([_item(50, "10"), _item(75, "67.51")]) == [75]
+    assert _marcados([_item(50, "30"), _item(75, "10")]) == []
+    assert _marcados([_item(50, "30.01"), _item(75, "10")]) == [50]
+
+
+def test_sem_preco_com_bdi_nao_compara_nem_marca() -> None:
+    so_sem = replace(_item(75, "1"), preco_com_bdi=None, preco_sem_bdi=Decimal("500"))
+    itens = marcar_fora_de_escala([_item(50, "10"), so_sem])
+    assert not any(i.suspeito for i in itens)
+
+
+def test_preco_ou_fator_zero_nao_entram() -> None:
+    itens = [_item(50, "0"), _item(75, "200", fator="0"), _item(100, "40")]
+    assert _marcados(itens) == []
+
+
+def test_escopo_faixa_e_unidade_separam_os_grupos() -> None:
+    base = _item(50, "12.32")
+    caro = _item(75, "207.74")
+    for campo, valor in (
+        ("escopo", "assentamento"),
+        ("faixa", "1,5 a 3 m"),
+        ("unidade_canonica", "un"),
+    ):
+        assert _marcados([base, replace(caro, **{campo: valor})]) == [], campo
+
+
+def test_linha_ja_suspeita_nao_serve_de_regua() -> None:
+    barata = replace(_item(50, "2"), suspeito=True)
+    itens = marcar_fora_de_escala([barata, _item(75, "25")])
+    assert [i.suspeito for i in itens] == [True, False]
+
+
+def test_ordem_nao_muda_o_resultado() -> None:
+    itens = [_item(50, "2"), _item(75, "25"), _item(100, "40"), _item(150, "80"), _item(200, "130")]
+    esperado = {i.chave_origem for i in marcar_fora_de_escala(itens) if i.suspeito}
+    assert esperado == {"x#pvc50"}
+    for ordem in permutations(itens):
+        assert {
+            i.chave_origem for i in marcar_fora_de_escala(list(ordem)) if i.suspeito
+        } == esperado
+
+
+def test_so_a_marca_muda() -> None:
+    itens = [_item(50, "12.32"), _item(75, "207.74"), _item(100, "274.90")]
+    marcados = marcar_fora_de_escala(itens)
+    assert marcados == [
+        itens[0],
+        replace(itens[1], suspeito=True),
+        replace(itens[2], suspeito=True),
+    ]

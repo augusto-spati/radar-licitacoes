@@ -15,10 +15,12 @@ compõe com os documentos e a IA é a CLI.
   processado por último (a rodada vai do mais antigo ao mais novo); o anterior vira
   `republicada`.
 - Preço fora da escala do DN: na mesma planilha e no mesmo grupo (serviço, material, escopo,
-  faixa, unidade canônica), a linha é `suspeito` se custa mais que
-  `FOLGA_ESCALA_DN × (DN ÷ DN menor)²` vezes uma linha de DN menor, ou mais que `QUEDA_MAXIMA`
-  vezes uma de DN maior. É o preço da barra de 6 m numa linha "METRO" (SAAE Três Pontas: DN 50
-  a R$ 12,32/m, DN 75 a R$ 207,74/m). A linha é gravada como veio; só não entra na mediana.
+  faixa, unidade canônica), com o preço da consulta (com BDI ÷ fator), duas linhas estão em
+  conflito se a de DN maior custa mais que `FOLGA_ESCALA_DN × (DN ÷ DN menor)²` vezes a menor,
+  ou a de DN menor mais que `QUEDA_MAXIMA` vezes a maior. Sai como `suspeito` a linha em
+  conflito com a maioria das outras (e com `CONSENSO_MINIMO`+ delas); sem maioria, a mais cara
+  do par: a falha conhecida é o preço da barra de 6 m numa linha "METRO" (SAAE Três Pontas:
+  DN 50 a R$ 12,32/m, DN 75 a R$ 207,74/m). A linha é gravada como veio; só sai da mediana.
 """
 
 import logging
@@ -55,8 +57,11 @@ ESPERA_FALHA = timedelta(days=7)
 # O custo do tubo acompanha a massa (~DN²): 3× isso a partir de um DN menor não é plausível.
 FOLGA_ESCALA_DN = Decimal(3)
 EXPOENTE_DN = 2
-# Nem um DN menor custar 3× um DN maior do mesmo grupo.
+# DN menor mais caro que um maior só por pouco (assentamento: o menor sai ~1,5× o maior, no
+# máximo). A barra de 6 m num DN menor dá 6 ÷ (≤ 2×, o DN seguinte) ≥ 3× o maior: 3 separa.
 QUEDA_MAXIMA = Decimal(3)
+# Conflitos com pelo menos 3 outras linhas, e com a maioria delas, condenam a linha.
+CONSENSO_MINIMO = 3
 _FINAIS = ("extraida", "sem_planilha", "republicada", "ia_invalida")
 
 type _Assinatura = tuple[str | None, Decimal | None, Decimal | None]
@@ -152,17 +157,18 @@ def itens_da_planilha(
 
 
 type _ChaveEscala = tuple[str, str | None, str | None, str | None, str]
+type _Linha = tuple[int, int, Decimal]  # (índice em `itens`, DN, preço canônico)
 
 
 def _preco_canonico(item: PrecoItemNovo) -> Decimal | None:
-    """Preço na unidade canônica, como a consulta compara (com BDI; senão o sem BDI)."""
-    preco = item.preco_com_bdi if item.preco_com_bdi is not None else item.preco_sem_bdi
-    if preco is None or preco <= 0 or item.fator_unidade <= 0:
+    """Exatamente o preço que a consulta compara: com BDI ÷ fator. Sem ele, não entra."""
+    if item.preco_com_bdi is None or item.preco_com_bdi <= 0 or item.fator_unidade <= 0:
         return None
-    return preco / item.fator_unidade
+    return item.preco_com_bdi / item.fator_unidade
 
 
-def _fora_de_escala(dn: int, preco: Decimal, outro_dn: int, outro_preco: Decimal) -> bool:
+def _inflada(dn: int, preco: Decimal, outro_dn: int, outro_preco: Decimal) -> bool:
+    """A linha (dn, preco) está cara demais para a escala do DN diante da outra."""
     if outro_dn < dn:
         limite = FOLGA_ESCALA_DN * (Decimal(dn) / Decimal(outro_dn)) ** EXPOENTE_DN
         return preco > limite * outro_preco
@@ -171,25 +177,62 @@ def _fora_de_escala(dn: int, preco: Decimal, outro_dn: int, outro_preco: Decimal
     return False  # mesmo DN: não há régua para dizer qual dos dois está errado
 
 
+def _em_conflito(a: _Linha, b: _Linha) -> bool:
+    return _inflada(a[1], a[2], b[1], b[2]) or _inflada(b[1], b[2], a[1], a[2])
+
+
+def _fora_da_escala_do_grupo(linhas: list[_Linha]) -> set[int]:
+    """Índices suspeitos de um grupo: primeiro o consenso, depois a assimetria.
+
+    1. Consenso: a linha em conflito com a maioria das outras, e com pelo menos
+       `CONSENSO_MINIMO` delas, sai (a de mais conflitos primeiro, uma por vez). Assim uma
+       linha errada, barata ou cara, não condena as certas.
+    2. Sobrou conflito sem maioria (grupo de 2 ou 3 DNs, como Três Pontas): vale a falha
+       conhecida, o preço inflado (barra de 6 m na linha "METRO"); sai a linha cara do par.
+    """
+    restantes = list(linhas)
+    suspeitos: set[int] = set()
+    while True:
+        conflitos = {
+            a[0]: sum(1 for b in restantes if b is not a and _em_conflito(a, b)) for a in restantes
+        }
+        maioria = [
+            a
+            for a in restantes
+            if conflitos[a[0]] >= CONSENSO_MINIMO and 2 * conflitos[a[0]] > len(restantes) - 1
+        ]
+        if not maioria:
+            break
+        maximo = max(conflitos[a[0]] for a in maioria)
+        pior = [a for a in maioria if conflitos[a[0]] == maximo]
+        if len(pior) > 1:
+            break  # empate: o consenso não decide, fica para a assimetria
+        suspeitos.add(pior[0][0])
+        restantes.remove(pior[0])
+    suspeitos.update(
+        a[0]
+        for a in restantes
+        if any(b is not a and _inflada(a[1], a[2], b[1], b[2]) for b in restantes)
+    )
+    return suspeitos
+
+
 def marcar_fora_de_escala(itens: Sequence[PrecoItemNovo]) -> list[PrecoItemNovo]:
     """Marca `suspeito` o preço fora da escala do DN no seu grupo (ver docstring do módulo).
 
-    Só liga a marca, nunca a desliga; grupo com um DN só não tem com o que comparar.
-    `observacao` não muda: é marca semântica ("adutora"), não texto livre.
+    Só liga a marca, nunca a desliga; linha já suspeita não serve de régua; grupo com um DN só
+    não tem com o que comparar. `observacao` não muda: é marca semântica ("adutora").
     """
-    grupos: dict[_ChaveEscala, list[tuple[int, int, Decimal]]] = {}
+    grupos: dict[_ChaveEscala, list[_Linha]] = {}
     for indice, item in enumerate(itens):
         preco = _preco_canonico(item)
-        if item.dn is None or item.dn <= 0 or preco is None:
+        if item.suspeito or item.dn is None or item.dn <= 0 or preco is None:
             continue
         chave = (item.servico, item.material, item.escopo, item.faixa, item.unidade_canonica)
         grupos.setdefault(chave, []).append((indice, item.dn, preco))
-    marcar = {
-        indice
-        for linhas in grupos.values()
-        for indice, dn, preco in linhas
-        if any(_fora_de_escala(dn, preco, outro_dn, outro) for _, outro_dn, outro in linhas)
-    }
+    marcar: set[int] = set()
+    for linhas in grupos.values():
+        marcar |= _fora_da_escala_do_grupo(linhas)
     return [replace(item, suspeito=True) if i in marcar else item for i, item in enumerate(itens)]
 
 
