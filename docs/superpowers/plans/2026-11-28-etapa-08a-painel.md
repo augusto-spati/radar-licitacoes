@@ -77,6 +77,7 @@ def test_backfill_primeiro_visto_em_nunca_parece_novo(banco_migracao):
     assert antigo == datetime(2025, 1, 10, 9, 0, tzinfo=ZoneInfo("America/Sao_Paulo"))
     assert not colunas["primeiro_visto_em"]["nullable"]
 
+
 def test_downgrade_0015_volta_e_sobe_de_novo(banco_migracao):
     # upgrade head; downgrade 0014
     assert "primeiro_visto_em" not in colunas_edital
@@ -84,15 +85,21 @@ def test_downgrade_0015_volta_e_sobe_de_novo(banco_migracao):
     assert "ix_analise_edital_ultima" not in indices_analise
     # upgrade head sem erro
 
-def test_edital_novo_ganha_primeiro_visto_em(sessao): ...          # não nulo após registrar()
+
+def test_edital_novo_ganha_primeiro_visto_em(sessao): ...  # não nulo após registrar()
 def test_upsert_com_conteudo_novo_nao_muda_primeiro_visto_em(sessao):
     # registrar_normalizados; UPDATE primeiro_visto_em = '2026-10-01 12:00-03'; de novo com objeto diferente
     assert primeiro_visto_em == datetime(2026, 10, 1, 12, 0, tzinfo=FUSO)
-    assert edital.objeto == "objeto novo"                         # o upsert aconteceu
-def test_versao_mais_nova_do_pncp_nao_muda_primeiro_visto_em(sessao): ...   # registrar com dataAtualizacaoGlobal maior
-def test_reconciliar_retrato_nao_muda_primeiro_visto_em(sessao): ...        # encerrado, mesma data
+    assert edital.objeto == "objeto novo"  # o upsert aconteceu
+
+
+def test_versao_mais_nova_do_pncp_nao_muda_primeiro_visto_em(
+    sessao,
+): ...  # registrar com dataAtualizacaoGlobal maior
+def test_reconciliar_retrato_nao_muda_primeiro_visto_em(sessao): ...  # encerrado, mesma data
 def test_perfil_resumo_so_tem_uma_linha(sessao):
-    with pytest.raises(IntegrityError): ...                         # INSERT com id = 2
+    with pytest.raises(IntegrityError):
+        ...  # INSERT com id = 2
 ```
 Em `tests/unit/test_cadeia_migracoes.py`: renomear para `test_cadeia_linear_ate_o_painel`, com `script.get_heads() == ["0015"]` e `script.get_revision("0015").down_revision == "0014"` (mantém as asserções antigas).
 
@@ -192,29 +199,49 @@ Expected: PASS; contratos do import-linter mantidos.
 
 ```python
 # tests/unit/test_comparacao.py
-def test_perfil_de_exemplo_carrega():          # acrescentar
+def test_perfil_de_exemplo_carrega():  # acrescentar
     assert perfil.exemplo is True and perfil.uf_sede is None and perfil.valor_maximo_obra is None
+
+
 def test_perfil_campos_da_sede_e_capacidade(tmp_path):
     # exemplo = false, uf_sede = "SP", valor_maximo_obra = 2500000.5
-    assert (perfil.exemplo, perfil.uf_sede, perfil.valor_maximo_obra) == (False, "SP", Decimal("2500000.5"))
+    assert (perfil.exemplo, perfil.uf_sede, perfil.valor_maximo_obra) == (
+        False,
+        "SP",
+        Decimal("2500000.5"),
+    )
+
+
 def test_uf_sede_invalida_e_erro(tmp_path):
-    with pytest.raises(ValidationError): ...   # uf_sede = "Paraná"
+    with pytest.raises(ValidationError):
+        ...  # uf_sede = "Paraná"
+
+
 def test_campo_desconhecido_no_perfil_avisa(tmp_path, caplog):
     assert any(r.message == "perfil_campo_desconhecido" for r in caplog.records)
 
+
 # tests/integration/test_perfil_resumo.py
-def test_sem_linha_le_none(sessao): assert ler_perfil_resumo(sessao) is None
+def test_sem_linha_le_none(sessao):
+    assert ler_perfil_resumo(sessao) is None
+
+
 def test_gravar_cria_e_depois_atualiza_a_mesma_linha(sessao):
     # grava perfil exemplo, depois perfil com exemplo=False, uf_sede="SP"
     assert sessao.scalar(select(func.count()).select_from(PerfilResumo)) == 1
     assert (lido.exemplo, lido.uf_sede) == (False, "SP")
 
+
 # tests/integration/test_cli_analisar.py
 def test_analisar_grava_o_resumo_do_perfil(rede, config_filtro):
-    assert lido is not None and lido.exemplo is True          # config/perfil.toml
+    assert lido is not None and lido.exemplo is True  # config/perfil.toml
+
+
 def test_recomparar_grava_o_resumo_do_perfil(rede, tmp_path, monkeypatch):
     # RADAR_CONFIG_PERFIL -> perfil fictício com exemplo = false, uf_sede = "SP", valor_maximo_obra = 3000000
     assert (lido.exemplo, lido.uf_sede, lido.valor_maximo_obra) == (False, "SP", Decimal("3000000"))
+
+
 def test_fila_da_analise_vai_pelo_prazo_mais_curto(rede, config_filtro):
     # dois PNCP abertos: encerra 2026-12-20 e 2026-12-01; --limite 1 --fontes pncp
     assert _analisados(fabrica) == {"<o de 01/12>"}
@@ -249,16 +276,25 @@ Expected: PASS.
 - [ ] **Step 1: Escrever os testes que falham** (reusa `_retrato`, `_janela`)
 
 ```python
-def test_fonte_fresca_e_ok_nao_aparece(sessao): assert falhas_de_coleta(sessao, AGORA, ["sanepar"]) == []
+def test_fonte_fresca_e_ok_nao_aparece(sessao):
+    assert falhas_de_coleta(sessao, AGORA, ["sanepar"]) == []
+
+
 def test_fonte_parada_ha_mais_de_36h_e_atrasada(sessao):
     # retrato concluído e processado há 37 h
     assert falhas == [FalhaColeta("sanepar", "atrasado", AGORA - timedelta(hours=37))]
+
+
 def test_36h_exatas_nao_e_atrasada(sessao): ...
 def test_fonte_que_nunca_rodou_e_atrasada_sem_data(sessao):
     assert falhas == [FalhaColeta("compesa", "atrasado", None)]
+
+
 def test_ultima_leitura_em_falha_com_dado_fresco(sessao):
     # concluído há 2 h, falha há 1 h
     assert falhas == [FalhaColeta("sanepar", "falha", AGORA - timedelta(hours=2))]
+
+
 def test_pncp_com_ultima_janela_em_falha(sessao): ...
 ```
 
@@ -291,18 +327,28 @@ def test_dias_ate_encerrar_em_calendario_de_brasilia():
     assert dias_ate_encerrar(datetime(2026, 12, 16, 23, 59), AGORA) == 20
     assert dias_ate_encerrar(datetime(2026, 12, 17, 0, 0), AGORA) == 21
     assert dias_ate_encerrar(datetime(2026, 11, 26, 18, 0), AGORA) == 0
+
+
 def test_eh_novo_ate_3_dias_inclusive():
-    assert eh_novo(AGORA - timedelta(days=3), AGORA) and not eh_novo(AGORA - timedelta(days=3, minutes=1), AGORA)
+    assert eh_novo(AGORA - timedelta(days=3), AGORA) and not eh_novo(
+        AGORA - timedelta(days=3, minutes=1), AGORA
+    )
     assert not eh_novo(None, AGORA)
+
+
 def test_decidir_ate_20_dias_e_mais_adiante_depois(): ...
 def test_inapto_fora_das_secoes_mas_conta_em_abertos():
     assert (painel.decidir, painel.abertos) == (1, 2)
+
+
 def test_sem_considerar_veredito_inapto_entra_em_decidir(): ...
-def test_cada_edital_numa_secao_so(): ...      # ids das seções sem repetição, soma == abertos sem inaptos
+def test_cada_edital_numa_secao_so(): ...  # ids das seções sem repetição, soma == abertos sem inaptos
 def test_secao_cortada_no_limite_mas_total_conta_todos():
     secao = separar_painel(cinco_em_decidir, AGORA, True, limite_secao=2).secoes[0]
     assert (secao.total, len(secao.editais)) == (5, 2)
-def test_novos_contam_a_base_inteira(): ...    # inclui inapto e mais adiante
+
+
+def test_novos_contam_a_base_inteira(): ...  # inclui inapto e mais adiante
 ```
 
 - [ ] **Step 2: Rodar e ver falhar** — Run: `uv run pytest tests/unit/test_painel.py -v` — Expected: FAIL.
@@ -332,26 +378,47 @@ def test_novos_contam_a_base_inteira(): ...    # inclui inapto e mais adiante
 def test_resumo_traz_veredito_motivo_e_primeiro_visto_em(cliente, sessao):
     assert e["veredito"] == "verificar" and e["motivo_verificar"] == "atestados"
     assert e["primeiro_visto_em"].endswith("-03:00")
+
+
 def test_lista_filtra_encerra_em_dias_novos_e_veredito(cliente, sessao): ...
-@pytest.mark.parametrize("params", [{"encerra_em_dias": "366"}, {"encerra_em_dias": "-1"}, {"veredito": "talvez"}])
-def test_recorte_invalido_422(cliente, params): assert cliente.get("/api/editais", params=params).status_code == 422
+@pytest.mark.parametrize(
+    "params", [{"encerra_em_dias": "366"}, {"encerra_em_dias": "-1"}, {"veredito": "talvez"}]
+)
+def test_recorte_invalido_422(cliente, params):
+    assert cliente.get("/api/editais", params=params).status_code == 422
+
+
 def test_painel_separa_e_conta_da_mesma_base(cliente, sessao):
     # 3 em até 20 dias (1 novo), 2 depois
     assert corpo["contadores"] == {"decidir": 3, "novos": 1, "abertos": 5}
     assert [s["chave"] for s in corpo["secoes"]] == ["decidir", "mais_adiante"]
+
+
 def test_painel_contador_decidir_bate_com_a_lista_filtrada(cliente, sessao):
-    lista = cliente.get("/api/editais", params={"encerra_em_dias": 20, "veredito": ["apto", "verificar", "sem_analise"]})
+    lista = cliente.get(
+        "/api/editais",
+        params={"encerra_em_dias": 20, "veredito": ["apto", "verificar", "sem_analise"]},
+    )
     assert len(lista.json()["editais"]) == painel["contadores"]["decidir"]
+
+
 def test_painel_sem_perfil_resumo_e_exemplo_e_ignora_veredito(cliente, sessao):
     assert corpo["perfil_exemplo"] is True and inapto_id in ids_decidir
+
+
 def test_painel_com_perfil_real_tira_inapto_de_decidir(cliente, sessao):
     # gravar_perfil_resumo com Perfil fictício exemplo=False
     assert corpo["perfil_exemplo"] is False and inapto_id not in ids_de_todas_as_secoes
+
+
 def test_painel_lista_fonte_atrasada_sem_texto_de_erro(cliente, sessao):
     # retrato da sanepar em falha com erro="http://interno/segredo"
     assert {"fonte": "sanepar", "motivo": "atrasado", "dados_de": None} in corpo["coleta"]
     assert "interno" not in resposta.text
-def test_lista_traz_perfil_exemplo(cliente): assert cliente.get("/api/editais").json()["perfil_exemplo"] is True
+
+
+def test_lista_traz_perfil_exemplo(cliente):
+    assert cliente.get("/api/editais").json()["perfil_exemplo"] is True
 ```
 Em `tests/unit/test_modelos_api.py`: o builder de `EditalDetalhe` recebe os três campos novos; `test_resumo_out_traz_primeiro_visto_em_com_fuso`.
 
