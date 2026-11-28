@@ -18,9 +18,12 @@ from radar.editais.externos import (
     vencedor_tcepe,
 )
 from radar.editais.filtro import (
+    DIAS_NOVO,
     Criterios,
     EditalDetalhe,
     EditalResumo,
+    FiltroVeredito,
+    Recorte,
     bruto_do_edital,
     carregar_criterios,
     datas_sessao_dae_jundiai,
@@ -100,7 +103,10 @@ __all__ = [
     "interpretar_itens",
     "resumir",
     "bruto_do_edital",
+    "DIAS_NOVO",
     "Criterios",
+    "FiltroVeredito",
+    "Recorte",
     "EditalDetalhe",
     "EditalResumo",
     "Fonte",
