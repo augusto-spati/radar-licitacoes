@@ -4,6 +4,7 @@ import re
 from dataclasses import replace
 from datetime import date
 from decimal import Decimal
+from itertools import permutations
 from pathlib import Path
 
 from radar.precos import (
@@ -12,6 +13,10 @@ from radar.precos import (
     itens_da_planilha,
     ler_planilha,
     linhas_da_ia,
+)
+from radar.precos.modelos import PrecoItemNovo
+from radar.precos.planilhas import (
+    marcar_fora_de_escala,
 )
 
 DADOS = Path(__file__).resolve().parents[1] / "dados" / "planilhas"
@@ -258,3 +263,205 @@ def test_continuacao_nao_decide_agua_ou_esgoto_no_edital_dos_dois() -> None:
     )
     (linha,) = ler_planilha([pagina])
     assert itens_da_planilha(MATERIAIS_HIDRAULICOS, SHA, [linha]) == []
+
+
+# --- Preço fora da escala do DN (barra de 6 m numa linha "METRO") ---
+
+TRES_PONTAS = replace(
+    RIBEIRAO,
+    id_pncp="00000000000000-1-000001/2026",
+    municipio="Três Pontas",
+    orgao_nome="SAAE Três Pontas",
+    uf="MG",
+    objeto="Ampliação da rede de distribuição de água",
+)
+
+
+def _tubo(item: str, descricao: str, com: str) -> LinhaPlanilha:
+    return replace(_linha(item, com), descricao=descricao, total=Decimal(com) * 10)
+
+
+def _suspeitos(itens: list[PrecoItemNovo]) -> dict[tuple[str | None, int | None], bool]:
+    return {(i.material, i.dn): i.suspeito for i in itens}
+
+
+def test_tres_pontas_preco_da_barra_no_metro_e_suspeito() -> None:
+    descricao = "Tubo PVC DN {} fornecimento e assentamento para rede de água"
+    linhas = [
+        _tubo("1.1", descricao.format(50), "12.32"),
+        _tubo("1.2", descricao.format(75), "207.74"),
+        _tubo("1.3", descricao.format(100), "274.90"),
+    ]
+    itens = itens_da_planilha(TRES_PONTAS, SHA, linhas)
+    assert len({(i.servico, i.material, i.escopo, i.unidade_canonica) for i in itens}) == 1
+    assert _suspeitos(itens) == {("pvc", 50): False, ("pvc", 75): True, ("pvc", 100): True}
+    # A linha fica como veio; só a marca muda.
+    assert [i.preco_com_bdi for i in itens] == [
+        Decimal("12.32"),
+        Decimal("207.74"),
+        Decimal("274.90"),
+    ]
+    assert all(i.observacao is None for i in itens)
+
+
+def _item(
+    dn: int | None, preco: str, material: str | None = "pvc", fator: str = "1"
+) -> PrecoItemNovo:
+    return PrecoItemNovo(
+        origem="pncp_planilha",
+        chave_origem=f"x#{material}{dn}",
+        uf="MG",
+        municipio=None,
+        orgao_nome="SAAE",
+        orgao_cnpj=None,
+        processo="x",
+        data=None,
+        data_base=None,
+        descricao="tubo",
+        unidade="m",
+        quantidade=Decimal(10),
+        preco_sem_bdi=None,
+        bdi=None,
+        preco_com_bdi=Decimal(preco),
+        bdi_desconhecido=True,
+        preco_contratado_com_bdi=None,
+        fonte_referencia=None,
+        codigo_referencia=None,
+        servico="rede_agua",
+        material=material,
+        dn=dn,
+        escopo="completo",
+        faixa=None,
+        unidade_canonica="m",
+        fator_unidade=Decimal(fator),
+        suspeito=False,
+    )
+
+
+def test_serie_crescente_normal_nao_marca_nada() -> None:
+    itens = [
+        _item(50, "25"),
+        _item(75, "40"),
+        _item(100, "60"),
+        _item(150, "110"),
+        _item(300, "420"),
+    ]
+    assert not any(i.suspeito for i in marcar_fora_de_escala(itens))
+
+
+def test_economia_de_escala_e_mao_de_obra_nao_marcam() -> None:
+    # Assentamento: cresce bem menos que DN²; DN maior pode até sair um pouco mais barato.
+    itens = [_item(50, "8"), _item(100, "7"), _item(400, "40")]
+    assert not any(i.suspeito for i in marcar_fora_de_escala(itens))
+
+
+def test_uma_linha_so_nao_marca() -> None:
+    assert not marcar_fora_de_escala([_item(75, "207.74")])[0].suspeito
+
+
+def test_materiais_diferentes_nao_se_comparam() -> None:
+    itens = marcar_fora_de_escala([_item(50, "12.32", "pvc"), _item(75, "207.74", "fofo")])
+    assert not any(i.suspeito for i in itens)
+
+
+def test_dn_menor_muito_mais_caro_que_o_maior_e_suspeito() -> None:
+    itens = marcar_fora_de_escala([_item(50, "74"), _item(75, "20"), _item(100, "28")])
+    assert _suspeitos(itens) == {("pvc", 50): True, ("pvc", 75): False, ("pvc", 100): False}
+
+
+def test_mesmo_dn_com_precos_diferentes_fica_como_esta() -> None:
+    itens = marcar_fora_de_escala([_item(75, "20"), _item(75, "120")])
+    assert not any(i.suspeito for i in itens)
+
+
+def test_preco_comparado_na_unidade_canonica() -> None:
+    # Preço por barra de 6 m com fator 6: R$ 120/barra = R$ 20/m, na escala do DN 50.
+    itens = marcar_fora_de_escala([_item(50, "12"), _item(75, "120", fator="6")])
+    assert not any(i.suspeito for i in itens)
+
+
+def test_sem_dn_nao_entra() -> None:
+    itens = marcar_fora_de_escala([_item(None, "500"), _item(50, "10")])
+    assert not any(i.suspeito for i in itens)
+
+
+def _marcados(itens: list[PrecoItemNovo]) -> list[int | None]:
+    return sorted((i.dn for i in marcar_fora_de_escala(itens) if i.suspeito), key=lambda d: d or 0)
+
+
+def test_barato_errado_e_condenado_pela_maioria_e_nao_condena_os_certos() -> None:
+    itens = [_item(50, "2"), _item(75, "25"), _item(100, "40"), _item(150, "80")]
+    assert _marcados(itens) == [50]
+
+
+def test_caro_errado_no_meio_da_serie_sai_pela_maioria() -> None:
+    itens = [_item(50, "12"), _item(75, "207"), _item(100, "25"), _item(150, "45")]
+    assert _marcados(itens) == [75]
+
+
+def test_tres_dns_sem_maioria_vale_a_assimetria_do_preco_inflado() -> None:
+    # Limite conhecido: com 3 DNs, um barato errado é igual a Três Pontas (dois inflados).
+    # Sem maioria, sai a linha cara: a falha conhecida é a barra de 6 m na linha "METRO".
+    assert _marcados([_item(50, "2"), _item(75, "25"), _item(100, "40")]) == [75, 100]
+
+
+def test_serie_mista_legitima_de_assentamento_nao_marca() -> None:
+    # DN menor um pouco mais caro (2,9×, abaixo de QUEDA_MAXIMA) e o resto na escala.
+    itens = [_item(50, "29"), _item(100, "10"), _item(150, "18"), _item(200, "30")]
+    assert _marcados(itens) == []
+
+
+def test_limites_sao_estritos() -> None:
+    # 3 × (75 ÷ 50)² = 6,75: no limite fica; um centavo acima, não.
+    assert _marcados([_item(50, "10"), _item(75, "67.50")]) == []
+    assert _marcados([_item(50, "10"), _item(75, "67.51")]) == [75]
+    assert _marcados([_item(50, "30"), _item(75, "10")]) == []
+    assert _marcados([_item(50, "30.01"), _item(75, "10")]) == [50]
+
+
+def test_sem_preco_com_bdi_nao_compara_nem_marca() -> None:
+    so_sem = replace(_item(75, "1"), preco_com_bdi=None, preco_sem_bdi=Decimal("500"))
+    itens = marcar_fora_de_escala([_item(50, "10"), so_sem])
+    assert not any(i.suspeito for i in itens)
+
+
+def test_preco_ou_fator_zero_nao_entram() -> None:
+    itens = [_item(50, "0"), _item(75, "200", fator="0"), _item(100, "40")]
+    assert _marcados(itens) == []
+
+
+def test_escopo_faixa_e_unidade_separam_os_grupos() -> None:
+    base = _item(50, "12.32")
+    caro = _item(75, "207.74")
+    for campo, valor in (
+        ("escopo", "assentamento"),
+        ("faixa", "1,5 a 3 m"),
+        ("unidade_canonica", "un"),
+    ):
+        assert _marcados([base, replace(caro, **{campo: valor})]) == [], campo
+
+
+def test_linha_ja_suspeita_nao_serve_de_regua() -> None:
+    barata = replace(_item(50, "2"), suspeito=True)
+    itens = marcar_fora_de_escala([barata, _item(75, "25")])
+    assert [i.suspeito for i in itens] == [True, False]
+
+
+def test_ordem_nao_muda_o_resultado() -> None:
+    itens = [_item(50, "2"), _item(75, "25"), _item(100, "40"), _item(150, "80"), _item(200, "130")]
+    esperado = {i.chave_origem for i in marcar_fora_de_escala(itens) if i.suspeito}
+    assert esperado == {"x#pvc50"}
+    for ordem in permutations(itens):
+        assert {
+            i.chave_origem for i in marcar_fora_de_escala(list(ordem)) if i.suspeito
+        } == esperado
+
+
+def test_so_a_marca_muda() -> None:
+    itens = [_item(50, "12.32"), _item(75, "207.74"), _item(100, "274.90")]
+    marcados = marcar_fora_de_escala(itens)
+    assert marcados == [
+        itens[0],
+        replace(itens[1], suspeito=True),
+        replace(itens[2], suspeito=True),
+    ]
