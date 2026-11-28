@@ -81,6 +81,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/painel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Painel
+         * @description Home: Decidir e Mais adiante; contadores da base inteira, nunca de lista cortada.
+         */
+        get: operations["painel_api_painel_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/precos/{id_publico}": {
         parameters: {
             query?: never;
@@ -146,6 +166,15 @@ export interface components {
             /** Versao Prompt */
             versao_prompt: string;
         };
+        /** ContadoresOut */
+        ContadoresOut: {
+            /** Abertos */
+            abertos: number;
+            /** Decidir */
+            decidir: number;
+            /** Novos */
+            novos: number;
+        };
         /** ContratacaoPassadaOut */
         ContratacaoPassadaOut: {
             /** Data */
@@ -207,6 +236,8 @@ export interface components {
             modalidade_id: number | null;
             /** Modalidade Nome */
             modalidade_nome: string;
+            /** Motivo Verificar */
+            motivo_verificar: string | null;
             /** Municipio */
             municipio: string | null;
             /** Objeto */
@@ -215,6 +246,8 @@ export interface components {
             orgao_cnpj: string | null;
             /** Orgao Nome */
             orgao_nome: string;
+            /** Primeiro Visto Em */
+            primeiro_visto_em: string | null;
             /** Situacao Nome */
             situacao_nome: string;
             /**
@@ -226,6 +259,8 @@ export interface components {
             uf: string | null;
             /** Valor Estimado */
             valor_estimado: string | null;
+            /** Veredito */
+            veredito: ("apto" | "inapto" | "verificar") | null;
         };
         /** EditalResumoOut */
         EditalResumoOut: {
@@ -242,17 +277,39 @@ export interface components {
             modalidade_id: number | null;
             /** Modalidade Nome */
             modalidade_nome: string;
+            /** Motivo Verificar */
+            motivo_verificar: string | null;
             /** Municipio */
             municipio: string | null;
             /** Objeto */
             objeto: string;
             /** Orgao Nome */
             orgao_nome: string;
+            /** Primeiro Visto Em */
+            primeiro_visto_em: string | null;
             /** Uf */
             uf: string | null;
             /** Valor Estimado */
             valor_estimado: string | null;
+            /** Veredito */
+            veredito: ("apto" | "inapto" | "verificar") | null;
         };
+        /** FalhaColetaOut */
+        FalhaColetaOut: {
+            /** Dados De */
+            dados_de: string | null;
+            fonte: components["schemas"]["Fonte"];
+            /**
+             * Motivo
+             * @enum {string}
+             */
+            motivo: "atrasado" | "falha";
+        };
+        /**
+         * FiltroVeredito
+         * @enum {string}
+         */
+        FiltroVeredito: "apto" | "verificar" | "inapto" | "sem_analise";
         /**
          * Fonte
          * @description Fonte do edital. Vira o enum `Fonte` do OpenAPI (uma união no TypeScript).
@@ -318,6 +375,20 @@ export interface components {
             atualizado_em: string | null;
             /** Editais */
             editais: components["schemas"]["EditalResumoOut"][];
+            /** Perfil Exemplo */
+            perfil_exemplo: boolean;
+        };
+        /** PainelOut */
+        PainelOut: {
+            /** Atualizado Em */
+            atualizado_em: string | null;
+            /** Coleta */
+            coleta: components["schemas"]["FalhaColetaOut"][];
+            contadores: components["schemas"]["ContadoresOut"];
+            /** Perfil Exemplo */
+            perfil_exemplo: boolean;
+            /** Secoes */
+            secoes: components["schemas"]["SecaoPainelOut"][];
         };
         /** PrecosOut */
         PrecosOut: {
@@ -392,6 +463,18 @@ export interface components {
             poucos_casos: boolean;
             /** Uf */
             uf: string | null;
+        };
+        /** SecaoPainelOut */
+        SecaoPainelOut: {
+            /**
+             * Chave
+             * @enum {string}
+             */
+            chave: "decidir" | "mais_adiante";
+            /** Editais */
+            editais: components["schemas"]["EditalResumoOut"][];
+            /** Total */
+            total: number;
         };
         /** StatusOut */
         StatusOut: {
@@ -474,6 +557,9 @@ export interface operations {
                 uf?: components["schemas"]["UF"][] | null;
                 todos?: boolean;
                 limite?: number;
+                encerra_em_dias?: number | null;
+                novos?: boolean;
+                veredito?: components["schemas"]["FiltroVeredito"][] | null;
             };
             header?: never;
             path?: never;
@@ -559,6 +645,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    painel_api_painel_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PainelOut"];
                 };
             };
         };

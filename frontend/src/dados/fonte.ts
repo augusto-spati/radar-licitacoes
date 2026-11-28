@@ -1,8 +1,28 @@
-import type {Analise, EditalDetalhe, Historico, Linha, Lista, Precos, Status, UF} from './tipos';
+import type {
+  Analise,
+  EditalDetalhe,
+  FiltroVeredito,
+  Historico,
+  Linha,
+  Lista,
+  Painel,
+  Precos,
+  Status,
+  UF,
+} from './tipos';
 import {fonteApi} from './fonteApi';
 import {fonteExemplo} from './fonteExemplo';
 
-export type Filtros = {linha?: Linha; ufs?: UF[]; todos?: boolean};
+export type Filtros = {
+  linha?: Linha;
+  ufs?: UF[];
+  todos?: boolean;
+  /** Encerra em até N dias de calendário (Brasília), contando hoje. */
+  encerraEmDias?: number;
+  /** Só os vistos pela primeira vez nos últimos dias. */
+  novos?: boolean;
+  vereditos?: FiltroVeredito[];
+};
 
 export interface Fonte {
   listar(f: Filtros): Promise<Lista>;
@@ -14,6 +34,8 @@ export interface Fonte {
   /** Preços de referência das linhas do edital (lista vazia sem casos); null se o edital não existe. */
   precos(id: string): Promise<Precos | null>;
   status(): Promise<Status>;
+  /** Home: Decidir e Mais adiante, contadores da base e falhas da coleta. */
+  painel(): Promise<Painel>;
 }
 
 // VITE_FONTE='api' usa a API; qualquer outro valor (ou nenhum) usa o exemplo.

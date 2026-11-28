@@ -4,7 +4,7 @@ import {List, ListItem} from '@astryxdesign/core/List';
 import {VStack} from '@astryxdesign/core/Stack';
 import {Heading, Text} from '@astryxdesign/core/Text';
 import {Token} from '@astryxdesign/core/Token';
-import {formatarDataHora, linkHttp} from '../dados/formatos';
+import {formatarDataHora, linkHttp, nomeCampo} from '../dados/formatos';
 import type {Analise, DocumentoAnalise, ItemAnalise} from '../dados/tipos';
 import type {Carga} from '../dados/useCarga';
 import {Carregando, ErroAoCarregar} from './EstadoCarga';
@@ -26,21 +26,6 @@ const SITUACOES: Record<Situacao, {rotulo: string; cor: CorToken}> = {
   informativo: {rotulo: 'Informativo', cor: 'gray'},
 };
 
-// Campos da comparação (src/radar/analise/comparacao.py). Campo novo sem nome
-// aqui aparece como veio da API.
-const CAMPOS: Record<string, string> = {
-  capital_social_minimo: 'Capital social mínimo',
-  patrimonio_liquido_minimo: 'Patrimônio líquido mínimo',
-  garantia_proposta_percentual: 'Garantia da proposta',
-  garantia_contratual_percentual: 'Garantia contratual',
-  visita_tecnica: 'Visita técnica',
-  consorcio: 'Consórcio',
-  me_epp: 'Participação de ME/EPP',
-  prazo_execucao_dias: 'Prazo de execução',
-  documentos: 'Documentos de habilitação',
-  atestados: 'Atestado técnico',
-};
-
 const STATUS_DOCUMENTO: Record<DocumentoAnalise['status'], string | null> = {
   extraido: null,
   sem_texto: 'sem texto (PDF escaneado)',
@@ -60,7 +45,7 @@ function Exigencia({item}: {item: ItemAnalise}) {
   return (
     <ListItem
       align="start"
-      label={CAMPOS[item.campo] ?? item.campo}
+      label={nomeCampo(item.campo)}
       endContent={<Token label={rotulo} size="sm" color={cor} />}
       description={
         <VStack gap={1}>

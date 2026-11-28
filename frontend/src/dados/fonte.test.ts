@@ -51,8 +51,59 @@ describe('fonteExemplo', () => {
   });
 });
 
+describe('fonteExemplo: recorte e painel', () => {
+  const pronto = (id: string, parcial: Partial<EditalDetalhe> = {}) =>
+    edital({
+      id_publico: `pncp~${id}`,
+      data_encerramento_proposta: '2026-12-10T08:00:00',
+      ...parcial,
+    });
+  const dados = {
+    atualizado_em: null,
+    editais: [
+      pronto('perto', {veredito: 'apto', primeiro_visto_em: '2026-11-25T10:00:00-03:00'}),
+      pronto('limite', {data_encerramento_proposta: '2026-12-16T23:59:00', veredito: 'inapto'}),
+      pronto('longe', {data_encerramento_proposta: '2026-12-17T00:00:00', veredito: 'verificar'}),
+    ],
+  };
+  const fonte = criarFonteExemplo(() => agora, dados);
+  const ids = (l: {editais: {id_publico: string}[]}) => l.editais.map(e => e.id_publico);
+
+  it('recorta por encerraEmDias, novos e vereditos (sem_analise casa veredito nulo)', async () => {
+    expect(ids(await fonte.listar({encerraEmDias: 20}))).toEqual(['pncp~perto', 'pncp~limite']);
+    expect(ids(await fonte.listar({novos: true}))).toEqual(['pncp~perto']);
+    expect(ids(await fonte.listar({vereditos: ['inapto', 'verificar']}))).toEqual([
+      'pncp~limite',
+      'pncp~longe',
+    ]);
+    expect((await fonte.listar({vereditos: ['sem_analise']})).editais).toEqual([]);
+    const sem = criarFonteExemplo(() => agora, {atualizado_em: null, editais: [pronto('x')]});
+    expect(ids(await sem.listar({vereditos: ['sem_analise']}))).toEqual(['pncp~x']);
+  });
+  it('painel separa Decidir e Mais adiante, um edital numa seção só e contadores da base', async () => {
+    const painel = await fonte.painel();
+    const [decidir, adiante] = painel.secoes;
+    expect([decidir.chave, ids(decidir)]).toEqual(['decidir', ['pncp~perto', 'pncp~limite']]);
+    expect([adiante.chave, ids(adiante)]).toEqual(['mais_adiante', ['pncp~longe']]);
+    expect(painel.contadores).toEqual({abertos: 3, decidir: 2, novos: 1});
+    expect(painel.contadores.abertos).toBe((await fonte.listar({})).editais.length);
+    expect(painel.perfil_exemplo).toBe(true);
+    expect(painel.coleta).toEqual([]);
+  });
+  it('o exemplo.json ganha veredito nulo e primeiro_visto_em = data_publicacao', async () => {
+    const {editais} = await fonteExemplo.listar({todos: true});
+    expect(editais.every(e => e.veredito === null && e.motivo_verificar === null)).toBe(true);
+    const detalhes = await Promise.all(editais.map(e => fonteExemplo.obter(e.id_publico)));
+    expect(detalhes.every(e => e !== null && e.primeiro_visto_em === e.data_publicacao)).toBe(true);
+  });
+});
+
 describe('fonteExemplo com as três fontes', () => {
-  const pronto = (fonte: EditalDetalhe['fonte'], id: string, parcial: Partial<EditalDetalhe> = {}) =>
+  const pronto = (
+    fonte: EditalDetalhe['fonte'],
+    id: string,
+    parcial: Partial<EditalDetalhe> = {},
+  ) =>
     edital({
       fonte,
       id_publico: `${fonte}~${id}`,
@@ -190,6 +241,23 @@ describe('fonteApi', () => {
     const mock = simular(resposta({atualizado_em: null, editais: []}));
     await fonteApi.listar({});
     expect(mock).toHaveBeenCalledWith('/api/editais');
+  });
+  it('listar manda encerra_em_dias, novos e veredito repetido', async () => {
+    const mock = simular(resposta({atualizado_em: null, editais: [], perfil_exemplo: false}));
+    await fonteApi.listar({encerraEmDias: 20, novos: true, vereditos: ['apto', 'sem_analise']});
+    expect(mock).toHaveBeenCalledWith(
+      '/api/editais?encerra_em_dias=20&novos=true&veredito=apto&veredito=sem_analise',
+    );
+  });
+  it('listar não manda novos=false', async () => {
+    const mock = simular(resposta({atualizado_em: null, editais: [], perfil_exemplo: false}));
+    await fonteApi.listar({novos: false});
+    expect(mock).toHaveBeenCalledWith('/api/editais');
+  });
+  it('painel lê /api/painel', async () => {
+    const mock = simular(resposta({secoes: []}));
+    expect(await fonteApi.painel()).toEqual({secoes: []});
+    expect(mock).toHaveBeenCalledWith('/api/painel');
   });
   it('status lê /api/status', async () => {
     const mock = simular(resposta({atualizado_em: '2026-11-26T13:09:37-03:00'}));

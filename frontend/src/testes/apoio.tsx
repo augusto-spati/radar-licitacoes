@@ -14,12 +14,26 @@ import type {EditalDetalhe} from '../dados/tipos';
 
 export function fonteFalsa(parcial: Partial<Fonte> = {}): Fonte {
   return {
-    listar: async () => ({atualizado_em: new Date().toISOString(), editais: []}),
+    listar: async () => ({
+      atualizado_em: new Date().toISOString(),
+      editais: [],
+      perfil_exemplo: false,
+    }),
     obter: async () => null,
     analise: async () => null,
     historico: async () => null,
     precos: async () => null,
     status: async () => ({atualizado_em: null}),
+    painel: async () => ({
+      atualizado_em: null,
+      perfil_exemplo: false,
+      coleta: [],
+      contadores: {abertos: 0, decidir: 0, novos: 0},
+      secoes: [
+        {chave: 'decidir', total: 0, editais: []},
+        {chave: 'mais_adiante', total: 0, editais: []},
+      ],
+    }),
     ...parcial,
   };
 }
@@ -43,6 +57,9 @@ export function edital(parcial: Partial<EditalDetalhe> = {}): EditalDetalhe {
     situacao_normalizada: 'aberta',
     link_origem: 'https://compras.exemplo.gov.br/edital/36',
     linhas: ['redes'],
+    veredito: null,
+    motivo_verificar: null,
+    primeiro_visto_em: '2026-11-01T10:00:00-03:00',
     ...parcial,
   };
 }

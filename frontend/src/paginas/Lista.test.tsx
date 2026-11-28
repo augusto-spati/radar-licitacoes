@@ -41,7 +41,7 @@ describe('Lista', () => {
       linhas: [],
     });
     renderizar(<Lista />, {
-      fonte: fonteFalsa({listar: async () => ({atualizado_em: recente, editais: [primeiro, segundo]})}),
+      fonte: fonteFalsa({listar: async () => ({atualizado_em: recente, perfil_exemplo: false, editais: [primeiro, segundo]})}),
     });
 
     expect(await screen.findByText('Rede de esgoto')).toBeTruthy();
@@ -73,7 +73,7 @@ describe('Lista', () => {
   });
 
   it('lê os filtros da URL, repassa à fonte e leva a consulta ao detalhe', async () => {
-    const listar = vi.fn<Fonte['listar']>(async () => ({atualizado_em: recente, editais: [edital()]}));
+    const listar = vi.fn<Fonte['listar']>(async () => ({atualizado_em: recente, perfil_exemplo: false, editais: [edital()]}));
     renderizar(<Lista />, {fonte: fonteFalsa({listar}), endereco: '/?linha=redes&uf=SP&uf=PR'});
 
     await screen.findByText('Execução de rede de esgoto no bairro Centro');
@@ -85,7 +85,7 @@ describe('Lista', () => {
 
   it('ignora linha e UF da URL que não estão no contrato da API', async () => {
     // A API responderia 422; a lista mostra o que é válido em vez de dar erro.
-    const listar = vi.fn<Fonte['listar']>(async () => ({atualizado_em: recente, editais: [edital()]}));
+    const listar = vi.fn<Fonte['listar']>(async () => ({atualizado_em: recente, perfil_exemplo: false, editais: [edital()]}));
     renderizar(<Lista />, {fonte: fonteFalsa({listar}), endereco: '/?linha=inexistente&uf=BA&uf=SP'});
 
     await screen.findByText('Execução de rede de esgoto no bairro Centro');
@@ -93,7 +93,7 @@ describe('Lista', () => {
   });
 
   it('trocar a linha atualiza a URL e recarrega', async () => {
-    const listar = vi.fn<Fonte['listar']>(async () => ({atualizado_em: recente, editais: [edital()]}));
+    const listar = vi.fn<Fonte['listar']>(async () => ({atualizado_em: recente, perfil_exemplo: false, editais: [edital()]}));
     renderizar(<Lista />, {fonte: fonteFalsa({listar}), endereco: '/?uf=SP'});
     await screen.findByText('Execução de rede de esgoto no bairro Centro');
 
@@ -110,7 +110,7 @@ describe('Lista', () => {
 
   it('lista_vazia_mostra_estado_vazio', async () => {
     renderizar(<Lista />, {
-      fonte: fonteFalsa({listar: async () => ({atualizado_em: recente, editais: []})}),
+      fonte: fonteFalsa({listar: async () => ({atualizado_em: recente, perfil_exemplo: false, editais: []})}),
     });
     expect(await screen.findByText('Nenhum edital aberto com esses filtros')).toBeTruthy();
   });
@@ -124,7 +124,7 @@ describe('Lista', () => {
     const listar = vi
       .fn()
       .mockRejectedValueOnce(new Error('A API respondeu 500'))
-      .mockResolvedValueOnce({atualizado_em: recente, editais: [edital()]});
+      .mockResolvedValueOnce({atualizado_em: recente, perfil_exemplo: false, editais: [edital()]});
     renderizar(<Lista />, {fonte: fonteFalsa({listar})});
 
     expect(await screen.findByText('Não foi possível carregar os editais')).toBeTruthy();
@@ -137,7 +137,7 @@ describe('Lista', () => {
 
   it('lista_desatualizada_mostra_aviso', async () => {
     renderizar(<Lista />, {
-      fonte: fonteFalsa({listar: async () => ({atualizado_em: null, editais: [edital()]})}),
+      fonte: fonteFalsa({listar: async () => ({atualizado_em: null, perfil_exemplo: false, editais: [edital()]})}),
     });
     expect(await screen.findByText('Os dados podem estar desatualizados')).toBeTruthy();
     expect(screen.getByText('Nenhuma coleta foi concluída ainda.')).toBeTruthy();
@@ -146,7 +146,7 @@ describe('Lista', () => {
   it('aviso de desatualizado diz quando foi a última coleta', async () => {
     renderizar(<Lista />, {
       fonte: fonteFalsa({
-        listar: async () => ({atualizado_em: '2026-11-24T08:30:00-03:00', editais: [edital()]}),
+        listar: async () => ({atualizado_em: '2026-11-24T08:30:00-03:00', perfil_exemplo: false, editais: [edital()]}),
       }),
     });
     expect(await screen.findByText('Última atualização em 24/11/2026 08:30.')).toBeTruthy();

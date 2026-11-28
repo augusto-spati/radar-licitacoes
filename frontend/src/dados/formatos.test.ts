@@ -5,6 +5,9 @@ import {
   UFS,
   ehLinha,
   ehUF,
+  diasAteEncerrar,
+  ehNovo,
+  nomeCampo,
   estaDesatualizado,
   formatarCnpj,
   formatarData,
@@ -182,5 +185,27 @@ describe('linhas e UFs vêm do contrato da API (config/filtro.toml)', () => {
     expect(ehLinha('toString')).toBe(false);
     expect(ehUF('SP')).toBe(true);
     expect(ehUF('BA')).toBe(false);
+  });
+});
+
+describe('diasAteEncerrar', () => {
+  it('conta dias de calendário em Brasília', () => {
+    expect(diasAteEncerrar('2026-12-16T23:59:00', agora)).toBe(20);
+    expect(diasAteEncerrar('2026-12-17T00:00:00', agora)).toBe(21);
+  });
+});
+
+describe('ehNovo', () => {
+  it('vale até 3 dias, inclusive', () => {
+    expect(ehNovo('2026-11-23T12:00:00-03:00', agora)).toBe(true);
+    expect(ehNovo('2026-11-23T11:59:00-03:00', agora)).toBe(false);
+    expect(ehNovo(null, agora)).toBe(false);
+  });
+});
+
+describe('nomeCampo', () => {
+  it('traduz o campo e deixa o desconhecido como veio', () => {
+    expect(nomeCampo('atestados')).toBe('Atestado técnico');
+    expect(nomeCampo('novo_campo')).toBe('novo_campo');
   });
 });
