@@ -33,8 +33,12 @@ A Lista de editais é exaustiva e não responde "o que eu preciso decidir hoje?"
 ## O que fica para 08b e 08c
 
 - **08b**: triagem compartilhada (Avaliando, Vamos participar, Não vamos), a primeira escrita da API, papel `radar_api` no banco, identidade do token, desfazer, seções Reta final, Acompanhando e Não vamos, e `docs/decisoes/0008-api-com-escrita.md`.
-- **08c**: prioridade configurável por usuário (Prazo, Aderência, Valor, Local), `preferencia_usuario`, `ordem=` na API, campos `uf_sede` e `valor_maximo_obra` no perfil.
-- Migração 0015 no Neon e deploy da 08a, depois do merge, com o Augusto.
+- **08c**: prioridade configurável por usuário (Prazo, Aderência, Valor, Local), `preferencia_usuario`, `ordem=` na API, uso de `uf_sede` e `valor_maximo_obra` (já no perfil desde a 08a) na prioridade.
+- Migração 0015 no Neon e deploy da 08a, com o Augusto, nesta ordem:
+  1. Aplicar a 0015 no Neon (`alembic upgrade head`) ANTES do merge e com nenhuma tarefa da coletora rodando: o backfill trava `edital`. O código antigo funciona com a 0015 aplicada.
+  2. Conferir que a API antiga segue respondendo (`/api/editais` 200).
+  3. Fazer o merge, para o deploy trocar as imagens, e conferir `/api/painel`.
+  4. Logo depois, rodar `radar recomparar` com `RADAR_CONFIG_PERFIL` apontando para o perfil do S3 (ECS run-task com override de comando, como o `analisar`), para `perfil_resumo` refletir o perfil real antes do próximo `analisar` das 09:00. Confirmar `perfil_exemplo: false` em `/api/painel`.
 
 ## Perguntas de entrevista
 

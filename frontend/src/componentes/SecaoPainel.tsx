@@ -18,6 +18,8 @@ type Props = {
   comAderencia: boolean;
   recolhida?: boolean;
   hrefLista: string;
+  /** Texto do link quando o destino não tem o mesmo recorte da seção (sem número). */
+  rotuloLista?: string;
 };
 
 /** Uma seção do painel: título, o que entra nela e os cartões (ou uma linha, se vazia). */
@@ -43,7 +45,7 @@ export function SecaoPainel(props: Props) {
         </Grid>
         {secao.total > secao.editais.length && (
           <Link href={props.hrefLista} isStandalone>
-            {`Ver os ${secao.total} na lista`}
+            {props.rotuloLista ?? `Ver os ${secao.total} na lista`}
           </Link>
         )}
       </VStack>

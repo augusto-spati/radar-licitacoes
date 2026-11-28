@@ -75,7 +75,7 @@ Filas ficam como futuro, no tema 2: outbox + SQS (etapa 4a; o pgmq não existe n
 - [x] `/` = Painel e `/editais` = Lista, com redirecionamento de link antigo. `frontend/src/rotas.tsx`. Vídeo: a gravar (`docs/videos/08-painel.md`).
 - [ ] 08b: triagem compartilhada.
 - [ ] 08c: prioridade configurável.
-- [ ] Migração 0015 no Neon e deploy da 08a.
+- [ ] Migração 0015 no Neon e deploy da 08a. Ordem: aplicar a 0015 no Neon ANTES do merge, sem tarefa da coletora rodando (o backfill trava `edital`); conferir `/api/editais` 200; merge e deploy; conferir `/api/painel`; em seguida `radar recomparar` contra o perfil do S3, para `perfil_resumo` refletir o perfil real antes do próximo `analisar` das 09:00 (`perfil_exemplo: false`).
 
 ## Front com IA
 

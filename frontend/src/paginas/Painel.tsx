@@ -57,6 +57,7 @@ function Conteudo({dados}: {dados: DadosPainel}) {
         comAderencia={comAderencia}
         recolhida
         hrefLista="/editais"
+        rotuloLista="Ver todos os abertos na lista"
       />
     </VStack>
   );
