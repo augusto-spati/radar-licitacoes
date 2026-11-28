@@ -1,21 +1,14 @@
 // @vitest-environment jsdom
 import {cleanup, fireEvent, screen, within} from '@testing-library/react';
-import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
+import {describe, expect, it, vi} from 'vitest';
 import type {Fonte} from '../dados/fonte';
-import {edital, fonteFalsa, renderizar} from '../testes/apoio';
+import {edital, fixarRelogio, fonteFalsa, renderizar} from '../testes/apoio';
 import {Lista} from './Lista';
 
-// 26/11/2026 12:00 em Brasília; só o Date é falso, os timers seguem reais.
+// 26/11/2026 12:00 em Brasília.
 const AGORA = new Date('2026-11-26T12:00:00-03:00');
 
-beforeEach(() => {
-  vi.useFakeTimers({toFake: ['Date']});
-  vi.setSystemTime(AGORA);
-});
-afterEach(() => {
-  cleanup();
-  vi.useRealTimers();
-});
+fixarRelogio(AGORA);
 
 const recente = '2026-11-26T09:00:00-03:00';
 const cartoes = () => screen.getAllByRole('link', {name: /^Abrir edital/});
@@ -150,5 +143,27 @@ describe('Lista', () => {
       }),
     });
     expect(await screen.findByText('Última atualização em 24/11/2026 08:30.')).toBeTruthy();
+  });
+
+  it('lista_mostra_selo_de_aderencia_so_com_perfil_real', async () => {
+    const editais = [
+      edital({id_publico: 'pncp~a', objeto: 'Apto', veredito: 'apto'}),
+      edital({id_publico: 'pncp~i', objeto: 'Inapto', veredito: 'inapto'}),
+      edital({id_publico: 'pncp~v', objeto: 'Verificar', veredito: 'verificar'}),
+      edital({id_publico: 'pncp~s', objeto: 'Sem análise'}),
+    ];
+    const comPerfil = (perfil_exemplo: boolean) =>
+      fonteFalsa({listar: async () => ({atualizado_em: recente, perfil_exemplo, editais})});
+
+    renderizar(<Lista />, {fonte: comPerfil(false)});
+    expect(await screen.findByText('apto')).toBeTruthy();
+    expect(screen.getByText('inapto')).toBeTruthy();
+    expect(screen.getByText('verificar')).toBeTruthy();
+    expect(screen.getByText('sem análise · conferir edital')).toBeTruthy();
+    cleanup();
+
+    renderizar(<Lista />, {fonte: comPerfil(true)});
+    await screen.findByText('Inapto');
+    expect(screen.queryByText(/^(apto|inapto|verificar|sem análise)/)).toBeNull();
   });
 });

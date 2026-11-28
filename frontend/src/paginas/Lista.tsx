@@ -82,6 +82,7 @@ export function Lista() {
                       key={e.id_publico}
                       edital={e}
                       agora={agora}
+                      comAderencia={!carga.dados.perfil_exemplo}
                       href={`/edital/${encodeURIComponent(e.id_publico)}${sufixo}`}
                     />
                   ))}
